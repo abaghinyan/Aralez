@@ -1,0 +1,126 @@
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# Copyright © 2024 Areg Baghinyan. All Rights Reserved.
+#
+# Author(s): Areg Baghinyan
+#
+
+entries:
+  mft:
+    - dir_path: ""
+      extensions: ["$MFT"]
+  
+  extend:
+    - dir_path: "$Extend"
+      extensions: [""]
+
+  recycle:
+    - dir_path: "$Recycle.Bin"
+      extensions: [""]
+      max_size: 10485760
+  event_logs:
+    - dir_path: "Windows\\System32\\winevt\\Logs"
+      extensions: [".evtx"]
+
+  hive_files:
+    - dir_path: "Windows\\System32\\config"
+      extensions: ["SAM", "SYSTEM", "SOFTWARE", "SECURITY", "DEFAULT"]
+
+  user_hive_files:
+    - dir_path: "Users\\{{user}}"
+      extensions: [".DAT"]
+
+  wer_files:
+    - dir_path: "ProgramData\\Microsoft\\Windows\\WER\\ReportArchive"
+      extensions: [""]
+    - dir_path: "ProgramData\\Microsoft\\Windows\\WER\\ReportQueue"
+      extensions: [""]
+    - dir_path: "Users\\{{user}}\\AppData\\Local\\Microsoft\\Windows\\WER"
+      extensions: [""]
+
+  prefetch:
+    - dir_path: "Windows\\Prefetch"
+      extensions: [".pf"]
+
+  scheduled_tasks:
+    - dir_path: "Windows\\System32\\Tasks"
+      extensions: [".job", ".xml"]
+    - dir_path: "Windows\\Tasks"
+      extensions: [".job", ".xml"]
+
+  firewall_logs:
+    - dir_path: "Windows\\System32\\LogFiles\\Firewall"
+      extensions: ["pfirewall.log"]
+
+  amcache:
+    - dir_path: "Windows\\AppCompat\\Programs"
+      extensions: [".hve"]
+
+  startup_files:
+    - dir_path: "ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Start-up"
+      extensions: [""]
+    - dir_path: "Users\\{{user}}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Start-up"
+      extensions: [""]
+
+  windows_shortcuts:
+    - dir_path: "Users\\{{user}}\\AppData\\Roaming\\Microsoft\\Windows\\Recent"
+      extensions: [".lnk"]
+
+  powershell_history:
+    - dir_path: "Users\\{{user}}\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadline"
+      extensions: [".txt"]
+
+  wmi:
+    - dir_path: "Windows\\System32\\wbem\\Repository"
+      extensions: ["OBJECTS.DATA"]
+
+  wmi_trace:
+    - dir_path: "Windows\\System32\\LogFiles\\WMI"
+      extensions: [".etl"]
+
+  bmc:
+    - dir_path: "Windows\\System32\\wdi\\LogFiles"
+      extensions: [".etl"]
+  
+  bits:
+    - dir_path: "ProgramData\\Microsoft\\Network\\Downloader"
+      extensions: [".dat"]
+
+  browser_history:
+    - dir_path: "Users\\{{user}}\\AppData\\Local\\Microsoft\\Windows\\INetCache"
+      extensions: [".dat", ".sqlite", ".json"]
+    - dir_path: "Users\\{{user}}\\AppData\\Local\\Microsoft\\Windows\\History"
+      extensions: [".dat", ".sqlite", ".json"]
+
+    - dir_path: "Users\\{{user}}\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default"
+      extensions: ["History"]
+
+    - dir_path: "Users\\{{user}}\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History"
+      extensions: [".dat", ".sqlite", ".json"]
+
+  suspicious_files:
+    - dir_path: "Users\\{{user}}\\AppData\\Local"
+      extensions: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
+      max_size: 5242880
+      encrypt: "infected"
+    - dir_path: "Users\\{{user}}\\AppData\\Roaming"
+      extensions: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
+      max_size: 5242880
+      encrypt: "infected"
+    - dir_path: "Users\\{{user}}\\AppData\\Local\\Temp"
+      extensions: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
+      max_size: 5242880
+      encrypt: "infected"
+    - dir_path: "Users\\{{user}}\\Downloads"
+      extensions: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
+      max_size: 5242880
+      encrypt: "infected"
+    - dir_path: "Users\\{{user}}\\Desktop"
+      extensions: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
+      max_size: 5242880
+      encrypt: "infected"
+    - dir_path: "Windows\\Temp"
+      extensions: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
+      max_size: 5242880
+      encrypt: "infected"

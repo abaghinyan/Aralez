@@ -18,6 +18,7 @@ mod network_info;
 mod process;
 mod tool_runner;
 mod embin;
+mod process_details;
 
 use utils::{ensure_directory_exists};
 use embin::execute;
@@ -39,7 +40,7 @@ use zip::{write::FileOptions, ZipWriter};
 use std::fs::{self, File};
 use std::io::{self, Write};
 
-/// Your application description here.
+
 #[derive(Parser)]
 struct Cli {
     /// Activate debug mode even in release builds
@@ -172,21 +173,26 @@ fn main() -> Result<()> {
         }
     }
 
-    // Processes info
     let path = Path::new(&output_path);
+
+    // Processes info
     let filename = "ps_info.txt";
-    if let Err(e) = process::run_ps(filename, path) {
+    if let Err(e) = process::run_ps(filename, &path) {
         dprintln!("Error: {}", e);
     } else {
         pb.inc(1); // Increment the progress bar
         pb.set_message(format!("Processing: {} tool", "ps_info"));
     }
 
+    // Process details
+    let filename = "ps_details_info.txt";
+    let _ = process_details::run(&filename, &path);
+
+
     // Network info 
     let filename = "ports_info.txt";
-    let path = Path::new(&output_path);
 
-    if let Err(e) = network_info::run_network_info(filename, path) {
+    if let Err(e) = network_info::run_network_info(filename, &path) {
         dprintln!("Error writing network info: {}", e);
     } else {
         pb.inc(1); // Increment the progress bar

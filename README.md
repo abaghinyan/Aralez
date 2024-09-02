@@ -66,6 +66,7 @@ aralez.exe [OPTIONS]
 ### Options
 
 - `--debuge`: Activates debug mode, providing more verbose output.
+- `--show_config`: Displays the current configuration in a pretty-printed YAML format.
 
 ### Example
 
@@ -226,6 +227,7 @@ machine_name/
 │   ├── tasklist.csv
 │   ├── netshare.csv
 │   ├── ps_info.txt
+│   ├── ps_details_info.txt
 │   └── ports_info.txt
 ```
 

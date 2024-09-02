@@ -65,7 +65,7 @@ aralez.exe [OPTIONS]
 
 ### Options
 
-- `--debuge`: Activates debug mode, providing more verbose output.
+- `--debug`: Activates debug mode, providing more verbose output.
 - `--show_config`: Displays the current configuration in a pretty-printed YAML format.
 
 ### Example

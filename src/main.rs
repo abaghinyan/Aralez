@@ -44,7 +44,7 @@ use zip::{write::FileOptions, ZipWriter};
 struct Cli {
     /// Activate debug mode even in release builds
     #[arg(long)]
-    debuge: bool,
+    debug: bool,
 
     /// Show the configuration file and exit
     #[arg(long)]
@@ -84,8 +84,8 @@ fn main() -> Result<()> {
         .author(env!("CARGO_PKG_AUTHORS"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .arg(
-            Arg::new("debuge")
-                .long("debuge")
+            Arg::new("debug")
+                .long("debug")
                 .help("Activate debug mode")
                 .action(clap::ArgAction::SetTrue),
         )
@@ -106,8 +106,8 @@ fn main() -> Result<()> {
         return show_config(&config);
     }
 
-    // Check if the --debuge flag was provided
-    if matches.get_flag("debuge") {
+    // Check if the --debug flag was provided
+    if matches.get_flag("debug") {
         env::set_var("DEBUG_MODE", "true");
         println!("Debug mode activated!");
     }

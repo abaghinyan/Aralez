@@ -124,7 +124,7 @@ entries:
       extensions: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
       max_size: 5242880
       encrypt: "infected"
-      
+
 tools:
   - name: "autorunsc.exe"
     args: ["/accepteula", "/nobanner", "/quiet", "/all"]

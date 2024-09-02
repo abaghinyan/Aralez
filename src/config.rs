@@ -6,13 +6,15 @@
 // Author(s): Areg Baghinyan
 //
 
+use anyhow::Result;
 use serde::Deserialize;
 use std::collections::HashMap;
-use anyhow::Result;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
     pub entries: HashMap<String, Vec<SearchConfig>>,
+    pub tools: Vec<ToolConfig>,
+    pub win_tools: Vec<ToolConfig>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -21,6 +23,13 @@ pub struct SearchConfig {
     pub extensions: Option<Vec<String>>,
     pub max_size: Option<u64>,
     pub encrypt: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ToolConfig {
+    pub name: String,
+    pub args: Vec<String>,
+    pub output_file: String,
 }
 
 impl Config {
@@ -48,7 +57,7 @@ impl Config {
                 expanded_configs.push(SearchConfig {
                     dir_path: expand(&config.dir_path, variables),
                     extensions: config.extensions.clone(),
-                    max_size: config.max_size.clone(),
+                    max_size: config.max_size,
                     encrypt: config.encrypt.clone(),
                 });
             }
@@ -57,6 +66,8 @@ impl Config {
 
         Config {
             entries: expanded_entries,
+            tools: self.tools.clone(), // Tools don't need placeholder expansion in this case
+            win_tools: self.win_tools.clone(), // WinTools don't need placeholder expansion in this case
         }
     }
 }

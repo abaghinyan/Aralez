@@ -9,15 +9,16 @@
 use anyhow::Result;
 use serde::Deserialize;
 use std::collections::HashMap;
+use serde::Serialize;
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
     pub entries: HashMap<String, Vec<SearchConfig>>,
     pub tools: Vec<ToolConfig>,
     pub win_tools: Vec<ToolConfig>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SearchConfig {
     pub dir_path: String,
     pub extensions: Option<Vec<String>>,
@@ -25,7 +26,7 @@ pub struct SearchConfig {
     pub encrypt: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ToolConfig {
     pub name: String,
     pub args: Vec<String>,

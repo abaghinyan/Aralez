@@ -45,6 +45,10 @@ struct Cli {
     /// Activate debug mode even in release builds
     #[arg(long)]
     debuge: bool,
+
+    /// Show the configuration file and exit
+    #[arg(long)]
+    show_config: bool,
 }
 const HELP_TEMPLATE: &str = "{bin} {version}
 {author}
@@ -56,6 +60,13 @@ USAGE:
 
 {all-args}
 ";
+
+// Helper function to pretty-print the configuration
+fn show_config(config: &Config) -> Result<()> {
+    let serialized = serde_yaml::to_string(config)?;
+    println!("{}", serialized);
+    Ok(())
+}
 
 fn main() -> Result<()> {
     // Print the welcome message
@@ -78,8 +89,22 @@ fn main() -> Result<()> {
                 .help("Activate debug mode")
                 .action(clap::ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("show_config")
+                .long("show_config")
+                .help("Show the configuration file and exit")
+                .action(clap::ArgAction::SetTrue),
+        )
         .help_template(HELP_TEMPLATE)
         .get_matches();
+
+    // Load configuration from the embedded YAML content
+    let config = Config::load_from_embedded()?;
+
+    // Handle show_config flag
+    if matches.get_flag("show_config") {
+        return show_config(&config);
+    }
 
     // Check if the --debuge flag was provided
     if matches.get_flag("debuge") {
@@ -92,9 +117,6 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| "machine".to_string());
 
     let root_output = &machine_name;
-
-    // Load configuration from the embedded YAML content
-    let config = Config::load_from_embedded()?;
 
     // Open the NTFS disk image or partition (replace with the correct path)
     let f = File::open("\\\\.\\C:")?;

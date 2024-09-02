@@ -128,39 +128,42 @@ entries:
 tools:
   - name: "autorunsc.exe"
     args: ["/accepteula", "/nobanner", "/quiet", "/all"]
-    output_file: "autorunsc.txt"
+    output_file: "Autorunsc.txt"
   - name: "handle.exe"
     args: ["/accepteula", "/a", "/nobanner"]
-    output_file: "handle.txt"
+    output_file: "Handle.txt"
   - name: "tcpvcon.exe"
     args: ["-a"]
-    output_file: "tcpvcon.txt"
+    output_file: "TCPvCon.txt"
   - name: "pslist.exe"
     args: ["/accepteula", "/all"]
-    output_file: "pslist.txt"
+    output_file: "PSList.txt"
   - name: "Listdlls.exe"
     args: ["/accepteula"]
-    output_file: "listdlls.txt"
+    output_file: "ListDLLs.txt"
   - name: "PsService.exe"
     args: ["/accepteula", "query"]
-    output_file: "psservice.txt"
+    output_file: "PSService.txt"
 
 win_tools:
   - name: "netstat.exe"
     args: ["-anob"]
-    output_file: "netstat.txt"
+    output_file: "NetStat.txt"
   - name: "ipconfig.exe"
     args: ["/all"]
-    output_file: "ipconfig.txt"
+    output_file: "IPConfig.txt"
   - name: "ipconfig.exe"
     args: ["/displaydns"]
-    output_file: "dnscache.txt"
+    output_file: "DNSCache.txt"
   - name: "systeminfo.exe"
     args: []
-    output_file: "systeminfo.txt"
+    output_file: "SystemInfo.txt"
   - name: "tasklist.exe"
     args: ["/v", "/fo", "csv"]
-    output_file: "tasklist.csv"
+    output_file: "TaskList.csv"
   - name: "net.exe"
     args: ["share"]
-    output_file: "netshare.csv"
+    output_file: "NetShare.csv"
+  - name: "powershell"
+    args: ["-command", "Get-ComputerInfo"]
+    output_file: "ComputerInfo.txt"

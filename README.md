@@ -92,7 +92,7 @@ Each search configuration specifies:
 - `encrypt`: An optional password for AES-GCM encryption. If provided, the files will be encrypted and saved with an `.enc` extension.
 
 ### Example Configuration
-
+Collect some files:
 ```yaml
 entries:
   files:
@@ -100,6 +100,14 @@ entries:
       extensions: [".docx", ".pdf"]
       max_size: 1048576
       encrypt: "infected"
+```
+Execute Powershell command and save the output.
+```yaml
+entries:
+  win_tools:
+   - name: "powershell"
+      args: ["-command", "Get-ComputerInfo"]
+      output_file: "ComputerInfo.txt"
 ```
 
 ### Usage in Code

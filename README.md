@@ -65,7 +65,8 @@ aralez.exe [OPTIONS]
 
 ### Options
 
-- `--debuge`: Activates debug mode, providing more verbose output.
+- `--debug`: Activates debug mode, providing more verbose output.
+- `--show_config`: Displays the current configuration in a pretty-printed YAML format.
 
 ### Example
 
@@ -91,7 +92,7 @@ Each search configuration specifies:
 - `encrypt`: An optional password for AES-GCM encryption. If provided, the files will be encrypted and saved with an `.enc` extension.
 
 ### Example Configuration
-
+Collect some files:
 ```yaml
 entries:
   files:
@@ -99,6 +100,14 @@ entries:
       extensions: [".docx", ".pdf"]
       max_size: 1048576
       encrypt: "infected"
+```
+Execute Powershell command and save the output.
+```yaml
+entries:
+  win_tools:
+   - name: "powershell"
+      args: ["-command", "Get-ComputerInfo"]
+      output_file: "ComputerInfo.txt"
 ```
 
 ### Usage in Code
@@ -226,6 +235,7 @@ machine_name/
 │   ├── tasklist.csv
 │   ├── netshare.csv
 │   ├── ps_info.txt
+│   ├── ps_details_info.txt
 │   └── ports_info.txt
 ```
 

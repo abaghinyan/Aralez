@@ -124,3 +124,46 @@ entries:
       extensions: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
       max_size: 5242880
       encrypt: "infected"
+
+tools:
+  - name: "autorunsc.exe"
+    args: ["/accepteula", "/nobanner", "/quiet", "/all"]
+    output_file: "Autorunsc.txt"
+  - name: "handle.exe"
+    args: ["/accepteula", "/a", "/nobanner"]
+    output_file: "Handle.txt"
+  - name: "tcpvcon.exe"
+    args: ["-a"]
+    output_file: "TCPvCon.txt"
+  - name: "pslist.exe"
+    args: ["/accepteula", "/all"]
+    output_file: "PSList.txt"
+  - name: "Listdlls.exe"
+    args: ["/accepteula"]
+    output_file: "ListDLLs.txt"
+  - name: "PsService.exe"
+    args: ["/accepteula", "query"]
+    output_file: "PSService.txt"
+
+win_tools:
+  - name: "netstat.exe"
+    args: ["-anob"]
+    output_file: "NetStat.txt"
+  - name: "ipconfig.exe"
+    args: ["/all"]
+    output_file: "IPConfig.txt"
+  - name: "ipconfig.exe"
+    args: ["/displaydns"]
+    output_file: "DNSCache.txt"
+  - name: "systeminfo.exe"
+    args: []
+    output_file: "SystemInfo.txt"
+  - name: "tasklist.exe"
+    args: ["/v", "/fo", "csv"]
+    output_file: "TaskList.csv"
+  - name: "net.exe"
+    args: ["share"]
+    output_file: "NetShare.csv"
+  - name: "powershell"
+    args: ["-command", "Get-ComputerInfo"]
+    output_file: "ComputerInfo.txt"

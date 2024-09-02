@@ -10,42 +10,45 @@
 mod macros;
 
 mod command_info;
-mod ntfs_reader;
-mod utils;
-mod sector_reader;
-mod config; 
-mod network_info;
-mod process;
-mod tool_runner;
+mod config;
 mod embin;
+mod network_info;
+mod ntfs_reader;
+mod process;
 mod process_details;
+mod sector_reader;
+mod tool_runner;
+mod utils;
 
-use utils::{ensure_directory_exists};
-use embin::execute;
-use std::path::Path;
-use indicatif::{ProgressBar, ProgressStyle};
-use std::io::{Read, Seek};
-use anyhow::Result;
-use std::io::BufReader;
-use sector_reader::SectorReader;
 use crate::command_info::CommandInfo;
 use crate::tool_runner::run_tool;
-use std::collections::{HashMap, HashSet};
-use std::env;
-use config::{Config, SearchConfig};  
-use hostname::get;
+use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
-use zip::{write::FileOptions, ZipWriter};
+use config::{Config, SearchConfig};
+use embin::execute;
+use hostname::get;
+use indicatif::{ProgressBar, ProgressStyle};
+use sector_reader::SectorReader;
+use std::collections::{HashMap, HashSet};
+use std::env;
 use std::fs::{self, File};
+use std::io::BufReader;
 use std::io::{self, Write};
-
+use std::io::{Read, Seek};
+use std::path::Path;
+use utils::ensure_directory_exists;
+use zip::{write::FileOptions, ZipWriter};
 
 #[derive(Parser)]
 struct Cli {
     /// Activate debug mode even in release builds
     #[arg(long)]
-    debuge: bool,
+    debug: bool,
+
+    /// Show the configuration file and exit
+    #[arg(long)]
+    show_config: bool,
 }
 const HELP_TEMPLATE: &str = "{bin} {version}
 {author}
@@ -58,16 +61,20 @@ USAGE:
 {all-args}
 ";
 
-// Define a struct to hold information about each tool
-struct Tool {
-    name: &'static str,
-    args: &'static [&'static str],
-    output_file: &'static str,
+// Helper function to pretty-print the configuration
+fn show_config(config: &Config) -> Result<()> {
+    let serialized = serde_yaml::to_string(config)?;
+    println!("{}", serialized);
+    Ok(())
 }
 
 fn main() -> Result<()> {
     // Print the welcome message
-    println!("Welcome to {} version {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    println!(
+        "Welcome to {} version {}",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION")
+    );
     println!("{}", env!("CARGO_PKG_DESCRIPTION"));
     println!("Developed by: {}", env!("CARGO_PKG_AUTHORS"));
     println!();
@@ -76,29 +83,40 @@ fn main() -> Result<()> {
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
-    .arg(
-        Arg::new("debuge")
-            .long("debuge")
-            .help("Activate debug mode")
-            .action(clap::ArgAction::SetTrue),
-    )
-    .help_template(HELP_TEMPLATE)
-    .get_matches();
+        .arg(
+            Arg::new("debug")
+                .long("debug")
+                .help("Activate debug mode")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("show_config")
+                .long("show_config")
+                .help("Show the configuration file and exit")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .help_template(HELP_TEMPLATE)
+        .get_matches();
 
-    // Check if the --debuge flag was provided
-    if matches.get_flag("debuge") {
+    // Load configuration from the embedded YAML content
+    let config = Config::load_from_embedded()?;
+
+    // Handle show_config flag
+    if matches.get_flag("show_config") {
+        return show_config(&config);
+    }
+
+    // Check if the --debug flag was provided
+    if matches.get_flag("debug") {
         env::set_var("DEBUG_MODE", "true");
         println!("Debug mode activated!");
     }
     let machine_name = get()
-    .ok()
-    .and_then(|hostname| hostname.into_string().ok())
-    .unwrap_or_else(|| "machine".to_string());
+        .ok()
+        .and_then(|hostname| hostname.into_string().ok())
+        .unwrap_or_else(|| "machine".to_string());
 
     let root_output = &machine_name;
-
-    // Load configuration from the embedded YAML content
-    let config = Config::load_from_embedded()?;
 
     // Open the NTFS disk image or partition (replace with the correct path)
     let f = File::open("\\\\.\\C:")?;
@@ -126,21 +144,12 @@ fn main() -> Result<()> {
 
     // Tools
 
-    let output_path = format!("{}\\{}",root_output, "tools"); // Adjust the path as necessary
+    let output_path = format!("{}\\{}", root_output, "tools"); // Adjust the path as necessary
     ensure_directory_exists(&output_path).expect("Failed to create or access output directory");
 
-    // List of tools with their respective arguments and output files
-    let tools = vec![
-        Tool { name: "autorunsc.exe", args: &["/accepteula", "/nobanner", "/quiet", "/all"], output_file: "autorunsc.txt" },
-        Tool { name: "handle.exe", args: &["/accepteula", "/a", "/nobanner"], output_file: "handle.txt" },
-        Tool { name: "tcpvcon.exe", args: &["-a"], output_file: "tcpvcon.txt" }, 
-        Tool { name: "pslist.exe", args: &["/accepteula", "/all"], output_file: "pslist.txt" },
-        Tool { name: "Listdlls.exe", args: &["/accepteula"], output_file: "listdlls.txt" }, 
-        Tool { name: "PsService.exe", args: &["/accepteula", "query"], output_file: "psservice.txt" },
-    ];
-    // Iterate through each tool, execute it, and save the output
-    for tool in tools {
-        let exe_bytes: &[u8] = match tool.name {
+    // Iterate over tools from config
+    for tool in &config.tools {
+        let exe_bytes: &[u8] = match tool.name.as_str() {
             "autorunsc.exe" => include_bytes!("../tools/autorunsc.exe"),
             "handle.exe" => include_bytes!("../tools/handle.exe"),
             "tcpvcon.exe" => include_bytes!("../tools/tcpvcon.exe"),
@@ -150,21 +159,14 @@ fn main() -> Result<()> {
             _ => return Err(anyhow::anyhow!("Tool not found")),
         };
 
-        execute(exe_bytes, tool.name, &output_path, tool.args)?;
+        let args: Vec<&str> = tool.args.iter().map(String::as_str).collect();
+        execute(exe_bytes, &tool.name, &output_path, &args)?;
     }
 
-    // WinTools
-    let win_tools = vec![
-        Tool { name: "netstat.exe", args: &["-anob"], output_file: "netstat.txt" },
-        Tool { name: "ipconfig.exe", args: &["/all"], output_file: "ipconfig.txt" },
-        Tool { name: "ipconfig.exe", args: &["/displaydns"], output_file: "dnscache.txt" },
-        Tool { name: "systeminfo.exe", args: &[], output_file: "systeminfo.txt" },
-        Tool { name: "tasklist.exe", args: &["/v", "/fo", "csv"], output_file: "tasklist.csv" },
-        Tool { name: "net.exe", args: &["share"], output_file: "netshare.csv" },
-    ];
-
-    for tool in win_tools {
-        match run_tool(tool.name, tool.args, tool.output_file, &output_path) {
+    // Iterate over win_tools from config
+    for tool in &config.win_tools {
+        let args: Vec<&str> = tool.args.iter().map(String::as_str).collect();
+        match run_tool(&tool.name, &args, &tool.output_file, &output_path) {
             Ok(_) => {
                 pb.inc(1); // Increment the progress bar
                 pb.set_message(format!("Processing: {} tool", tool.name));
@@ -188,8 +190,7 @@ fn main() -> Result<()> {
     let filename = "ps_details_info.txt";
     let _ = process_details::run(&filename, &path);
 
-
-    // Network info 
+    // Network info
     let filename = "ports_info.txt";
 
     if let Err(e) = network_info::run_network_info(filename, &path) {
@@ -199,7 +200,6 @@ fn main() -> Result<()> {
         pb.set_message(format!("Processing: {} tool", "network_info"));
     }
 
-
     // Get Files
 
     // Track already processed paths
@@ -207,7 +207,11 @@ fn main() -> Result<()> {
 
     // Process each consolidated configuration
     for (user, search_config) in consolidated_configs {
-        let path_key = format!("{}\\{:?}", search_config.dir_path, search_config.extensions.clone().unwrap_or_default());
+        let path_key = format!(
+            "{}\\{:?}",
+            search_config.dir_path,
+            search_config.extensions.clone().unwrap_or_default()
+        );
 
         // Skip processing if this path has already been processed
         if !processed_paths.contains(&path_key) {
@@ -246,14 +250,17 @@ fn expand_configs_for_all_users(config: &Config, users: &[String]) -> Vec<(Strin
     consolidated_configs
 }
 
-fn search_in_config<T>(info: &mut CommandInfo<T>, config: &SearchConfig, root_output: &str) -> Result<()> 
+fn search_in_config<T>(
+    info: &mut CommandInfo<T>,
+    config: &SearchConfig,
+    root_output: &str,
+) -> Result<()>
 where
     T: Read + Seek,
 {
     let drive = format!("{}\\{}", root_output.to_string(), "C");
     ntfs_reader::find_files_in_dir(info, config, &format!("{}\\{}", drive, &config.dir_path))
 }
-
 
 fn zip_dir(dir_name: &str) -> io::Result<()> {
     // Create a directory with the given name

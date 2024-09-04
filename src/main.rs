@@ -263,26 +263,31 @@ fn main() -> Result<()> {
     let path = Path::new(&output_path);
 
     // Processes info
-    let filename = "ps_info.txt";
+    let filename = "ProcInfo.txt";
     if let Err(e) = process::run_ps(filename, &path) {
         dprintln!("Error: {}", e);
     } else {
         pb.inc(1); // Increment the progress bar
-        pb.set_message(format!("Processing: {} tool", "ps_info"));
+        pb.set_message(format!("Processing: {} tool", "ProcInfo"));
     }
 
     // Process details
-    let filename = "ps_details_info.txt";
-    let _ = process_details::run(&filename, &path);
+    let filename = "ProcDetailsInfo.txt";
+    if let Err(e) = process_details::run(&filename, &path) {
+        dprintln!("Error: {}", e);
+    } else {
+        pb.inc(1); // Increment the progress bar
+        pb.set_message(format!("Processing: {} tool", "ProcDetailsInfo"));
+    }
 
     // Network info
-    let filename = "ports_info.txt";
+    let filename = "PortsInfo.txt";
 
     if let Err(e) = network_info::run_network_info(filename, &path) {
         dprintln!("Error writing network info: {}", e);
     } else {
         pb.inc(1); // Increment the progress bar
-        pb.set_message(format!("Processing: {} tool", "network_info"));
+        pb.set_message(format!("Processing: {} tool", "NetworkInfo (PortsInfo)"));
     }
 
     // Get Files

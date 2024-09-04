@@ -24,6 +24,7 @@ Aralez is a triage collector tool designed for gathering critical system informa
 
 - **Automated Tool Execution**: Runs a predefined set of tools to collect system data.
 - **Network and Process Information Gathering**: Collects detailed network and process information.
+- - **Change Configuration Directly with Your Binary**: Generate a new binary with an updated configuration file directly using your current Aralez executable. This feature allows you to modify the embedded configuration without the need to recompile the source code. Simply specify the new configuration file and the desired output name for the executable, and Aralez will create a new version tailored to your updated settings.
 - **NTFS File Retrieval**: Retrieves files from the NTFS file system based on specific search configurations.
 - **Data Compression**: Compresses the collected data into a ZIP archive for easy transport and analysis.
 - **Encryption Support**: Supports file encryption using AES-GCM with a customizable password.
@@ -67,14 +68,20 @@ aralez.exe [OPTIONS]
 
 - `--debug`: Activates debug mode, providing more verbose output.
 - `--show_config`: Displays the current configuration in a pretty-printed YAML format.
+- `--change_config CONFIG_FILE --output OUTPUT_FILE`: Updates the embedded configuration using CONFIG_FILE and outputs the modified executable to OUTPUT_FILE.
 
 ### Example
+To update the embedded configuration and specify the output executable:
 
 ```bash
-aralez.exe
+aralez.exe --change_config new_config.yml --output new_aralez.exe
 ```
+This will create a new aralez with a new config file.
 
-This command will activate debug mode and start the data collection process.
+Activate debug mode and start the data collection process.
+```bash
+aralez.exe --debug
+```
 
 ## Configuration
 

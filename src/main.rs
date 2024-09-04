@@ -32,13 +32,16 @@ use indicatif::{ProgressBar, ProgressStyle};
 use sector_reader::SectorReader;
 use std::collections::{HashMap, HashSet};
 use std::env;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::BufReader;
 use std::io::{self, Write};
-use std::io::{Read, Seek};
-use std::path::Path;
+use std::io::{Read, Seek, SeekFrom};
 use utils::ensure_directory_exists;
 use zip::{write::FileOptions, ZipWriter};
+use std::path::Path;
+
+const CONFIG_MARKER_START: &[u8] = b"# CONFIG_START"; 
+const CONFIG_MARKER_END: &[u8] = b"# CONFIG_END"; 
 
 #[derive(Parser)]
 struct Cli {
@@ -68,6 +71,57 @@ fn show_config(config: &Config) -> Result<()> {
     Ok(())
 }
 
+// Function to load the embedded configuration at runtime
+fn load_embedded_config() -> Result<String> {
+    let current_exe = env::current_exe()?;
+    let mut file = File::open(current_exe)?;
+
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+
+    if let Some(start) = find_marker(&buffer, CONFIG_MARKER_START) {
+        if let Some(end) = find_marker(&buffer[start..], CONFIG_MARKER_END) {
+            let config_data = &buffer[start + CONFIG_MARKER_START.len()..start + end];
+            let config_string = String::from_utf8_lossy(config_data);
+            return  Ok(config_string.into_owned());
+        }
+    }
+    
+    Err(anyhow::anyhow!("Embedded configuration not found or the config file is not valid"))
+}
+
+// Function to update the embedded configuration
+fn update_embedded_config(new_config_path: &str, output_exe_path: &str) -> std::io::Result<()> {
+    let new_config_data = fs::read(new_config_path)?;
+
+    // Path to the current executable
+    let current_exe = env::current_exe().expect("Failed to get current executable path");
+
+    // Copy the current executable to the specified output file
+    fs::copy(&current_exe, &output_exe_path)?;
+
+    // Open the copied executable file for reading and writing
+    let mut new_exe_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&output_exe_path)?;
+
+    // Append the config marker and new config data at the end of the file
+    new_exe_file.seek(SeekFrom::End(0))?;
+    new_exe_file.write_all(CONFIG_MARKER_START)?;
+    new_exe_file.write_all(&new_config_data)?;
+    new_exe_file.write_all(CONFIG_MARKER_END)?;
+
+    println!("New executable with updated config created at: {}", output_exe_path);
+
+    Ok(())
+}
+
+// Helper function to find the marker in the binary data
+fn find_marker(data: &[u8], marker: &[u8]) -> Option<usize> {
+    data.windows(marker.len())
+        .rposition(|window| window == marker) // rposition finds the last occurrence
+}
 fn main() -> Result<()> {
     // Print the welcome message
     println!(
@@ -95,11 +149,42 @@ fn main() -> Result<()> {
                 .help("Show the configuration file and exit")
                 .action(clap::ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("change_config")
+                .long("change_config")
+                .help("Change the embedded configuration file")
+                .value_name("CONFIG_FILE")
+                .value_hint(clap::ValueHint::FilePath)
+                .required(false),
+        )
+        .arg(
+            Arg::new("output")
+                .long("output")
+                .help("Specify the output executable file name when changing the embedded configuration")
+                .value_name("OUTPUT_FILE")
+                .value_hint(clap::ValueHint::FilePath)
+                .requires("change_config")
+                .required(false),
+        )
         .help_template(HELP_TEMPLATE)
         .get_matches();
 
-    // Load configuration from the embedded YAML content
-    let config = Config::load_from_embedded()?;
+    // Handle changing the embedded configuration
+    if let Some(config_path) = matches.get_one::<String>("change_config") {
+        if let Some(output_path) = matches.get_one::<String>("output") {
+            update_embedded_config(config_path, output_path)?;
+        } else {
+            return Err(anyhow::anyhow!("Output file name is required when changing configuration"));
+        }
+        return Ok(());
+    }
+    
+    // Load configuration: Try to load the embedded configuration first, then fallback to default
+    let config_data = load_embedded_config()?;
+    let config: Config = match serde_yaml::from_str(&config_data) {
+        Ok(config) => config,
+        Err(_e) =>  Config::load_from_embedded()?
+    };
 
     // Handle show_config flag
     if matches.get_flag("show_config") {

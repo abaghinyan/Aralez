@@ -245,7 +245,7 @@ fn main() -> Result<()> {
         };
 
         let args: Vec<&str> = tool.args.iter().map(String::as_str).collect();
-        execute(exe_bytes, &tool.name, &output_path, &args)?;
+        execute(exe_bytes, &tool.name, &output_path, &tool.output_file.as_str(),&args)?;
     }
 
     // Iterate over win_tools from config

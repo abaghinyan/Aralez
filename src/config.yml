@@ -126,7 +126,7 @@ entries:
 
 tools:
   - name: "autorunsc.exe"
-    args: ["/accepteula", "/nobanner", "/quiet", "/all"]
+    args: ["-m", "-nobanner", "-a *", "-c", "/accepteula"]
     output_file: "Autorunsc.txt"
   - name: "handle.exe"
     args: ["/accepteula", "/a", "/nobanner"]

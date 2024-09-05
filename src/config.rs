@@ -51,7 +51,7 @@ impl Config {
         };
 
         let mut expanded_entries = HashMap::new();
-
+        
         for (key, configs) in &self.entries {
             let mut expanded_configs = Vec::new();
             for config in configs {

@@ -11,18 +11,18 @@ use std::io::{self, Write};
 use std::process::Command;
 use std::path::{Path, PathBuf};
 
-pub fn execute(exe_bytes: &[u8], _filename: &str, output_path: &str, args: &[&str]) -> io::Result<()> {
+pub fn execute(exe_bytes: &[u8], _filename: &str, output_path: &str, output_file: &str, args: &[&str]) -> io::Result<()> {
     
     // Save the executable to a temporary file
     let temp_exe_path = save_to_temp_file(_filename, exe_bytes, output_path)?;
-
     // Execute the temporary executable with the provided arguments and capture the output
     let output: std::process::Output = Command::new(&temp_exe_path)
         .args(args)
-        .output()?;
+        .output()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to execute file: {}", e)))?;
 
     // Save the result to the specified output path
-    save_output_to_file(&output.stdout, _filename, output_path)?;
+    save_output_to_file(&output.stdout, output_file, output_path)?;
     
     // Clean up the temporary file
     cleanup_temp_file(&temp_exe_path)?;
@@ -54,6 +54,7 @@ fn save_output_to_file(output: &[u8], output_filename: &str, output_path: &str) 
     let output_file_path = Path::new(output_path).join(output_filename);
     let mut file = File::create(output_file_path)?;
     file.write_all(output)?;
+    file.flush()?;
     Ok(())
 }
 

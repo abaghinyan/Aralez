@@ -382,8 +382,7 @@ pub fn run(filename: &str, path: &Path) -> Result<()> {
 
     let processes = list_all_processes()?;
 
-    let json_data = serde_json::to_string_pretty(&processes)
-        .map_err(|e| windows::core::Error::new(HRESULT(0x80004005u32 as i32), &e.to_string()))?;
+    let json_data = serde_json::to_string_pretty(&processes).unwrap();
 
     file.write_all(json_data.as_bytes())?;
 

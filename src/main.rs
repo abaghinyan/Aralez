@@ -22,6 +22,7 @@ mod utils;
 
 use crate::command_info::CommandInfo;
 use crate::tool_runner::run_tool;
+use ntfs_reader::list_ntfs_drives;
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
@@ -203,6 +204,44 @@ fn main() -> Result<()> {
 
     let root_output = &machine_name;
 
+    let ntfs_drives = list_ntfs_drives()?;
+    // Loop through each NTFS drive and process, skipping the C drive
+    for drive in ntfs_drives {
+        // Skip C drive since you process it separately
+        if drive.starts_with("C:") {
+            continue;
+        }
+        dprintln!("Processing drive: {}", drive);
+        let drive_letter = match drive.chars().next() {
+            Some(l) => l,
+            None => continue  
+        };
+        let output_path = format!("{}\\{}", root_output, drive_letter);
+
+        ensure_directory_exists(&output_path)?; 
+
+        let f = File::open(format!("\\\\.\\{}:",drive_letter))?;
+        let sr = SectorReader::new(f, 4096)?; // Adjust sector size if needed
+        let mut fs = BufReader::new(sr);
+
+        // Initialize NTFS and process the MFT
+        if let Ok(ntfs) = ntfs_reader::initialize_ntfs(&mut fs) {
+            let mut info = ntfs_reader::initialize_command_info(fs, &ntfs)?;
+
+            // Prepare search configuration to target the MFT file
+            let search_config = SearchConfig {
+                dir_path: "".to_string(), // Root directory to find $MFT
+                extensions: Some(vec!["$MFT".to_string()]), // Look for $MFT
+                max_size: None, // No size limit for the MFT
+                encrypt: None, // You can add encryption here if needed
+            };
+
+            // Use find_files_in_dir to process the $MFT file for each drive
+            ntfs_reader::find_files_in_dir(&mut info, &search_config, &output_path)?;
+        } else {
+            dprintln!("Drive {} is not an NTFS file system or cannot be read.", drive);
+        }
+    }
     // Open the NTFS disk image or partition (replace with the correct path)
     let f = File::open("\\\\.\\C:")?;
     let sr = SectorReader::new(f, 4096)?;

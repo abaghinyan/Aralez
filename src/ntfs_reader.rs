@@ -11,9 +11,49 @@ use crate::config::SearchConfig;
 use crate::utils::{get, get_file_name};
 use anyhow::Result;
 use ntfs::{Ntfs};
-use std::io::{Read, Seek};
 use ntfs::indexes::NtfsFileNameIndex;
 use std::collections::HashSet;
+use std::io::{Read, Seek, SeekFrom};
+use std::io;
+use std::path::Path;
+use std::fs::File;
+
+const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
+
+pub fn list_ntfs_drives() -> io::Result<Vec<String>> {
+    let mut ntfs_drives = Vec::new();
+    
+    // Loop through the drives from A to Z and check if they are NTFS
+    for letter in 'A'..='Z' {
+        let drive = format!("{}:\\", letter);
+        
+        // Check if the drive exists before trying to open it
+        if Path::new(&drive).exists() {
+            // Try to open the drive in raw mode to check if it's NTFS
+            let drive_path = format!("\\\\.\\{}:", letter);
+            if let Ok(mut file) = File::open(&drive_path) {
+                // Check if the partition is NTFS
+                if is_ntfs_partition(&mut file)? {
+                    // If it's NTFS, add it to the list
+                    ntfs_drives.push(drive);
+                }
+            }
+        }
+    }
+    Ok(ntfs_drives)
+}
+
+/// Function to check if a partition is NTFS by looking for the NTFS signature
+fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> io::Result<bool> {
+    let mut boot_sector = [0u8; 512];  // Boot sector is typically 512 bytes
+
+    // Seek to the start of the partition and read the first 512 bytes (the boot sector)
+    reader.seek(SeekFrom::Start(0))?;
+    reader.read_exact(&mut boot_sector)?;
+
+    // Check if the signature at offset 3 matches "NTFS    "
+    Ok(&boot_sector[3..11] == NTFS_SIGNATURE)
+}
 
 pub fn initialize_ntfs<T: Read + Seek>(fs: &mut T) -> Result<Ntfs> {
     let mut ntfs = Ntfs::new(fs)?;
@@ -67,7 +107,7 @@ where
     Ok(())
 }
 
-fn list_files_in_current_dir<T>(info: &mut CommandInfo<T>, config: &SearchConfig, out_dir: &str) -> Result<()>
+pub fn list_files_in_current_dir<T>(info: &mut CommandInfo<T>, config: &SearchConfig, out_dir: &str) -> Result<()>
 where
     T: Read + Seek,
 {

@@ -50,10 +50,10 @@ fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> io::Result<bool> {
 
     // Seek to the start of the partition and read the first 512 bytes (the boot sector)
     reader.seek(SeekFrom::Start(0))?;
-    reader.read_exact(&mut boot_sector)?;
-
-    // Check if the signature at offset 3 matches "NTFS    "
-    Ok(&boot_sector[3..11] == NTFS_SIGNATURE)
+    match reader.read_exact(&mut boot_sector) {
+        Ok(_) => return Ok(&boot_sector[3..11] == NTFS_SIGNATURE),
+        Err(_) => return Ok(false),
+    };
 }
 
 pub fn initialize_ntfs<T: Read + Seek>(fs: &mut T) -> Result<Ntfs> {

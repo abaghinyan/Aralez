@@ -11,13 +11,15 @@ use anyhow::Result;
 use serde::Deserialize;
 use std::collections::HashMap;
 use serde::Serialize;
+use hostname::get;
+use chrono::prelude::*;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
     pub entries: HashMap<String, Vec<SearchConfig>>,
     pub tools: Vec<ToolConfig>,
     pub win_tools: Vec<ToolConfig>,
-    output_filename: String,
+    pub output_filename: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -35,6 +37,31 @@ pub struct ToolConfig {
     pub args: Vec<String>,
     pub output_file: String,
 }
+
+impl Config {
+    pub fn get_output_filename(&self) -> String {
+
+        let machine_name = get()
+        .ok()
+        .and_then(|hostname| hostname.into_string().ok())
+        .unwrap_or_else(|| "machine".to_string());
+
+        let local: DateTime<Local> = Local::now();
+        let datetime = local.format("%Y-%m-%d_%H-%M-%S").to_string();
+
+        let mut vars: HashMap<&str, &str> = HashMap::new();
+        vars.insert("hostname", &machine_name);
+        vars.insert("datetime", &datetime);
+
+        let mut output_filename_expand = self.output_filename.clone();
+
+        for (key, value) in vars {
+            output_filename_expand = output_filename_expand.replace(&format!("{{{{{}}}}}", key), value);
+        }
+        output_filename_expand
+    }
+}
+
 
 impl SearchConfig {
     // Method to get dir_path with environment variables replaced
@@ -78,8 +105,9 @@ impl Config {
 
         Config {
             entries: expanded_entries,
-            tools: self.tools.clone(), // Tools don't need placeholder expansion in this case
-            win_tools: self.win_tools.clone(), // WinTools don't need placeholder expansion in this case
+            tools: self.tools.clone(), 
+            win_tools: self.win_tools.clone(), 
+            output_filename: self.get_output_filename()
         }
     }
 }

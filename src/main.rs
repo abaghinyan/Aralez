@@ -28,7 +28,6 @@ use clap::Parser;
 use clap::{Arg, Command};
 use config::{Config, SearchConfig};
 use embin::execute;
-use hostname::get;
 use indicatif::{ProgressBar, ProgressStyle};
 use sector_reader::SectorReader;
 use std::collections::{HashMap, HashSet};
@@ -197,12 +196,8 @@ fn main() -> Result<()> {
         env::set_var("DEBUG_MODE", "true");
         println!("Debug mode activated!");
     }
-    let machine_name = get()
-        .ok()
-        .and_then(|hostname| hostname.into_string().ok())
-        .unwrap_or_else(|| "machine".to_string());
 
-    let root_output = &machine_name;
+    let root_output = &config.get_output_filename();
 
     let ntfs_drives = list_ntfs_drives()?;
     // Loop through each NTFS drive and process, skipping the C drive
@@ -352,6 +347,21 @@ fn main() -> Result<()> {
             // Mark the path as processed
             processed_paths.insert(path_key);
         }
+    }
+    
+    dprintln!("Collect completed");
+
+    // Move the logfile into the root folder
+    let logfile = "aralez.log";
+    if Path::new(logfile).exists() {
+        if Path::new(root_output).exists() {
+            let destination_file = format!("{}/{}", root_output, logfile);
+            fs::rename(logfile, &destination_file)?;
+        } else {
+            dprintln!("Root file not found");
+        }
+    } else {
+        dprintln!("The log file not found");
     }
 
     zip_dir(root_output)?;

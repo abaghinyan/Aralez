@@ -166,3 +166,5 @@ win_tools:
   - name: "powershell"
     args: ["-command", "Get-ComputerInfo"]
     output_file: "ComputerInfo.txt"
+
+output_filename: "Aralez_{{hostname}}_{{datetime}}"

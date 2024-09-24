@@ -97,6 +97,21 @@ Each search configuration specifies:
 - `objects`: A list of objects to include.
 - `max_size`: The maximum file size to retrieve.
 - `encrypt`: An optional password for AES-GCM encryption. If provided, the files will be encrypted and saved with an `.enc` extension.
+- `regex`: Activate the regex in objects 
+
+#### Windows Environment Variables for dir_path
+
+Aralez supports the inclusion of Windows environment variables within the `dir_path` field, allowing dynamic file retrieval based on system-specific paths. Variables must be wrapped in %...% and will automatically expand to the corresponding system values during execution. For example, `%USERPROFILE%` will be replaced by the user's profile directory. This feature provides flexibility when defining file retrieval paths, making it easier to target system-specific locations across different machines and users.
+
+**Example of dir_path with environment variables**
+```yml
+entries:
+  files:
+    - dir_path: "%USERPROFILE%\\Documents"
+      extensions: [".docx", ".pdf"]
+      max_size: 1048576
+      encrypt: "infected"
+```
 
 #### Regex Patterns for objects
 
@@ -145,6 +160,23 @@ let config = SearchConfig {
     encrypt: Some("infected".to_string()), // Encrypt files with the password "infected"
 };
 ```
+
+### Customizing the ZIP Archive Filename
+
+You can customize the output ZIP filename by specifying the output_filename field in the configuration file. The tool supports the use of variables such as {{hostname}} to dynamically insert the machine's hostname, and {{datetime}} to insert the execution timestamp (in YYYY-MM-DD_HH-mm-ss format).
+Example configuration:
+
+```yaml
+output_filename: "Aralez_{{hostname}}_{{datetime}}"
+```
+
+In this example, the output filename will be generated dynamically based on the machine’s hostname and the execution date. For instance, if the tool is run on a machine named MyPC on September 23, 2024, the output file will be named:
+
+```python
+Aralez_MyPC_2024-09-23_10-30-10.zip
+```
+
+This feature allows for easier identification and organization of collected data by machine and execution time.
 
 ## Encryption Process
 
@@ -261,6 +293,10 @@ machine_name/
 │   ├── ProcDetailsInfo.txt
 │   └── PortsInfo.txt
 ```
+
+### Logfile: aralez.log
+
+During the execution of the tool, all actions are logged into the `aralez.log` file. This log contains timestamps and detailed information about each step of the collection process, including tool execution status, errors, and other runtime information.
 
 ## Contributing
 

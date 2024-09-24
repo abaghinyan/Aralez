@@ -230,10 +230,11 @@ fn main() -> Result<()> {
 
             // Prepare search configuration to target the MFT file
             let search_config = SearchConfig {
-                dir_path: "".to_string(), // Root directory to find $MFT
-                extensions: Some(vec!["$MFT".to_string()]), // Look for $MFT
-                max_size: None, // No size limit for the MFT
-                encrypt: None, // You can add encryption here if needed
+                dir_path: "".to_string(),
+                objects: Some(vec!["$MFT".to_string()]), 
+                max_size: None, 
+                encrypt: None, 
+                regex: None, 
             };
 
             // Use find_files_in_dir to process the $MFT file for each drive
@@ -338,8 +339,8 @@ fn main() -> Result<()> {
     for (user, search_config) in consolidated_configs {
         let path_key = format!(
             "{}\\{:?}",
-            search_config.dir_path,
-            search_config.extensions.clone().unwrap_or_default()
+            search_config.get_expanded_dir_path(),
+            search_config.objects.clone().unwrap_or_default()
         );
 
         // Skip processing if this path has already been processed
@@ -388,7 +389,7 @@ where
     T: Read + Seek,
 {
     let drive = format!("{}\\{}", root_output.to_string(), "C");
-    ntfs_reader::find_files_in_dir(info, config, &format!("{}\\{}", drive, &config.dir_path))
+    ntfs_reader::find_files_in_dir(info, config, &format!("{}\\{}", drive, &config.get_expanded_dir_path()))
 }
 
 fn zip_dir(dir_name: &str) -> io::Result<()> {

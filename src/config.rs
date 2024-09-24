@@ -6,6 +6,7 @@
 // Author(s): Areg Baghinyan
 //
 
+use crate::utils::replace_env_vars;
 use anyhow::Result;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -16,14 +17,16 @@ pub struct Config {
     pub entries: HashMap<String, Vec<SearchConfig>>,
     pub tools: Vec<ToolConfig>,
     pub win_tools: Vec<ToolConfig>,
+    output_filename: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SearchConfig {
     pub dir_path: String,
-    pub extensions: Option<Vec<String>>,
+    pub objects: Option<Vec<String>>,
     pub max_size: Option<u64>,
     pub encrypt: Option<String>,
+    pub regex: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -31,6 +34,13 @@ pub struct ToolConfig {
     pub name: String,
     pub args: Vec<String>,
     pub output_file: String,
+}
+
+impl SearchConfig {
+    // Method to get dir_path with environment variables replaced
+    pub fn get_expanded_dir_path(&self) -> String {
+        replace_env_vars(&self.dir_path)
+    }
 }
 
 impl Config {
@@ -56,10 +66,11 @@ impl Config {
             let mut expanded_configs = Vec::new();
             for config in configs {
                 expanded_configs.push(SearchConfig {
-                    dir_path: expand(&config.dir_path, variables),
-                    extensions: config.extensions.clone(),
+                    dir_path: expand(&config.get_expanded_dir_path(), variables),
+                    objects: config.objects.clone(),
                     max_size: config.max_size,
                     encrypt: config.encrypt.clone(),
+                    regex: config.regex,
                 });
             }
             expanded_entries.insert(key.clone(), expanded_configs);

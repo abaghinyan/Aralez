@@ -87,16 +87,32 @@ aralez.exe --debug
 
 ### Embedded Configuration
 
-Aralez uses an embedded YAML configuration file to define the directories, file extensions, and other parameters for file retrieval. This configuration is expanded for each user detected on the system.
+Aralez uses an embedded YAML configuration file to define the directories, objects (file or directory), and other parameters for file retrieval. This configuration is expanded for each user detected on the system.
 
 ### Search Configurations
 
 Each search configuration specifies:
 
 - `dir_path`: The directory to search within.
-- `extensions`: A list of file extensions to include.
+- `objects`: A list of objects to include.
 - `max_size`: The maximum file size to retrieve.
 - `encrypt`: An optional password for AES-GCM encryption. If provided, the files will be encrypted and saved with an `.enc` extension.
+
+#### Regex Patterns for objects
+
+Aralez allows you to define complex file search patterns using regular expressions (regex) **for objects only**, not for directory paths. You can use these patterns to retrieve files based on their extension or location within the directory tree.
+
+- `[".*\\.evtx$"]`: This pattern will match files with a `.evtx` extension located in **one level** of subdirectories. Specifically:
+  - `.*`: Matches any file name without extension.
+  - `\\.`: Matche dot.
+  - `evtx$`: Matches any file ending with the `evtx` extension.
+
+- `[".*\\\\.*\\.evtx$"]`: This pattern will match `.evtx` files located in a folder **or any of its subfolders**. It works recursively:
+  - `.*`: Matches any folder or subfolder (including recursive subdirectories).
+  - `\\\\`: A literal backslash, separating the folder from the file name.
+  - `*.evtx`: Matches any file ending with the `.evtx` extension.
+
+> **Note**: if the objects end by `\\\\` it means that the **objects** are folders. If not, it means that we want to search files.
 
 ### Example Configuration
 Collect some files:

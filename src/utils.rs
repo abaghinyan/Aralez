@@ -16,25 +16,14 @@ use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce}; // AES-GCM cipher
 use rand::RngCore;
 use sha2::{Sha256, Digest};
-
-/// Prints detailed information about a file.
-#[allow(dead_code)]
-pub fn print_file_info(file: &NtfsFile) {
-    println!("{:=^72}", " FILE RECORD ");
-    println!("{:34}{}", "Allocated Size:", file.allocated_size());
-    println!("{:34}{:#x}", "Byte Position:", file.position());
-    println!("{:34}{}", "Data Size:", file.data_size());
-    println!("{:34}{}", "Hard-Link Count:", file.hard_link_count());
-    println!("{:34}{}", "Is Directory:", file.is_directory());
-    println!("{:34}{:#x}", "Record Number:", file.file_record_number());
-    println!("{:34}{}", "Sequence Number:", file.sequence_number());
-}
+use regex::Regex;
+use std::env;
 
 pub fn get<T>(file: &NtfsFile, filename: &str, out_dir: &str, fs: &mut T, encrypt: Option<&String>) -> Result<()>
 where
     T: Read + Seek,
-{
-    let (file_name, data_stream_name) = (get_file_name(file, fs).unwrap_or_else(|_| filename.to_string()), out_dir);
+{   
+    let (file_name, data_stream_name) = (get_object_name(file, fs).unwrap_or_else(|_| filename.to_string()), out_dir);
     create_dir_all(out_dir)?;
 
     // Check if encryption is required
@@ -121,7 +110,7 @@ where
     Ok(())
 }
 /// Retrieves the name of the file from the NTFS $FILE_NAME attribute.
-pub fn get_file_name<T: Read + Seek>(file: &NtfsFile, fs: &mut T) -> Result<String, NtfsError> {
+pub fn get_object_name<T: Read + Seek>(file: &NtfsFile, fs: &mut T) -> Result<String, NtfsError> {
     if let Some(result) = file.name(fs, Some(NtfsFileNamespace::Win32), None) {
         match result {
             Ok(name) => Ok(name.name().to_string_lossy().to_string()),
@@ -157,4 +146,23 @@ pub fn ensure_directory_exists(path: &str) -> std::io::Result<()> {
         dprintln!("Created output directory: {}", path.display());
     }
     Ok(())
+}
+
+pub fn replace_env_vars(input: &str) -> String {
+    // Regex pattern to match %VAR_NAME% or %SYSTEM_VAR_NAME%
+    let re = Regex::new(r"%([^%]+)%").unwrap();
+    
+    // Replace each match with the corresponding environment variable value
+    let result = re.replace_all(input, |caps: &regex::Captures| {
+        let var_name = &caps[1];
+        env::var(var_name).unwrap_or_else(|_| format!("%{}%", var_name))
+    });
+
+    let mut replaced_str = result.into_owned(); // Convert to owned String
+
+    // Remove the "C:\" from the beginning if it exists
+    if replaced_str.starts_with("C:\\") {
+        replaced_str = replaced_str.strip_prefix("C:\\").unwrap().to_string();
+    }
+    replaced_str
 }

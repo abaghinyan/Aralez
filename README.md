@@ -292,6 +292,7 @@ machine_name/
 │   ├── ProcInfo.txt
 │   ├── ProcDetailsInfo.txt
 │   └── PortsInfo.txt
+├── aralez.log
 ```
 
 ### Logfile: aralez.log

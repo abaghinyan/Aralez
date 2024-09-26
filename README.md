@@ -108,7 +108,7 @@ Aralez supports the inclusion of Windows environment variables within the `dir_p
 entries:
   files:
     - dir_path: "%USERPROFILE%\\Documents"
-      extensions: [".docx", ".pdf"]
+      objects: [".docx", ".pdf"]
       max_size: 1048576
       encrypt: "infected"
 ```
@@ -135,7 +135,7 @@ Collect some files:
 entries:
   files:
     - dir_path: "Users/{user}/Documents"
-      extensions: [".docx", ".pdf"]
+      objects: [".docx", ".pdf"]
       max_size: 1048576
       encrypt: "infected"
 ```
@@ -155,7 +155,7 @@ The tool uses the `SearchConfig` struct to manage and apply these configurations
 ```rust
 let config = SearchConfig {
     dir_path: "Users/{user}/Documents".to_string(),
-    extensions: Some(vec![".docx".to_string(), ".pdf".to_string()]),
+    objects: Some(vec![".docx".to_string(), ".pdf".to_string()]),
     max_size: Some(1_048_576), // 1 MB
     encrypt: Some("infected".to_string()), // Encrypt files with the password "infected"
 };

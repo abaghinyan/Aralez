@@ -123,7 +123,7 @@ fn find_marker(data: &[u8], marker: &[u8]) -> Option<usize> {
     data.windows(marker.len())
         .rposition(|window| window == marker) // rposition finds the last occurrence
 }
-fn main() -> Result<()> {
+fn main() -> Result<()> {   
     // Print the welcome message
     println!(
         "Welcome to {} version {}",

@@ -1,10 +1,39 @@
+use std::env;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::Path;
 use reqwest::blocking::get;
 use zip::ZipArchive;
+use std::process::Command;
 
 fn main() {
+    let target = std::env::var("TARGET").unwrap();
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let host_os = std::env::consts::OS;
+
+    if host_os == "linux" && target_os == "windows" {
+        // Use the appropriate windres for 32-bit or 64-bit Windows targets
+        let windres = if target.contains("x86_64") {
+            "x86_64-w64-mingw32-windres"
+        } else {
+            "i686-w64-mingw32-windres"
+        };
+
+        // Compile the .rc file into a .res file using the selected windres
+        let status = Command::new(windres)
+            .args(&["app.rc", "-O", "coff", "-o", "app.res"])
+            .status()
+            .expect("Failed to run windres");
+
+        if !status.success() {
+            eprintln!("Error: windres failed with exit code {}", status);
+            std::process::exit(1);
+        }
+
+        // Link the .res file into the final binary
+        println!("cargo:rustc-link-arg-bin=aralez=app.res");
+    }
+
     let tools_dir = Path::new("tools");
 
     // Ensure the tools directory exists

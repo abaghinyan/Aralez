@@ -1,4 +1,5 @@
 /target
 tools/*
 
+app.res 
 !tools/.gitkeep 

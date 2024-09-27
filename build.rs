@@ -11,28 +11,41 @@ fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let host_os = std::env::consts::OS;
 
-    if host_os == "linux" && target_os == "windows" {
-        // Use the appropriate windres for 32-bit or 64-bit Windows targets
-        let windres = if target.contains("x86_64") {
-            "x86_64-w64-mingw32-windres"
-        } else {
-            "i686-w64-mingw32-windres"
-        };
-
-        // Compile the .rc file into a .res file using the selected windres
-        let status = Command::new(windres)
-            .args(&["app.rc", "-O", "coff", "-o", "app.res"])
-            .status()
-            .expect("Failed to run windres");
-
-        if !status.success() {
-            eprintln!("Error: windres failed with exit code {}", status);
-            std::process::exit(1);
+    if target_os == "windows" {
+        if host_os == "linux" {
+            // Use the appropriate windres for 32-bit or 64-bit Windows targets
+            let windres = if target.contains("x86_64") {
+                "x86_64-w64-mingw32-windres"
+            } else {
+                "i686-w64-mingw32-windres"
+            };
+    
+            // Compile the .rc file into a .res file using the selected windres
+            let status = Command::new(windres)
+                .args(&["app.rc", "-O", "coff", "-o", "app.res"])
+                .status()
+                .expect("Failed to run windres");
+    
+            if !status.success() {
+                eprintln!("Error: windres failed with exit code {}", status);
+                std::process::exit(1);
+            }
+    
+            // Link the .res file into the final binary
+            println!("cargo:rustc-link-arg-bin=aralez=app.res");
+        } else if host_os == "windows" {
+            let mut res = winres::WindowsResource::new();
+        
+            // Set the manifest directly as a string
+            res.set_manifest_file("app.manifest");
+            
+            if let Err(e) = res.compile() {
+                eprintln!("Failed to compile Windows resources: {}", e);
+                std::process::exit(1);
+            }
         }
-
-        // Link the .res file into the final binary
-        println!("cargo:rustc-link-arg-bin=aralez=app.res");
     }
+    
 
     let tools_dir = Path::new("tools");
 

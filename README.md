@@ -38,7 +38,9 @@ Aralez is a triage collector tool designed for gathering critical system informa
 
 ### Build Instructions
 
-To be compatible with Windows 7, you should compile on Windows. If you want to build `aralez.exe` from the source:
+#### Windows
+> [!IMPORTANT] 
+> To be compatible with Windows 7, you should compile on Windows. If you want to build `aralez.exe` from the source:
 
 1. **Rust**: Ensure you have the Rust toolchain installed. You can install Rust by following the instructions at [rust-lang.org](https://www.rust-lang.org/).
    
@@ -54,6 +56,37 @@ To be compatible with Windows 7, you should compile on Windows. If you want to b
    ```
 
 4. **The executable**: The `aralez.exe` binary will be located in the `target/release` directory.
+
+#### Linux (Ubuntu)
+> [!WARNING] 
+> On Linux, you cannot compile using the `i686-pc-windows-msvc` or `x86_64-pc-windows-msvc` targets, meaning your binary will not be compatible with Windows 7 if you attempt to use these targets.
+
+1. **Install Required Packages**
+Install the necessary tools for cross-compiling to Windows using `mingw-w64`:
+    ```bash
+    sudo apt install mingw-w64
+    ```
+
+2. **Rust**: Ensure you have the Rust toolchain installed. You can install Rust by following the instructions at [rust-lang.org](https://www.rust-lang.org/).
+Add `i686-pc-windows-gnu` and `x86_64-pc-windows-gnu`
+    ```bash
+    rustup target add i686-pc-windows-gnu
+    rustup target add x86_64-pc-windows-gnu
+    ```
+3. **Clone the repository**:
+   ```bash
+   git clone https://github.com/abaghinyan/aralez.git
+   cd aralez
+   ```
+4. **Build the project**:
+Compile the project for the Windows GNU targets:
+   ```bash
+   cargo build --release --target i686-pc-windows-gnu
+   cargo build --release --target x86_64-pc-windows-gnu
+   ```
+
+5. **The executable**: 
+The `aralez.exe` binary will be located in the `target/i686-pc-windows-gnu/release` and `target/x86_64-pc-windows-gnu/release` directories.
 
 ## Usage
 

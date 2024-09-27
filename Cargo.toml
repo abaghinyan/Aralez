@@ -1,6 +1,6 @@
 [package]
 name = "aralez"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "Aralez is a triage collector tool."
 authors = ["Areg Baghinyan <areg@baghinyan.com>"]
@@ -31,6 +31,7 @@ sha2 = "0.10"
 serde_json = "1.0"
 md5 = "0.7.0"
 regex = "1"
+indexmap = { version = "2.5", features = ["serde"] }
 
 [build-dependencies]
 reqwest = { version = "0.12", features = ["blocking"] }

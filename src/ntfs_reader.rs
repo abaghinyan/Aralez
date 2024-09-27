@@ -107,10 +107,10 @@ where
             if file.is_directory() {
                 info.current_directory.push(file);
             } else {
-                dprintln!("Expected {} to be a directory in {:?}", component, &dir_path);
+                dprintln!("[ERROR] Expected {} to be a directory in {:?}", component, &dir_path);
             }
         } else {
-            dprintln!("Directory {} not found in {:?}", component, &dir_path);
+            dprintln!("[WARN] Directory {} not found in {:?}", component, &dir_path);
         }
     }
     Ok(())
@@ -131,7 +131,7 @@ where
         let entry = match entry_result {
             Ok(entry) => entry,
             Err(_e) => {
-                dprintln!("Error reading entry: {:?}", _e);
+                dprintln!("[ERROR] Error reading entry: {:?}", _e);
                 continue; // Skip to the next entry if there is an error
             }
         };
@@ -139,7 +139,7 @@ where
         let file = match entry.to_file(info.ntfs, &mut info.fs) {
             Ok(file) => file,
             Err(_e) => {
-                dprintln!("Error converting entry to file: {:?}", _e);
+                dprintln!("[ERROR] Error converting entry to file: {:?}", _e);
                 continue; // Skip to the next entry if there is an error
             }
         };
@@ -159,18 +159,18 @@ where
                 if let Some(ref objects) = config.objects {
                     if objects.contains(&".*".to_string()) && !file.is_directory() {
                         if seen_files.insert(file_name.clone()) && config.max_size.map_or(true, |max| file_size <= max) {
-                            dprintln!("Found file: {}", file_name);
+                            dprintln!("[INFO] Found file: {}", file_name);
                             get(&file, &file_name, out_dir, &mut info.fs, config.encrypt.as_ref())?;
                         }
                     } else if objects.contains(&"".to_string()) {
                         if seen_files.insert(file_name.clone()) {
                             if file.is_directory() {
-                                dprintln!("Found directory: {}", file_name);
+                                dprintln!("[INFO] Found directory: {}", file_name);
                                 let dir_path = format!("{}/{}", out_dir, file_name);
                                 std::fs::create_dir_all(&dir_path)?;
                                 directories_to_recurse.push((file, dir_path));
                             } else if config.max_size.map_or(true, |max| file_size <= max) {
-                                dprintln!("Found file: {}", file_name);
+                                dprintln!("[INFO] Found file: {}", file_name);
                                 get(&file, &file_name, out_dir, &mut info.fs, config.encrypt.as_ref())?;
                             }
                         }
@@ -178,7 +178,7 @@ where
                         for ext in objects {
                             if !file.is_directory() && file_name.ends_with(ext) && seen_files.insert(file_name.clone()) {
                                 if config.max_size.map_or(true, |max| file_size <= max) {
-                                    dprintln!("Found file: {}", file_name);
+                                    dprintln!("[INFO] Found file: {}", file_name);
                                     get(&file, &file_name, out_dir, &mut info.fs, config.encrypt.as_ref())?;
                                 }
                                 break;
@@ -189,14 +189,14 @@ where
                     // Handle the case where no objects are specified
                     if !file.is_directory() && seen_files.insert(file_name.clone()) {
                         if config.max_size.map_or(true, |max| file_size <= max) {
-                            dprintln!("Found file: {}", file_name);
+                            dprintln!("[INFO] Found file: {}", file_name);
                             get(&file, &file_name, out_dir, &mut info.fs, config.encrypt.as_ref())?;
                         }
                     }
                 }
             }
             Err(_e) => {
-                dprintln!("Error getting file name: {:?}", _e);
+                dprintln!("[ERROR] Error getting file name: {:?}", _e);
                 continue; // Skip to the next entry if there is an error
             }
         }
@@ -243,7 +243,7 @@ where
         let entry = match entry_result {
             Ok(entry) => entry,
             Err(_e) => {
-                dprintln!("Error reading entry: {:?}", _e);
+                dprintln!("[ERROR] Error reading entry: {:?}", _e);
                 continue; // Skip to the next entry if there is an error
             }
         };
@@ -251,7 +251,7 @@ where
         let file: ntfs::NtfsFile<'_> = match entry.to_file(info.ntfs, &mut info.fs) {
             Ok(file) => file,
             Err(_e) => {
-                dprintln!("Error converting entry to file: {:?}", _e);
+                dprintln!("[ERROR] Error converting entry to file: {:?}", _e);
                 continue; // Skip to the next entry if there is an error
             }
         };
@@ -293,7 +293,7 @@ where
                         if (matches_folder_pattern || (relative_path.is_empty() && folder_patterns.as_ref().unwrap().len() == 0)) && seen_files.insert(object_name.clone()) {
                             // Respect the original file size limit
                             if config.max_size.map_or(true, |max| file_size <= max) {
-                                dprintln!("Found file: {}", object_name);
+                                dprintln!("[INFO] Found file: {}", object_name);
                                 get(&file, &object_name, out_dir, &mut info.fs, config.encrypt.as_ref())?;
                             }
                         }
@@ -303,7 +303,7 @@ where
 
             }
             Err(_e) => {
-                dprintln!("Error getting file name: {:?}", _e);
+                dprintln!("[ERROR] Error getting file name: {:?}", _e);
                 continue; // Skip to the next entry if there is an error
             }
         }
@@ -337,7 +337,7 @@ where
         let entry = match entry_result {
             Ok(entry) => entry,
             Err(_e) => {
-                dprintln!("Error reading entry: {:?}", _e);
+                dprintln!("[ERROR] Error reading entry: {:?}", _e);
                 continue; // Skip to the next entry if there is an error
             }
         };
@@ -345,7 +345,7 @@ where
         let file = match entry.to_file(info.ntfs, &mut info.fs) {
             Ok(file) => file,
             Err(_e) => {
-                dprintln!("Error converting entry to file: {:?}", _e);
+                dprintln!("[ERROR] Error converting entry to file: {:?}", _e);
                 continue; // Skip to the next entry if there is an error
             }
         };

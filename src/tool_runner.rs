@@ -34,7 +34,7 @@ pub fn run_tool(tool_name: &str, args: &[&str], output_filename: &str, output_pa
     let mut file = fs::File::create(&output_file_path)?;
     file.write_all(&output.stdout)?;
 
-    dprintln!("Tool output has been saved to: {}", output_file_path.display());
+    dprintln!("[INFO] Tool output has been saved to: {}", output_file_path.display());
     
     Ok(())
 }

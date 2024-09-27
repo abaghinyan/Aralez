@@ -59,7 +59,7 @@ fn save_output_to_file(output: &[u8], output_filename: &str, output_path: &str) 
 }
 
 fn cleanup_temp_file(temp_exe_path: &Path) -> io::Result<()> {
-    dprintln!("{:?}", temp_exe_path);
+    dprintln!("[INFO] {:?}", temp_exe_path);
     if temp_exe_path.exists() {
         remove_file(temp_exe_path)?;
     }

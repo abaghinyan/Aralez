@@ -13,10 +13,11 @@ use std::collections::HashMap;
 use serde::Serialize;
 use hostname::get;
 use chrono::prelude::*;
+use indexmap::IndexMap;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
-    pub entries: HashMap<String, Vec<SearchConfig>>,
+    pub entries: IndexMap<String, Vec<SearchConfig>>,
     pub tools: Vec<ToolConfig>,
     pub win_tools: Vec<ToolConfig>,
     pub output_filename: String,
@@ -87,7 +88,7 @@ impl Config {
             result
         };
 
-        let mut expanded_entries = HashMap::new();
+        let mut expanded_entries = IndexMap::new();
         
         for (key, configs) in &self.entries {
             let mut expanded_configs = Vec::new();

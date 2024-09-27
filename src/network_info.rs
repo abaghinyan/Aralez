@@ -46,7 +46,7 @@ pub fn get_tcp_connections() -> Vec<(Ipv4Addr, u16, Ipv4Addr, u16, &'static str)
         let result = GetTcpTable(None, &mut buffer_size, FALSE);
 
         if result != ERROR_INSUFFICIENT_BUFFER.0 {
-            dprintln!("Failed to get the required buffer size for TCP table. Error code: {}", result);
+            dprintln!("[ERROR] Failed to get the required buffer size for TCP table. Error code: {}", result);
             return tcp_connections;
         }
 
@@ -67,7 +67,7 @@ pub fn get_tcp_connections() -> Vec<(Ipv4Addr, u16, Ipv4Addr, u16, &'static str)
                 tcp_connections.push((local_address, local_port, remote_address, remote_port, state));
             }
         } else {
-            dprintln!("Failed to get TCP table. Error code: {}", result);
+            dprintln!("[ERROR] Failed to get TCP table. Error code: {}", result);
         }
     }
 
@@ -92,7 +92,7 @@ pub fn run_network_info(filename: &str, path: &Path) -> io::Result<()> {
         )?;
     }
 
-    dprintln!("Port information written to {:?}", full_path);
+    dprintln!("[INFO] Port information written to {:?}", full_path);
 
     Ok(())
 }

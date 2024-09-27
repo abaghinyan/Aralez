@@ -18,6 +18,7 @@ use rand::RngCore;
 use sha2::{Sha256, Digest};
 use regex::Regex;
 use std::env;
+use std::io;
 
 pub fn get<T>(file: &NtfsFile, filename: &str, out_dir: &str, fs: &mut T, encrypt: Option<&String>) -> Result<()>
 where
@@ -56,7 +57,7 @@ where
     let data_item = match file.data(fs, "") {
         Some(data_item) => data_item?,
         None => {
-            dprintln!("The file does not have a \"{data_stream_name}\" $DATA attribute.");
+            dprintln!("[WARN] The file does not have a \"{data_stream_name}\" $DATA attribute.");
             return Ok(());
         }
     };
@@ -65,7 +66,7 @@ where
     let mut data_value = data_attribute.value(fs)?;
 
     dprintln!(
-        "Saving {} bytes of data in \"{}\"...",
+        "[INFO] Saving {} bytes of data in \"{}\"...",
         data_value.len(),
         output_file_name
     );
@@ -143,7 +144,7 @@ pub fn ensure_directory_exists(path: &str) -> std::io::Result<()> {
     let path = Path::new(path);
     if !path.exists() {
         fs::create_dir_all(path)?;
-        dprintln!("Created output directory: {}", path.display());
+        dprintln!("[INFO] Created output directory: {}", path.display());
     }
     Ok(())
 }
@@ -165,4 +166,34 @@ pub fn replace_env_vars(input: &str) -> String {
         replaced_str = replaced_str.strip_prefix("C:\\").unwrap().to_string();
     }
     replaced_str
+}
+
+pub fn remove_dir_all(path: &str) -> io::Result<()> {
+    let path = Path::new(path);  // Convert the string to a Path
+    if path.is_dir() {
+        // Iterate over all entries in the directory
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let entry_path = entry.path();
+
+            // Recursively remove directory contents or remove the file
+            if entry_path.is_dir() {
+                // Convert Path to &str safely and recursively call remove_dir_all
+                if let Some(entry_str) = entry_path.to_str() {
+                    remove_dir_all(entry_str)?;  // Recursively call the function and propagate errors
+                } else {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Invalid UTF-8 sequence in path",
+                    ));
+                }
+            } else {
+                // If the entry is a file, remove it
+                fs::remove_file(&entry_path)?;
+            }
+        }
+        // Once the directory is empty, remove the directory itself
+        fs::remove_dir(path)?;
+    }
+    Ok(())
 }

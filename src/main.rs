@@ -37,6 +37,7 @@ use std::io::BufReader;
 use std::io::{self, Write};
 use std::io::{Read, Seek, SeekFrom};
 use utils::ensure_directory_exists;
+use utils::remove_dir_all;
 use zip::{write::FileOptions, ZipWriter};
 use std::path::Path;
 
@@ -199,6 +200,9 @@ fn main() -> Result<()> {
 
     let root_output = &config.get_output_filename();
 
+    dprintln!("Aralez version: {}", env!("CARGO_PKG_VERSION"));
+    
+
     let ntfs_drives = list_ntfs_drives()?;
     // Loop through each NTFS drive and process, skipping the C drive
     for drive in ntfs_drives {
@@ -206,7 +210,7 @@ fn main() -> Result<()> {
         if drive.starts_with("C:") {
             continue;
         }
-        dprintln!("Processing drive: {}", drive);
+        dprintln!("[INFO] Processing drive: {}", drive);
         let drive_letter = match drive.chars().next() {
             Some(l) => l,
             None => continue  
@@ -291,7 +295,7 @@ fn main() -> Result<()> {
                 pb.inc(1); // Increment the progress bar
                 pb.set_message(format!("Processing: {} tool", tool.name));
             }
-            Err(e) => dprintln!("Error running {}: {}", tool.name, e),
+            Err(e) => dprintln!("[ERROR] Error running {}: {}", tool.name, e),
         }
     }
 
@@ -300,29 +304,29 @@ fn main() -> Result<()> {
     // Processes info
     let filename = "ProcInfo.txt";
     if let Err(e) = process::run_ps(filename, &path) {
-        dprintln!("Error: {}", e);
+        dprintln!("[ERROR] ProcInfo : {}", e);
     } else {
         pb.inc(1); // Increment the progress bar
-        pb.set_message(format!("Processing: {} tool", "ProcInfo"));
+        pb.set_message(format!("[INFO] Processing {} tool", "ProcInfo"));
     }
 
     // Process details
     let filename = "ProcDetailsInfo.txt";
     if let Err(e) = process_details::run(&filename, &path) {
-        dprintln!("Error: {}", e);
+        dprintln!("[ERROR] ProcDetailsInfo : {}", e);
     } else {
         pb.inc(1); // Increment the progress bar
-        pb.set_message(format!("Processing: {} tool", "ProcDetailsInfo"));
+        pb.set_message(format!("[INFO] Processing {} tool", "ProcDetailsInfo"));
     }
 
     // Network info
     let filename = "PortsInfo.txt";
 
     if let Err(e) = network_info::run_network_info(filename, &path) {
-        dprintln!("Error writing network info: {}", e);
+        dprintln!("[ERROR] Writing network info: {}", e);
     } else {
         pb.inc(1); // Increment the progress bar
-        pb.set_message(format!("Processing: {} tool", "NetworkInfo (PortsInfo)"));
+        pb.set_message(format!("[INFO] Processing {} tool", "NetworkInfo (PortsInfo)"));
     }
 
     // Get Files
@@ -342,7 +346,7 @@ fn main() -> Result<()> {
         if !processed_paths.contains(&path_key) {
             search_in_config(&mut info, &search_config, root_output)?;
             pb.inc(1); // Increment the progress bar
-            pb.set_message(format!("Processing: {} for user {}", path_key, user));
+            pb.set_message(format!("[INFO] Processing {} for user {}", path_key, user));
 
             // Mark the path as processed
             processed_paths.insert(path_key);
@@ -358,14 +362,17 @@ fn main() -> Result<()> {
             let destination_file = format!("{}/{}", root_output, logfile);
             fs::rename(logfile, &destination_file)?;
         } else {
-            dprintln!("Root file not found");
+            dprintln!("[WARN] Root file not found");
         }
     } else {
-        dprintln!("The log file not found");
+        dprintln!("[WARN] The log file not found");
     }
 
     zip_dir(root_output)?;
-    pb.finish_with_message("Collect complete!");
+
+    remove_dir_all(root_output)?;
+
+    pb.finish_with_message("[INFO] Collect complete!");
 
     Ok(())
 }
@@ -402,6 +409,7 @@ where
     ntfs_reader::find_files_in_dir(info, config, &format!("{}\\{}", drive, &config.get_expanded_dir_path()))
 }
 
+
 fn zip_dir(dir_name: &str) -> io::Result<()> {
     // Create a directory with the given name
     let dir_path = Path::new(dir_name);
@@ -417,9 +425,6 @@ fn zip_dir(dir_name: &str) -> io::Result<()> {
 
     // Finish the zip process
     zip.finish()?;
-
-    // Remove the directory after zipping
-    fs::remove_dir_all(dir_path)?;
 
     Ok(())
 }
@@ -451,3 +456,4 @@ fn add_directory_to_zip<W: Write + Seek>(
 
     Ok(())
 }
+

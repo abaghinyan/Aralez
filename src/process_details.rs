@@ -116,7 +116,7 @@ fn list_loaded_modules(pid: u32) -> Result<Vec<ModuleInfo>> {
         let snapshot = match CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid) {
             Ok(handle) => handle,
             Err(e) if e.code() == HRESULT(0x80070005u32 as i32) => {
-                dprintln!("Access denied for PID: {}. Skipping...", pid);
+                dprintln!("[WARN] Access denied for PID: {}. Skipping...", pid);
                 return Ok(modules); // Return an empty list, or handle as needed
             }
             Err(e) => return Err(e), // Propagate other errors
@@ -301,7 +301,7 @@ fn list_all_processes() -> Result<Vec<ProcessInfo>> {
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)?;
         if snapshot == INVALID_HANDLE_VALUE {
-            dprintln!("Unable to create a snapshot of the processes.");
+            dprintln!("[WARN] Unable to create a snapshot of the processes.");
             return Ok(processes);
         }
 
@@ -367,7 +367,7 @@ fn list_all_processes() -> Result<Vec<ProcessInfo>> {
                 }
             }
         } else {
-            dprintln!("Unable to retrieve the first process.");
+            dprintln!("[WARN] Unable to retrieve the first process.");
         }
 
         let _ = CloseHandle(snapshot);

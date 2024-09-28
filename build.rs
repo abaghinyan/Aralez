@@ -5,8 +5,9 @@ use std::path::Path;
 use reqwest::blocking::get;
 use zip::ZipArchive;
 use std::process::Command;
+use winres::WindowsResource;
 
-fn main() {
+fn main() -> io::Result<()> {
     let target = std::env::var("TARGET").unwrap();
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let host_os = std::env::consts::OS;
@@ -34,11 +35,13 @@ fn main() {
             // Link the .res file into the final binary
             println!("cargo:rustc-link-arg-bin=aralez=app.res");
         } else if host_os == "windows" {
-            let mut res = winres::WindowsResource::new();
+            let mut res = WindowsResource::new();
         
             // Set the manifest directly as a string
             res.set_manifest_file("app.manifest");
-            
+            res.set_icon("assets/aralez.ico")
+            .compile()?;
+
             if let Err(e) = res.compile() {
                 eprintln!("Failed to compile Windows resources: {}", e);
                 std::process::exit(1);
@@ -107,4 +110,6 @@ fn main() {
 
     // This tells Cargo to re-run this script if the build.rs script itself changes.
     println!("cargo:rerun-if-changed=build.rs");
+
+    Ok(())
 }

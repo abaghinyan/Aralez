@@ -7,8 +7,8 @@
 //
 
 use crate::command_info::CommandInfo;
-use crate::config::SearchConfig;
-use crate::utils::{get, get_object_name};
+use crate::config::{SearchConfig, TypeConfig};
+use crate::utils::{get, get_level_path, get_level_path_regex, get_object_name, get_subfolder_level, get_subfolder_level_regex};
 use anyhow::Result;
 use ntfs::{Ntfs};
 use ntfs::indexes::NtfsFileNameIndex;
@@ -18,6 +18,8 @@ use std::io;
 use std::path::Path;
 use std::fs::File;
 use regex::Regex;
+use ntfs::{NtfsFile};
+use glob::Pattern;
 
 const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
 
@@ -75,14 +77,15 @@ where
     navigate_to_directory(info, &element.get_expanded_dir_path())?;
 
     // List all files in the Logs directory
-    let regex_element = match element.regex {
-        Some(el) => el,
-        None => false,
-    };
-    if regex_element {
-        list_files_in_current_dir_regex(info, element, out_dir, String::new())
-    } else {
-        list_files_in_current_dir(info, element, out_dir)
+    match &element.r#type {
+        Some(el_type) => {
+            match el_type {
+                TypeConfig::String => list_files_in_current_dir(info, element, out_dir ),
+                TypeConfig::Glob => list_files_in_current_dir_glob(info, element, out_dir, String::new()),
+                TypeConfig::Regex => list_files_in_current_dir_regex(info, element, out_dir, String::new()),
+            }
+        },
+        None => list_files_in_current_dir_glob(info, element, out_dir, String::new())
     }
 }
 
@@ -273,8 +276,11 @@ where
                     if !relative_path.is_empty() {
                         reg_data = format!("{}\\{}", relative_path, object_name.clone());
                     } 
+                    let level = get_subfolder_level_regex(&reg_data);
                     let matches_pattern = folder_patterns.as_ref().map_or(true, |patterns| {
-                        patterns.iter().any(|regex| regex.is_match(&reg_data))
+                        patterns.iter().any(|regex| {
+                            Regex::new(&get_level_path_regex(regex.as_str(), level).unwrap()).expect("Regex problem").is_match(&reg_data)
+                        })
                     });
                     if matches_pattern {
                         let folder_output_path = format!("{}\\{}", out_dir, object_name);
@@ -299,8 +305,6 @@ where
                         }
                     }
                 }
-
-
             }
             Err(_e) => {
                 dprintln!("[ERROR] Error getting file name: {:?}", _e);
@@ -313,6 +317,118 @@ where
     for (directory, path, relative_path) in directories_to_recurse {
         info.current_directory.push(directory);
         list_files_in_current_dir_regex(info, config, &path, relative_path)?;
+        info.current_directory.pop();
+    }
+
+    Ok(())
+}
+
+pub fn list_files_in_current_dir_glob<T>(info: &mut CommandInfo<T>, config: &SearchConfig, out_dir: &str, relative_path: String) -> Result<()>
+where
+    T: Read + Seek,
+{
+    let mut directories_to_recurse = Vec::new();
+    let current_directory: &NtfsFile<'_> = info.current_directory.last().unwrap();
+    let index = current_directory.directory_index(&mut info.fs)?;
+    let mut entries = index.entries();
+    let mut seen_files = HashSet::new();
+
+    let (folder_patterns, _file_patterns): (Option<Vec<String>>, Option<Vec<String>>) = config.objects.as_ref().map(|patterns| {
+        let mut folder_patterns = Vec::new();
+        let mut file_patterns = Vec::new();
+        for pattern in patterns {
+            let sanitized_pannert = pattern.replace("\\", "/");
+            if let Some(last_sep) = sanitized_pannert.rfind("/") {
+                let folder_part =  &mut format!("{}", &sanitized_pannert[..last_sep]); 
+                let file_part = &sanitized_pannert[last_sep + 1..]; 
+                folder_part.push_str("/");
+                folder_patterns.push(folder_part.to_string());
+                file_patterns.push(file_part.to_string());
+            } else {
+                file_patterns.push(sanitized_pannert);
+            }
+        }
+        (Some(folder_patterns), Some(file_patterns))
+    }).unwrap_or((None, None));
+    while let Some(entry_result) = entries.next(&mut info.fs) {
+        let entry = match entry_result {
+            Ok(entry) => entry,
+            Err(_e) => {
+                dprintln!("[ERROR] Error reading entry: {:?}", _e);
+                continue; // Skip to the next entry if there is an error
+            }
+        };
+
+        let file: ntfs::NtfsFile<'_> = match entry.to_file(info.ntfs, &mut info.fs) {
+            Ok(file) => file,
+            Err(_e) => {
+                dprintln!("[ERROR] Error converting entry to file: {:?}", _e);
+                continue; // Skip to the next entry if there is an error
+            }
+        };
+
+        let file_size = match file.data(&mut info.fs, "") {
+            Some(data_item) => {
+                let data_item = data_item?;  
+                let data_attribute = data_item.to_attribute()?;  
+                data_attribute.value_length()  
+            },
+            None => 0, 
+        };
+        match get_object_name(&file, &mut info.fs) {
+            Ok(object_name) => {
+                if file.is_directory() && (!relative_path.is_empty() || !config.dir_path.is_empty()) {
+                    let reg_data =  if !relative_path.is_empty() {
+                        format!("{}{}/", relative_path, object_name.clone())
+                    } else {
+                        format!("{}/", object_name.clone())
+                    };
+                    folder_patterns.as_ref().map(|patterns| {
+                        for pattern in patterns {
+                            let level = get_subfolder_level(&reg_data);
+                            match get_level_path(pattern, level) {
+                                Some(subpath) => {
+                                    if Pattern::new(subpath.as_str()).expect("Failed to read glob pattern").matches(&reg_data) {
+                                        let folder_output_path = format!("{}/{}", out_dir, object_name);
+                                        directories_to_recurse.push((file.clone(), folder_output_path, reg_data.clone()));
+                                    }
+                                },
+                                None => {
+                                    if Pattern::new(pattern).expect("Failed to read glob pattern").matches(&reg_data) {
+                                        let folder_output_path = format!("{}/{}", out_dir, object_name);
+                                        directories_to_recurse.push((file.clone(), folder_output_path, reg_data.clone()));
+                                    }
+                                },
+                            }
+                        }
+                    });
+                } else {
+                    config.objects.as_ref().map(|patterns| {
+                        for pattern in patterns {
+                            let rel_path = format!("{}{}", relative_path, object_name.clone());
+                            if Pattern::new(&pattern.replace("\\", "/")).expect("Failed to read glob pattern").matches(&rel_path) && 
+                                seen_files.insert(object_name.clone()) {
+                                // Respect the original file size limit
+                                if config.max_size.map_or(true, |max| file_size <= max) {
+                                    dprintln!("[INFO] Found file: {}", object_name);
+                                    get(&file, &object_name, out_dir, &mut info.fs, config.encrypt.as_ref()).expect("Can't get file");
+                                }
+                            }                    
+                        }
+                    } );
+                }
+            }
+            Err(_e) => {
+                dprintln!("[ERROR] Error getting file name: {:?}", _e);
+                continue; // Skip to the next entry if there is an error
+            }
+        }
+    }
+
+    // Process directories after the current entries are done
+    for (directory, path, r_path) in directories_to_recurse {
+        info.current_directory.push(directory);
+        list_files_in_current_dir_glob(info, config, &path, r_path)?;
         info.current_directory.pop();
     }
 
@@ -364,7 +480,5 @@ where
             }
         }
     }
-
     Ok(users)
 }
-

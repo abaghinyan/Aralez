@@ -197,3 +197,35 @@ pub fn remove_dir_all(path: &str) -> io::Result<()> {
     }
     Ok(())
 }
+
+pub fn get_subfolder_level(path: &str) -> usize {
+    // Count the number of '/' characters in the path
+    path.matches('/').count()
+}
+
+pub fn get_level_path(path: &str, level: usize) -> Option<String> {
+    let parts: Vec<&str> = path.split('/').collect();
+    
+    if level < parts.len() {
+        // Join the parts up to the requested level (inclusive)
+        Some(parts[..=level].join("/"))
+    } else {
+        None // Return None if the level doesn't exist
+    }
+}
+
+pub fn get_subfolder_level_regex(path: &str) -> usize {
+    // Count the number of '/' characters in the path
+    path.matches("\\\\").count()
+}
+
+pub fn get_level_path_regex(path: &str, level: usize) -> Option<String> {
+    let parts: Vec<&str> = path.split("\\\\").collect();
+    
+    if level < parts.len() {
+        // Join the parts up to the requested level (inclusive)
+        Some(parts[..=level].join("\\\\"))
+    } else {
+        None // Return None if the level doesn't exist
+    }
+}

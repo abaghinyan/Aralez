@@ -12,15 +12,16 @@ entries:
   
   extend:
     - dir_path: "$Extend"
-      objects: [""]
+      objects: ["**"]
 
   recycle:
     - dir_path: "$Recycle.Bin"
-      objects: [""]
+      objects: ["**"]
       max_size: 10485760
+
   event_logs:
     - dir_path: "Windows\\System32\\winevt\\Logs"
-      objects: [".evtx"]
+      objects: ["*.evtx"]
 
   hive_files:
     - dir_path: "Windows\\System32\\config"
@@ -28,25 +29,25 @@ entries:
 
   user_hive_files:
     - dir_path: "Users\\{{user}}"
-      objects: [".DAT"]
+      objects: ["*.DAT"]
 
   wer_files:
     - dir_path: "ProgramData\\Microsoft\\Windows\\WER\\ReportArchive"
-      objects: [""]
+      objects: ["**"]
     - dir_path: "ProgramData\\Microsoft\\Windows\\WER\\ReportQueue"
-      objects: [""]
+      objects: ["**"]
     - dir_path: "Users\\{{user}}\\AppData\\Local\\Microsoft\\Windows\\WER"
-      objects: [""]
+      objects: ["**"]
 
   prefetch:
     - dir_path: "Windows\\Prefetch"
-      objects: [".pf"]
+      objects: ["*.pf"]
 
   scheduled_tasks:
     - dir_path: "Windows\\System32\\Tasks"
       objects: [".job", ".xml"]
     - dir_path: "Windows\\Tasks"
-      objects: [".job", ".xml"]
+      objects: ["*.job", "*.xml"]
 
   firewall_logs:
     - dir_path: "Windows\\System32\\LogFiles\\Firewall"
@@ -54,21 +55,21 @@ entries:
 
   amcache:
     - dir_path: "Windows\\AppCompat\\Programs"
-      objects: [".hve"]
+      objects: ["*.hve"]
 
   startup_files:
     - dir_path: "ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Start-up"
-      objects: [""]
+      objects: ["**"]
     - dir_path: "Users\\{{user}}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Start-up"
-      objects: [""]
+      objects: ["**"]
 
   windows_shortcuts:
     - dir_path: "Users\\{{user}}\\AppData\\Roaming\\Microsoft\\Windows\\Recent"
-      objects: [".lnk"]
+      objects: ["*.lnk"]
 
   powershell_history:
     - dir_path: "Users\\{{user}}\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadline"
-      objects: [".txt"]
+      objects: ["*.txt"]
 
   wmi:
     - dir_path: "Windows\\System32\\wbem\\Repository"
@@ -76,51 +77,51 @@ entries:
 
   wmi_trace:
     - dir_path: "Windows\\System32\\LogFiles\\WMI"
-      objects: [".etl"]
+      objects: ["*.etl"]
 
   bmc:
     - dir_path: "Windows\\System32\\wdi\\LogFiles"
-      objects: [".etl"]
+      objects: ["*.etl"]
   
   bits:
     - dir_path: "ProgramData\\Microsoft\\Network\\Downloader"
-      objects: [".dat"]
+      objects: ["*.dat"]
 
   browser_history:
     - dir_path: "Users\\{{user}}\\AppData\\Local\\Microsoft\\Windows\\INetCache"
-      objects: [".dat", ".sqlite", ".json"]
+      objects: ["*.dat", "*.sqlite", "*.json"]
     - dir_path: "Users\\{{user}}\\AppData\\Local\\Microsoft\\Windows\\History"
-      objects: [".dat", ".sqlite", ".json"]
+      objects: ["*.dat", "*.sqlite", "*.json"]
 
     - dir_path: "Users\\{{user}}\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default"
       objects: ["History"]
 
     - dir_path: "Users\\{{user}}\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History"
-      objects: [".dat", ".sqlite", ".json"]
+      objects: ["*.dat", "*.sqlite", "*.json"]
 
   suspicious_files:
     - dir_path: "Users\\{{user}}\\AppData\\Local"
-      objects: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
+      objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
       max_size: 5242880
       encrypt: "infected"
     - dir_path: "Users\\{{user}}\\AppData\\Roaming"
-      objects: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
+      objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
       max_size: 5242880
       encrypt: "infected"
     - dir_path: "Users\\{{user}}\\AppData\\Local\\Temp"
-      objects: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
+      objects: [".exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
       max_size: 5242880
       encrypt: "infected"
     - dir_path: "Users\\{{user}}\\Downloads"
-      objects: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
+      objects: [".exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
       max_size: 5242880
       encrypt: "infected"
     - dir_path: "Users\\{{user}}\\Desktop"
-      objects: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
+      objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
       max_size: 5242880
       encrypt: "infected"
     - dir_path: "Windows\\Temp"
-      objects: [".exe", ".dll", ".scr", ".bat", ".cmd", ".vbs", ".ps1", ".docm", ".doc", ".docx", ".xlsm", ".xls", ".xlsx", ".js", ".jar", ".msi"]
+      objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
       max_size: 5242880
       encrypt: "infected"
 

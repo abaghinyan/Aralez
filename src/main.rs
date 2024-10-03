@@ -26,7 +26,7 @@ use ntfs_reader::list_ntfs_drives;
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
-use config::{Config, SearchConfig};
+use config::{Config, SearchConfig, TypeConfig};
 use embin::execute;
 use indicatif::{ProgressBar, ProgressStyle};
 use sector_reader::SectorReader;
@@ -233,7 +233,7 @@ fn main() -> Result<()> {
                 objects: Some(vec!["$MFT".to_string()]), 
                 max_size: None, 
                 encrypt: None, 
-                regex: None, 
+                r#type: Some(TypeConfig::String), 
             };
 
             // Use find_files_in_dir to process the $MFT file for each drive

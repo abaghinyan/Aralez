@@ -8,12 +8,13 @@
 
 use crate::utils::replace_env_vars;
 use anyhow::Result;
-use serde::Deserialize;
 use std::collections::HashMap;
-use serde::Serialize;
 use hostname::get;
 use chrono::prelude::*;
 use indexmap::IndexMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::de::{self, Visitor};
+use std::fmt;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
@@ -23,13 +24,64 @@ pub struct Config {
     pub output_filename: String,
 }
 
+#[derive(Debug, Clone)]
+pub enum TypeConfig {
+    String,
+    Glob,
+    Regex,
+}
+
+impl Serialize for TypeConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match *self {
+            TypeConfig::String => serializer.serialize_str("string"),
+            TypeConfig::Glob => serializer.serialize_str("glob"),
+            TypeConfig::Regex => serializer.serialize_str("regex"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TypeConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TypeConfigVisitor;
+
+        impl<'de> Visitor<'de> for TypeConfigVisitor {
+            type Value = TypeConfig;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string containing 'string', 'glob', or 'regex'")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<TypeConfig, E>
+            where
+                E: de::Error,
+            {
+                match value {
+                    "string" => Ok(TypeConfig::String),
+                    "glob" => Ok(TypeConfig::Glob),
+                    "regex" => Ok(TypeConfig::Regex),
+                    _ => Err(de::Error::unknown_variant(value, &["string", "glob", "regex"])),
+                }
+            }
+        }
+
+        deserializer.deserialize_str(TypeConfigVisitor)
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SearchConfig {
     pub dir_path: String,
     pub objects: Option<Vec<String>>,
     pub max_size: Option<u64>,
     pub encrypt: Option<String>,
-    pub regex: Option<bool>,
+    pub r#type: Option<TypeConfig>, 
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -98,7 +150,7 @@ impl Config {
                     objects: config.objects.clone(),
                     max_size: config.max_size,
                     encrypt: config.encrypt.clone(),
-                    regex: config.regex,
+                    r#type: config.r#type.clone(),
                 });
             }
             expanded_entries.insert(key.clone(), expanded_configs);

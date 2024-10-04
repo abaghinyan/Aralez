@@ -136,8 +136,7 @@ Each search configuration specifies:
     - `*`: Matches any sequence of characters except the directory separator (`\\`).
            Ex. `*.txt` matches all `.txt` files in the current directory.
            Ex. `test\\*\\*.txt` matches all `.txt` files within one-level subdirectory of the `test` directory.
-    - `**`: Matches directories and their contents recursively. When an object terminates with `**`, it will take all files/subdirectories recursively. 
-            If the object ends with `**\\`, it will take all subdirectories recursively but NOT the files in the folder.
+    - `**`: Matches directories and their contents recursively. When an object terminates with `**`, it will take all files/subdirectories recursively. If the object ends with `**\\`, it will take all subdirectories recursively but NOT the files in the folder.
             Ex. `test\\**` matches all files/folders in the `test\\` directory recursively.
             Ex. `test\\**\\` matches all folders in the `test` directory recursively; a file `test\\test.txt` will not matches.
     - **Note**: In glob patterns, the directory path separator is `\\`.

@@ -132,7 +132,7 @@ Each search configuration specifies:
 - `encrypt` (optional): An optional password for AES-GCM encryption. If provided, the files will be encrypted and saved with an `.enc` extension. If not provided, the files will remain unencrypted.
 - `type` (optional): Defines how the objects in the `objects` list are interpreted. If not specified, the default value is `glob`. It can take one of the following values:
   
-  - `glob` (default): Uses glob patterns to search for files. Glob patterns are simpler wildcard-like expressions used to match filenames or directories. 
+  - `glob` (default): Uses **glob patterns** to search for files. Glob patterns are simpler wildcard-like expressions used to match filenames or directories. 
     - `*`: Matches any sequence of characters except the directory separator (`\\`).
            Ex. `*.txt` matches all `.txt` files in the current directory.
            Ex. `test\\*\\*.txt` matches all `.txt` files within one-level subdirectory of the `test` directory.
@@ -142,9 +142,9 @@ Each search configuration specifies:
             Ex. `test\\**\\` matches all folders in the `test` directory recursively; a file `test\\test.txt` will not matches.
     - **Note**: In glob patterns, the directory path separator is `\\`.
       
-  - `string`: Matches the object as an exact string. In this case, the object is treated as a specific filename or directory name to match exactly. Example: `report.txt` matches a file with the exact name `report.txt`.
+  - `string`: Matches the object as an **exact string**. In this case, the object is treated as a specific filename or directory name to match exactly. Example: `report.txt` matches a file with the exact name `report.txt`.
 
-  - `regex`: Uses regular expressions to define complex search patterns. Regex allows advanced pattern matching, useful when you need to match files based on intricate naming conventions or dynamic content within the directory. Example: `.*\\.evtx$` matches all `.evtx` files in a directory.
+  - `regex`: Uses **regular expressions** to define complex search patterns. Regex allows advanced pattern matching, useful when you need to match files based on intricate naming conventions or dynamic content within the directory. Example: `.*\\.evtx$` matches all `.evtx` files in a directory.
     - **Note**: In regex patterns, the directory path separator is `\\\\` (double backslash), which is required to escape the backslash character.
 
 > [!IMPORTANT] 

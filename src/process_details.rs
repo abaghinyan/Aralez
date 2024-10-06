@@ -376,15 +376,42 @@ fn list_all_processes() -> Result<Vec<ProcessInfo>> {
     Ok(processes)
 }
 
-pub fn run(filename: &str, path: &Path) -> Result<()> {
+pub fn run(filename: &str, path: &Path) {
+    // Create the full path
     let full_path = path.join(filename);
-    let mut file = File::create(&full_path)?;
 
-    let processes = list_all_processes()?;
+    // Try to create the file, log error if it fails
+    let mut file = match File::create(&full_path) {
+        Ok(f) => f,
+        Err(e) => {
+            dprintln!("[ERROR] Failed to create file at `{}`: {}", full_path.display(), e);
+            return; // Exit early to avoid proceeding with errors
+        }
+    };
 
-    let json_data = serde_json::to_string_pretty(&processes).unwrap();
+    // List all processes and handle errors if the listing fails
+    let processes = match list_all_processes() {
+        Ok(p) => p,
+        Err(e) => {
+            dprintln!("[ERROR] Failed to list processes: {}", e);
+            return; // Exit early if we can't list processes
+        }
+    };
 
-    file.write_all(json_data.as_bytes())?;
+    // Serialize processes to JSON and handle potential serialization errors
+    let json_data = match serde_json::to_string_pretty(&processes) {
+        Ok(data) => data,
+        Err(e) => {
+            dprintln!("[ERROR] Failed to serialize processes to JSON: {}", e);
+            return; // Exit early if serialization fails
+        }
+    };
 
-    Ok(())
+    // Write JSON data to the file, and handle errors if the write fails
+    if let Err(e) = file.write_all(json_data.as_bytes()) {
+        dprintln!("[ERROR] Failed to write to file `{}`: {}", full_path.display(), e);
+        return; // Exit early if writing to the file fails
+    }
+
+    dprintln!("[INFO] Process information has been written to: {}", full_path.display());
 }

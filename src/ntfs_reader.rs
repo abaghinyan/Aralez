@@ -377,7 +377,7 @@ where
         };
         match get_object_name(&file, &mut info.fs) {
             Ok(object_name) => {
-                if file.is_directory() && (!relative_path.is_empty() || !config.dir_path.is_empty()) {
+                if file.is_directory() && (!relative_path.is_empty() || !config.get_dir_path().is_empty()) {
                     let reg_data =  if !relative_path.is_empty() {
                         format!("{}{}/", relative_path, object_name.clone())
                     } else {
@@ -435,50 +435,3 @@ where
     Ok(())
 }
 
-/// List all files in the current directory.
-pub fn get_users<T>(info: &mut CommandInfo<T>) -> Result<Vec<String>>
-where
-    T: Read + Seek,
-{
-    let mut users = Vec::new();
-    let dir_path = "Users";
-    // Navigate to the Logs directory
-    navigate_to_directory(info, &dir_path)?;
-    let current_directory = info.current_directory.last().unwrap();
-    let index = current_directory.directory_index(&mut info.fs)?;
-    let mut entries = index.entries();
-    let mut seen_files = HashSet::new();
-
-    while let Some(entry_result) = entries.next(&mut info.fs) {
-        let entry = match entry_result {
-            Ok(entry) => entry,
-            Err(_e) => {
-                dprintln!("[ERROR] Error reading entry: {:?}", _e);
-                continue; // Skip to the next entry if there is an error
-            }
-        };
-
-        let file = match entry.to_file(info.ntfs, &mut info.fs) {
-            Ok(file) => file,
-            Err(_e) => {
-                dprintln!("[ERROR] Error converting entry to file: {:?}", _e);
-                continue; // Skip to the next entry if there is an error
-            }
-        };
-
-        if file.is_directory() {
-            match get_object_name(&file, &mut info.fs) {
-                Ok(object_name) => {
-                    // TODO: Try to find another solution for duplicate files
-                    if seen_files.insert(object_name.clone()){
-                        users.push(object_name.to_string());
-                    }
-                }
-                Err(_e) => {
-                    continue; // Skip to the next entry if there is an error
-                }
-            }
-        }
-    }
-    Ok(users)
-}

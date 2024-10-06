@@ -7,11 +7,11 @@
 //
 
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::Write;
 use std::net::Ipv4Addr;
 use std::path::Path;
 
-use windows::Win32::Networking::WinSock::{ntohs};
+use windows::Win32::Networking::WinSock::ntohs;
 use windows::Win32::NetworkManagement::IpHelper::{GetTcpTable, MIB_TCPTABLE};
 use windows::Win32::Foundation::*;
 
@@ -74,25 +74,46 @@ pub fn get_tcp_connections() -> Vec<(Ipv4Addr, u16, Ipv4Addr, u16, &'static str)
     tcp_connections
 }
 
-pub fn run_network_info(filename: &str, path: &Path) -> io::Result<()> {
+pub fn run_network_info(filename: &str, path: &Path) {
+    // Get TCP connections
     let tcp_connections = get_tcp_connections();
 
+    // Create the full path for the output file
     let full_path = path.join(filename);
-    let mut file = File::create(&full_path)?;
 
-    writeln!(file, "{:<5} {:<22} {:<22} {:<12}", "Proto", "Local Address", "Foreign Address", "State")?;
+    // Try to create the file, log error if it fails
+    let mut file = match File::create(&full_path) {
+        Ok(f) => f,
+        Err(e) => {
+            dprintln!("[ERROR] Failed to create file at `{}`: {}", full_path.display(), e);
+            return; // Exit early to avoid proceeding with errors
+        }
+    };
+
+    // Write the header row, log error if it fails
+    if let Err(e) = writeln!(file, "{:<5} {:<22} {:<22} {:<12}", "Proto", "Local Address", "Foreign Address", "State") {
+        dprintln!("[ERROR] Failed to write header to file `{}`: {}", full_path.display(), e);
+        return; // Exit early if writing the header fails
+    }
+
+    // Write the TCP connection information, log errors individually
     for (local_address, local_port, remote_address, remote_port, state) in tcp_connections {
-        writeln!(
+        if let Err(e) = writeln!(
             file,
             "{:<5} {:<22} {:<22} {:<12}",
             "TCP",
             format!("{}:{}", local_address, local_port),
             format!("{}:{}", remote_address, remote_port),
             state
-        )?;
+        ) {
+            dprintln!(
+                "[ERROR] Failed to write connection info to file `{}`: {}",
+                full_path.display(),
+                e
+            );
+            return; // Exit early if writing connection info fails
+        }
     }
 
     dprintln!("[INFO] Port information written to {:?}", full_path);
-
-    Ok(())
 }

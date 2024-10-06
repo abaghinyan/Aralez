@@ -11,17 +11,22 @@ use anyhow::Result;
 use std::collections::HashMap;
 use hostname::get;
 use chrono::prelude::*;
-use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{self, Visitor};
 use std::fmt;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
-    pub entries: IndexMap<String, Vec<SearchConfig>>,
-    pub tools: Vec<ToolConfig>,
-    pub win_tools: Vec<ToolConfig>,
+    // Tasks now use a HashMap to store dynamic sections (memory_tools, artifacts, etc.)
+    pub tasks: HashMap<String, SectionConfig>,
     pub output_filename: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct SectionConfig {
+    pub priority: u8,
+    pub r#type: TypeTasks,
+    pub entries: HashMap<String, Vec<SearchConfig>>,
 }
 
 #[derive(Debug, Clone)]
@@ -75,29 +80,132 @@ impl<'de> Deserialize<'de> for TypeConfig {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum TypeTasks {
+    Execute,
+    Collect,
+}
+
+impl Serialize for TypeTasks {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match *self {
+            TypeTasks::Execute => serializer.serialize_str("execute"),
+            TypeTasks::Collect => serializer.serialize_str("collect"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TypeTasks {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TypeTasksVisitor;
+
+        impl<'de> Visitor<'de> for TypeTasksVisitor {
+            type Value = TypeTasks;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string containing 'execute' or 'collect'")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<TypeTasks, E>
+            where
+                E: de::Error,
+            {
+                match value {
+                    "execute" => Ok(TypeTasks::Execute),
+                    "collect" => Ok(TypeTasks::Collect),
+                    _ => Err(de::Error::unknown_variant(value, &["execute", "collect"])),
+                }
+            }
+        }
+
+        deserializer.deserialize_str(TypeTasksVisitor)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum TypeExec {
+    External,
+    Internal,
+    System,
+}
+
+impl Serialize for TypeExec {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match *self {
+            TypeExec::External => serializer.serialize_str("external"),
+            TypeExec::Internal => serializer.serialize_str("internal"),
+            TypeExec::System => serializer.serialize_str("system"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TypeExec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TypeExecVisitor;
+
+        impl<'de> Visitor<'de> for TypeExecVisitor {
+            type Value = TypeExec;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string containing 'external', 'internal' or 'system")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<TypeExec, E>
+            where
+                E: de::Error,
+            {
+                match value {
+                    "external" => Ok(TypeExec::External),
+                    "internal" => Ok(TypeExec::Internal),
+                    "system" => Ok(TypeExec::System),
+                    _ => Err(de::Error::unknown_variant(value, &["external", "internal", "system"])),
+                }
+            }
+        }
+
+        deserializer.deserialize_str(TypeExecVisitor)
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SearchConfig {
-    pub dir_path: String,
+    pub dir_path: Option<String>,
+    pub name: Option<String>,
+    pub output_file: Option<String>,
+    pub args: Option<Vec<String>>,
     pub objects: Option<Vec<String>>,
     pub max_size: Option<u64>,
     pub encrypt: Option<String>,
-    pub r#type: Option<TypeConfig>, 
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct ToolConfig {
-    pub name: String,
-    pub args: Vec<String>,
-    pub output_file: String,
+    pub r#type: Option<TypeConfig>,
+    pub exec_type: Option<TypeExec>,
 }
 
 impl Config {
+    pub fn load_from_embedded() -> Result<Self> {
+        // Embed the YAML content directly into the binary
+        let yaml_data = include_str!("config.yml");
+        let config: Config = serde_yaml::from_str(yaml_data)?;
+        Ok(config)
+    }
+
     pub fn get_output_filename(&self) -> String {
 
         let machine_name = get()
-        .ok()
-        .and_then(|hostname| hostname.into_string().ok())
-        .unwrap_or_else(|| "machine".to_string());
+            .ok()
+            .and_then(|hostname| hostname.into_string().ok())
+            .unwrap_or_else(|| "machine".to_string());
 
         let local: DateTime<Local> = Local::now();
         let datetime = local.format("%Y-%m-%d_%H-%M-%S").to_string();
@@ -113,54 +221,40 @@ impl Config {
         }
         output_filename_expand
     }
-}
 
+    /// Function to return tasks sections ordered by priority
+    pub fn get_tasks(&self) -> Vec<(String, SectionConfig)> {
+        let mut tasks_vec: Vec<(String, SectionConfig)> = self.tasks.clone().into_iter().collect();
+
+        // Sort by priority
+        tasks_vec.sort_by_key(|(_, section)| section.priority);
+
+        tasks_vec
+    }
+
+    pub fn tasks_entries_len(&self) -> u64 {
+        let mut len: u64 = 0;
+        for (_, section_config) in &self.tasks {
+            // Iterate over each entry in the HashMap (artifacts, etc.)
+            for (_, entries) in &section_config.entries {
+                len += entries.len() as u64;
+            }
+        }
+        len
+    }
+
+}
 
 impl SearchConfig {
     // Method to get dir_path with environment variables replaced
     pub fn get_expanded_dir_path(&self) -> String {
-        replace_env_vars(&self.dir_path)
-    }
-}
-
-impl Config {
-    pub fn load_from_embedded() -> Result<Self> {
-        // Embed the YAML content directly into the binary
-        let yaml_data = include_str!("config.yml");
-        let config: Config = serde_yaml::from_str(yaml_data)?;
-        Ok(config)
+        replace_env_vars(&self.dir_path.clone().unwrap_or_default())
     }
 
-    pub fn expand_placeholders(&self, variables: &HashMap<String, String>) -> Self {
-        let expand = |text: &str, vars: &HashMap<String, String>| {
-            let mut result = text.to_string();
-            for (key, value) in vars {
-                result = result.replace(&format!("{{{{{}}}}}", key), value);
-            }
-            result
-        };
-
-        let mut expanded_entries = IndexMap::new();
-        
-        for (key, configs) in &self.entries {
-            let mut expanded_configs = Vec::new();
-            for config in configs {
-                expanded_configs.push(SearchConfig {
-                    dir_path: expand(&config.get_expanded_dir_path(), variables),
-                    objects: config.objects.clone(),
-                    max_size: config.max_size,
-                    encrypt: config.encrypt.clone(),
-                    r#type: config.r#type.clone(),
-                });
-            }
-            expanded_entries.insert(key.clone(), expanded_configs);
-        }
-
-        Config {
-            entries: expanded_entries,
-            tools: self.tools.clone(), 
-            win_tools: self.win_tools.clone(), 
-            output_filename: self.get_output_filename()
+    pub fn get_dir_path (&self) -> String {
+        match &self.dir_path {
+            Some(path) => path.to_string(),
+            None => String::new(),
         }
     }
 }

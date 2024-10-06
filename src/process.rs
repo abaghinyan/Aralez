@@ -17,16 +17,41 @@ use windows::{
 };
 use std::path::Path;
 
-pub fn run_ps(filename: &str, path: &Path) -> io::Result<()> {
+pub fn run_ps(filename: &str, path: &Path) {
+    // Create the full path
     let full_path = path.join(filename);
-    let mut file = File::create(&full_path)?;
-    
-    let processes = get_processes()?;
+
+    // Try to create the file, log error if it fails
+    let mut file = match File::create(&full_path) {
+        Ok(f) => f,
+        Err(e) => {
+            dprintln!("[ERROR] Failed to create file at `{}`: {}", full_path.display(), e);
+            return; // Exit early to avoid proceeding with errors
+        }
+    };
+
+    // Try to get the list of processes, log error if it fails
+    let processes = match get_processes() {
+        Ok(p) => p,
+        Err(e) => {
+            dprintln!("[ERROR] Failed to retrieve processes: {}", e);
+            return; // Exit early if we can't retrieve processes
+        }
+    };
+
+    // Loop through each process and try to write its information to the file
     for process in processes {
-        write_process_info(&mut file, &process)?;
+        if let Err(e) = write_process_info(&mut file, &process) {
+            dprintln!(
+                "[ERROR] Failed to write process info to file `{}`: {}",
+                full_path.display(),
+                e
+            );
+            return; // Exit early if writing process info fails
+        }
     }
 
-    Ok(())
+    dprintln!("[INFO] Process information has been successfully written to: {}", full_path.display());
 }
 
 fn get_processes() -> Result<Vec<PROCESSENTRY32>> {

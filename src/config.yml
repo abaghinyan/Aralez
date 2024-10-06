@@ -5,167 +5,185 @@
 #
 # Author(s): Areg Baghinyan
 #
-entries:
-  mft:
-    - dir_path: ""
-      objects: ["$MFT"]
-  
-  extend:
-    - dir_path: "$Extend"
-      objects: ["**"]
+tasks: 
+  # memory_tools: 
+  #   type: "execute"
+  #   priority: 0
+  #   entries: 
+  #     memory_dump:
+  #       - name: "dumpit.exe"
+  #         output_file: "memory.dmp"
+  #         exec_type: "external"
 
-  recycle:
-    - dir_path: "$Recycle.Bin"
-      objects: ["**"]
-      max_size: 10485760
+  artifacts:
+    type: "collect"
+    priority: 1
+    entries: 
+      mft:
+        - dir_path: ""
+          objects: ["$MFT"]
+      extend:
+        - dir_path: "$Extend"
+          objects: ["**"]
+      recycle:
+        - dir_path: "$Recycle.Bin"
+          objects: ["**"]
+          max_size: 10485760
+      event_logs:
+        - dir_path: "Windows\\System32\\winevt\\Logs"
+          objects: ["*.evtx"]
+      hive_files:
+        - dir_path: "Windows\\System32\\config"
+          objects: ["SAM", "SYSTEM", "SOFTWARE", "SECURITY", "DEFAULT"]
+      user_hive_files:
+        - dir_path: "Users\\{{user}}"
+          objects: ["*.DAT"]
+      wer_files:
+        - dir_path: "ProgramData\\Micrsystemoft\\Windows\\WER\\ReportArchive"
+          objects: ["**"]
+        - dir_path: "ProgramData\\Micrsystemoft\\Windows\\WER\\ReportQueue"
+          objects: ["**"]
+        - dir_path: "Users\\{{user}}\\AppData\\Local\\Micrsystemoft\\Windows\\WER"
+          objects: ["**"]
+      prefetch:
+        - dir_path: "Windows\\Prefetch"
+          objects: ["*.pf"]
+      scheduled_tasks:
+        - dir_path: "Windows\\System32\\Tasks"
+          objects: [".job", ".xml"]
+        - dir_path: "Windows\\Tasks"
+          objects: ["*.job", "*.xml"]
+      firewall_logs:
+        - dir_path: "Windows\\System32\\LogFiles\\Firewall"
+          objects: ["pfirewall.log"]
+      amcache:
+        - dir_path: "Windows\\AppCompat\\Programs"
+          objects: ["*.hve"]
+      startup_files:
+        - dir_path: "ProgramData\\Micrsystemoft\\Windows\\Start Menu\\Programs\\Start-up"
+          objects: ["**"]
+        - dir_path: "Users\\{{user}}\\AppData\\Roaming\\Micrsystemoft\\Windows\\Start Menu\\Programs\\Start-up"
+          objects: ["**"]
+      windows_shortcuts:
+        - dir_path: "Users\\{{user}}\\AppData\\Roaming\\Micrsystemoft\\Windows\\Recent"
+          objects: ["*.lnk"]
+      powershell_history:
+        - dir_path: "Users\\{{user}}\\AppData\\Roaming\\Micrsystemoft\\Windows\\PowerShell\\PSReadline"
+          objects: ["*.txt"]
+      wmi:
+        - dir_path: "Windows\\System32\\wbem\\Repsystemitory"
+          objects: ["OBJECTS.DATA"]
+      wmi_trace:
+        - dir_path: "Windows\\System32\\LogFiles\\WMI"
+          objects: ["*.etl"]
+      bmc:
+        - dir_path: "Windows\\System32\\wdi\\LogFiles"
+          objects: ["*.etl"]
+      bits:
+        - dir_path: "ProgramData\\Micrsystemoft\\Network\\Downloader"
+          objects: ["*.dat"]
+      browser_history:
+        - dir_path: "Users\\{{user}}\\AppData\\Local\\Micrsystemoft\\Windows\\INetCache"
+          objects: ["*.dat", "*.sqlite", "*.json"]
+        - dir_path: "Users\\{{user}}\\AppData\\Local\\Micrsystemoft\\Windows\\History"
+          objects: ["*.dat", "*.sqlite", "*.json"]
+        - dir_path: "Users\\{{user}}\\AppData\\Local\\Micrsystemoft\\Edge\\User Data\\Default"
+          objects: ["History"]
+        - dir_path: "Users\\{{user}}\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History"
+          objects: ["*.dat", "*.sqlite", "*.json"]
+      suspicious_files:
+        - dir_path: "Users\\{{user}}\\AppData\\Local"
+          objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
+          max_size: 5242880
+          encrypt: "infected"
+        - dir_path: "Users\\{{user}}\\AppData\\Roaming"
+          objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
+          max_size: 5242880
+          encrypt: "infected"
+        - dir_path: "Users\\{{user}}\\AppData\\Local\\Temp"
+          objects: [".exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
+          max_size: 5242880
+          encrypt: "infected"
+        - dir_path: "Users\\{{user}}\\Downloads"
+          objects: [".exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
+          max_size: 5242880
+          encrypt: "infected"
+        - dir_path: "Users\\{{user}}\\Desktop"
+          objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
+          max_size: 5242880
+          encrypt: "infected"
+        - dir_path: "Windows\\Temp"
+          objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
+          max_size: 5242880
+          encrypt: "infected"
 
-  event_logs:
-    - dir_path: "Windows\\System32\\winevt\\Logs"
-      objects: ["*.evtx"]
-
-  hive_files:
-    - dir_path: "Windows\\System32\\config"
-      objects: ["SAM", "SYSTEM", "SOFTWARE", "SECURITY", "DEFAULT"]
-
-  user_hive_files:
-    - dir_path: "Users\\{{user}}"
-      objects: ["*.DAT"]
-
-  wer_files:
-    - dir_path: "ProgramData\\Microsoft\\Windows\\WER\\ReportArchive"
-      objects: ["**"]
-    - dir_path: "ProgramData\\Microsoft\\Windows\\WER\\ReportQueue"
-      objects: ["**"]
-    - dir_path: "Users\\{{user}}\\AppData\\Local\\Microsoft\\Windows\\WER"
-      objects: ["**"]
-
-  prefetch:
-    - dir_path: "Windows\\Prefetch"
-      objects: ["*.pf"]
-
-  scheduled_tasks:
-    - dir_path: "Windows\\System32\\Tasks"
-      objects: [".job", ".xml"]
-    - dir_path: "Windows\\Tasks"
-      objects: ["*.job", "*.xml"]
-
-  firewall_logs:
-    - dir_path: "Windows\\System32\\LogFiles\\Firewall"
-      objects: ["pfirewall.log"]
-
-  amcache:
-    - dir_path: "Windows\\AppCompat\\Programs"
-      objects: ["*.hve"]
-
-  startup_files:
-    - dir_path: "ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Start-up"
-      objects: ["**"]
-    - dir_path: "Users\\{{user}}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Start-up"
-      objects: ["**"]
-
-  windows_shortcuts:
-    - dir_path: "Users\\{{user}}\\AppData\\Roaming\\Microsoft\\Windows\\Recent"
-      objects: ["*.lnk"]
-
-  powershell_history:
-    - dir_path: "Users\\{{user}}\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadline"
-      objects: ["*.txt"]
-
-  wmi:
-    - dir_path: "Windows\\System32\\wbem\\Repository"
-      objects: ["OBJECTS.DATA"]
-
-  wmi_trace:
-    - dir_path: "Windows\\System32\\LogFiles\\WMI"
-      objects: ["*.etl"]
-
-  bmc:
-    - dir_path: "Windows\\System32\\wdi\\LogFiles"
-      objects: ["*.etl"]
-  
-  bits:
-    - dir_path: "ProgramData\\Microsoft\\Network\\Downloader"
-      objects: ["*.dat"]
-
-  browser_history:
-    - dir_path: "Users\\{{user}}\\AppData\\Local\\Microsoft\\Windows\\INetCache"
-      objects: ["*.dat", "*.sqlite", "*.json"]
-    - dir_path: "Users\\{{user}}\\AppData\\Local\\Microsoft\\Windows\\History"
-      objects: ["*.dat", "*.sqlite", "*.json"]
-
-    - dir_path: "Users\\{{user}}\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default"
-      objects: ["History"]
-
-    - dir_path: "Users\\{{user}}\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History"
-      objects: ["*.dat", "*.sqlite", "*.json"]
-
-  suspicious_files:
-    - dir_path: "Users\\{{user}}\\AppData\\Local"
-      objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
-      max_size: 5242880
-      encrypt: "infected"
-    - dir_path: "Users\\{{user}}\\AppData\\Roaming"
-      objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
-      max_size: 5242880
-      encrypt: "infected"
-    - dir_path: "Users\\{{user}}\\AppData\\Local\\Temp"
-      objects: [".exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
-      max_size: 5242880
-      encrypt: "infected"
-    - dir_path: "Users\\{{user}}\\Downloads"
-      objects: [".exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
-      max_size: 5242880
-      encrypt: "infected"
-    - dir_path: "Users\\{{user}}\\Desktop"
-      objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
-      max_size: 5242880
-      encrypt: "infected"
-    - dir_path: "Windows\\Temp"
-      objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
-      max_size: 5242880
-      encrypt: "infected"
-
-tools:
-  - name: "autorunsc.exe"
-    args: ["-m", "-nobanner", "-a *", "-c", "/accepteula"]
-    output_file: "Autorunsc.txt"
-  - name: "handle.exe"
-    args: ["/accepteula", "/a", "/nobanner"]
-    output_file: "Handle.txt"
-  - name: "tcpvcon.exe"
-    args: ["-a"]
-    output_file: "TCPvCon.txt"
-  - name: "pslist.exe"
-    args: ["/accepteula", "/all"]
-    output_file: "PSList.txt"
-  - name: "Listdlls.exe"
-    args: ["/accepteula"]
-    output_file: "ListDLLs.txt"
-  - name: "PsService.exe"
-    args: ["/accepteula", "query"]
-    output_file: "PSService.txt"
-
-win_tools:
-  - name: "netstat.exe"
-    args: ["-anob"]
-    output_file: "NetStat.txt"
-  - name: "ipconfig.exe"
-    args: ["/all"]
-    output_file: "IPConfig.txt"
-  - name: "ipconfig.exe"
-    args: ["/displaydns"]
-    output_file: "DNSCache.txt"
-  - name: "systeminfo.exe"
-    args: []
-    output_file: "SystemInfo.txt"
-  - name: "tasklist.exe"
-    args: ["/v", "/fo", "csv"]
-    output_file: "TaskList.csv"
-  - name: "net.exe"
-    args: ["share"]
-    output_file: "NetShare.csv"
-  - name: "powershell"
-    args: ["-command", "Get-ComputerInfo"]
-    output_file: "ComputerInfo.txt"
+  tools:
+    priority: 2
+    type: "execute"
+    entries: 
+      external: 
+        - name: "autorunsc.exe"
+          args: ["-nobanner", "-c", "/accepteula"]
+          output_file: "Autorunsc.txt"
+          exec_type: "external"
+        - name: "handle.exe"
+          args: ["/accepteula", "/a", "/nobanner"]
+          output_file: "Handle.txt"
+          exec_type: "external"
+        - name: "tcpvcon.exe"
+          args: ["/accepteula", "-a"]
+          output_file: "TCPvCon.txt"
+          exec_type: "external"
+        - name: "pslist.exe"
+          args: ["/accepteula"]
+          output_file: "PSList.txt"
+          exec_type: "external"
+        - name: "Listdlls.exe"
+          args: ["/accepteula"]
+          output_file: "ListDLLs.txt"
+          exec_type: "external"    
+        - name: "PsService.exe"
+          args: ["/accepteula", "query"]
+          output_file: "PSService.txt"
+          exec_type: "external"
+      system:
+        - name: "netstat.exe"
+          args: ["-anob"]
+          output_file: "NetStat.txt"
+          exec_type: "system"
+        - name: "ipconfig.exe"
+          args: ["/all"]
+          output_file: "IPConfig.txt"
+          exec_type: "system"
+        - name: "ipconfig.exe"
+          args: ["/displaydns"]
+          output_file: "DNSCache.txt"
+          exec_type: "system"
+        - name: "systeminfo.exe"
+          args: []
+          output_file: "SystemInfo.txt"
+          exec_type: "system"
+        - name: "tasklist.exe"
+          args: ["/v", "/fo", "csv"]
+          output_file: "TaskList.csv"
+          exec_type: "system"
+        - name: "net.exe"
+          args: ["share"]
+          output_file: "NetShare.csv"
+          exec_type: "system"
+        - name: "powershell"
+          args: ["-command", "Get-ComputerInfo"]
+          output_file: "ComputerInfo.txt"
+          exec_type: "system"
+      internal: 
+        - name: "ProcInfo"
+          output_file: "ProcInfo.txt"
+          exec_type: "internal"
+        - name: "ProcDetailsInfo"
+          output_file: "ProcDetailsInfo.txt"
+          exec_type: "internal"
+        - name: "PortsInfo"
+          output_file: "PortsInfo.txt"
+          exec_type: "internal"
 
 output_filename: "Aralez_{{hostname}}_{{datetime}}"

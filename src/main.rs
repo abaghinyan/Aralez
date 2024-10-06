@@ -11,38 +11,38 @@ mod macros;
 
 mod command_info;
 mod config;
-mod embin;
+mod execute;
 mod network_info;
 mod ntfs_reader;
 mod process;
 mod process_details;
 mod sector_reader;
-mod tool_runner;
 mod utils;
 
 use crate::command_info::CommandInfo;
-use crate::tool_runner::run_tool;
-use ntfs_reader::list_ntfs_drives;
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
 use config::{Config, SearchConfig, TypeConfig};
-use embin::execute;
+use execute::get_bin;
+use execute::run_external;
+use execute::run_system;
 use indicatif::{ProgressBar, ProgressStyle};
+use ntfs_reader::list_ntfs_drives;
 use sector_reader::SectorReader;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::BufReader;
 use std::io::{self, Write};
 use std::io::{Read, Seek, SeekFrom};
+use std::path::Path;
 use utils::ensure_directory_exists;
 use utils::remove_dir_all;
 use zip::{write::FileOptions, ZipWriter};
-use std::path::Path;
 
-const CONFIG_MARKER_START: &[u8] = b"# CONFIG_START"; 
-const CONFIG_MARKER_END: &[u8] = b"# CONFIG_END"; 
+const CONFIG_MARKER_START: &[u8] = b"# CONFIG_START";
+const CONFIG_MARKER_END: &[u8] = b"# CONFIG_END";
 
 #[derive(Parser)]
 struct Cli {
@@ -54,6 +54,9 @@ struct Cli {
     #[arg(long)]
     show_config: bool,
 }
+
+const MSG_ERROR_CONFIG: &str = "[ERROR] Config error";
+
 const HELP_TEMPLATE: &str = "{bin} {version}
 {author}
 
@@ -84,11 +87,13 @@ fn load_embedded_config() -> Result<String> {
         if let Some(end) = find_marker(&buffer[start..], CONFIG_MARKER_END) {
             let config_data = &buffer[start + CONFIG_MARKER_START.len()..start + end];
             let config_string = String::from_utf8_lossy(config_data);
-            return  Ok(config_string.into_owned());
+            return Ok(config_string.into_owned());
         }
     }
-    
-    Err(anyhow::anyhow!("Embedded configuration not found or the config file is not valid"))
+
+    Err(anyhow::anyhow!(
+        "Embedded configuration not found or the config file is not valid"
+    ))
 }
 
 // Function to update the embedded configuration
@@ -113,7 +118,10 @@ fn update_embedded_config(new_config_path: &str, output_exe_path: &str) -> std::
     new_exe_file.write_all(&new_config_data)?;
     new_exe_file.write_all(CONFIG_MARKER_END)?;
 
-    println!("New executable with updated config created at: {}", output_exe_path);
+    println!(
+        "New executable with updated config created at: {}",
+        output_exe_path
+    );
 
     Ok(())
 }
@@ -123,7 +131,7 @@ fn find_marker(data: &[u8], marker: &[u8]) -> Option<usize> {
     data.windows(marker.len())
         .rposition(|window| window == marker) // rposition finds the last occurrence
 }
-fn main() -> Result<()> {   
+fn main() -> Result<()> {
     // Print the welcome message
     println!(
         "Welcome to {} version {}",
@@ -175,16 +183,18 @@ fn main() -> Result<()> {
         if let Some(output_path) = matches.get_one::<String>("output") {
             update_embedded_config(config_path, output_path)?;
         } else {
-            return Err(anyhow::anyhow!("Output file name is required when changing configuration"));
+            return Err(anyhow::anyhow!(
+                "Output file name is required when changing configuration"
+            ));
         }
         return Ok(());
     }
-    
+
     // Load configuration: Try to load the embedded configuration first, then fallback to default
     let config_data = load_embedded_config()?;
     let config: Config = match serde_yaml::from_str(&config_data) {
         Ok(config) => config,
-        Err(_e) =>  Config::load_from_embedded()?
+        Err(_e) => Config::load_from_embedded()?,
     };
 
     // Handle show_config flag
@@ -201,47 +211,7 @@ fn main() -> Result<()> {
     let root_output = &config.get_output_filename();
 
     dprintln!("Aralez version: {}", env!("CARGO_PKG_VERSION"));
-    
 
-    let ntfs_drives = list_ntfs_drives()?;
-    // Loop through each NTFS drive and process, skipping the C drive
-    for drive in ntfs_drives {
-        // Skip C drive since you process it separately
-        if drive.starts_with("C:") {
-            continue;
-        }
-        dprintln!("[INFO] Processing drive: {}", drive);
-        let drive_letter = match drive.chars().next() {
-            Some(l) => l,
-            None => continue  
-        };
-        let output_path = format!("{}\\{}", root_output, drive_letter);
-
-        ensure_directory_exists(&output_path)?; 
-
-        let f = File::open(format!("\\\\.\\{}:",drive_letter))?;
-        let sr = SectorReader::new(f, 4096)?; // Adjust sector size if needed
-        let mut fs = BufReader::new(sr);
-
-        // Initialize NTFS and process the MFT
-        if let Ok(ntfs) = ntfs_reader::initialize_ntfs(&mut fs) {
-            let mut info = ntfs_reader::initialize_command_info(fs, &ntfs)?;
-
-            // Prepare search configuration to target the MFT file
-            let search_config = SearchConfig {
-                dir_path: "".to_string(),
-                objects: Some(vec!["$MFT".to_string()]), 
-                max_size: None, 
-                encrypt: None, 
-                r#type: Some(TypeConfig::String), 
-            };
-
-            // Use find_files_in_dir to process the $MFT file for each drive
-            ntfs_reader::find_files_in_dir(&mut info, &search_config, &output_path)?;
-        } else {
-            dprintln!("Drive {} is not an NTFS file system or cannot be read.", drive);
-        }
-    }
     // Open the NTFS disk image or partition (replace with the correct path)
     let f = File::open("\\\\.\\C:")?;
     let sr = SectorReader::new(f, 4096)?;
@@ -251,14 +221,8 @@ fn main() -> Result<()> {
     // Initialize the command state with the root directory
     let mut info = ntfs_reader::initialize_command_info(fs, &ntfs)?;
 
-    // Get users from NTFS
-    let users = ntfs_reader::get_users(&mut info)?;
-
-    // Consolidate all user-specific configurations into a single list
-    let consolidated_configs = expand_configs_for_all_users(&config, &users);
-
     // Create a progress bar based on the total number of tasks
-    let pb = ProgressBar::new(consolidated_configs.len() as u64);
+    let pb = ProgressBar::new(config.tasks_entries_len() as u64);
     pb.set_style(
         ProgressStyle::with_template(
             "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {msg}",
@@ -266,94 +230,175 @@ fn main() -> Result<()> {
         .progress_chars("#>-"),
     );
 
-    // Tools
+    let sorted_tasks = config.get_tasks();
 
-    let output_path = format!("{}\\{}", root_output, "tools"); // Adjust the path as necessary
-    ensure_directory_exists(&output_path).expect("Failed to create or access output directory");
+    for (_, section_config) in sorted_tasks {
+        match section_config.r#type {
+            config::TypeTasks::Collect => {
+                let mut processed_paths = HashSet::new();
 
-    // Iterate over tools from config
-    for tool in &config.tools {
-        let exe_bytes: &[u8] = match tool.name.as_str() {
-            "autorunsc.exe" => include_bytes!("../tools/autorunsc.exe"),
-            "handle.exe" => include_bytes!("../tools/handle.exe"),
-            "tcpvcon.exe" => include_bytes!("../tools/tcpvcon.exe"),
-            "pslist.exe" => include_bytes!("../tools/pslist.exe"),
-            "Listdlls.exe" => include_bytes!("../tools/Listdlls.exe"),
-            "PsService.exe" => include_bytes!("../tools/PsService.exe"),
-            _ => return Err(anyhow::anyhow!("Tool not found")),
-        };
+                for (_, artifacts) in &section_config.entries {
+                    for artifact in artifacts {
+                        let path_key = format!(
+                            "{}\\{:?}",
+                            artifact.get_expanded_dir_path(),
+                            artifact.objects.clone().unwrap_or_default()
+                        );
 
-        let args: Vec<&str> = tool.args.iter().map(String::as_str).collect();
-        execute(exe_bytes, &tool.name, &output_path, &tool.output_file.as_str(),&args)?;
-    }
+                        if !processed_paths.contains(&path_key) {
+                            search_in_config(&mut info, &artifact, root_output)?;
+                            pb.inc(1); // Increment the progress bar
+                            pb.set_message(format!("[INFO] Tasksing {}", path_key));
 
-    // Iterate over win_tools from config
-    for tool in &config.win_tools {
-        let args: Vec<&str> = tool.args.iter().map(String::as_str).collect();
-        match run_tool(&tool.name, &args, &tool.output_file, &output_path) {
-            Ok(_) => {
-                pb.inc(1); // Increment the progress bar
-                pb.set_message(format!("Processing: {} tool", tool.name));
+                            // Mark the path as processed
+                            processed_paths.insert(path_key);
+                        }
+                    }
+                }
             }
-            Err(e) => dprintln!("[ERROR] Error running {}: {}", tool.name, e),
+            config::TypeTasks::Execute => {
+                for (_, executors) in &section_config.entries {
+                    for executor in executors.clone() {
+                        match executor.exec_type {
+                            Some(exec_type) => {
+                                let output_path = format!("{}\\{}", root_output, "tools"); // Adjust the path as necessary
+                                ensure_directory_exists(&output_path)
+                                    .expect("Failed to create or access output directory");
+
+                                let args: &[&str] = match executor.args {
+                                    Some(ref args_array) => {
+                                        &args_array.iter().map(String::as_str).collect::<Vec<_>>()[..]
+                                    }
+                                    None => &[],
+                                };
+
+                                match exec_type {
+                                    config::TypeExec::External => {
+                                        pb.inc(1); // Increment the progress bar
+                                        pb.set_message(format!(
+                                            "[INFO] Running: {} tool",
+                                            executor.name.clone().expect(MSG_ERROR_CONFIG)
+                                        ));
+                                        run_external(
+                                            get_bin(executor.name.clone().expect(MSG_ERROR_CONFIG))?,
+                                            &executor
+                                                .name
+                                                .clone()
+                                                .expect(MSG_ERROR_CONFIG)
+                                                .as_str(),
+                                            &output_path,
+                                            &executor.output_file.expect(MSG_ERROR_CONFIG).as_str(),
+                                            &args,
+                                        );
+                                    }
+                                    config::TypeExec::Internal => {
+                                        let path = Path::new(&output_path);
+
+                                        match executor.name.expect(MSG_ERROR_CONFIG).as_str() {
+                                            "ProcInfo" => {
+                                                pb.inc(1); // Increment the progress bar
+                                                pb.set_message(format!(
+                                                    "[INFO] Running {} tool",
+                                                    "ProcInfo"
+                                                ));
+                                                // Process info
+                                                let filename = "ProcInfo.txt";
+                                                process::run_ps(filename, &path);
+                                            }
+                                            "ProcDetailsInfo" => {
+                                                pb.inc(1); // Increment the progress bar
+                                                pb.set_message(format!(
+                                                    "[INFO] Running {} tool",
+                                                    "ProcDetailsInfo"
+                                                ));
+                                                // Process details
+                                                let filename = "ProcDetailsInfo.txt";
+                                                process_details::run(&filename, &path)
+                                            }
+                                            "PortsInfo" => {
+                                                pb.inc(1); // Increment the progress bar
+                                                pb.set_message(format!(
+                                                    "[INFO] Running {} tool",
+                                                    "NetworkInfo (PortsInfo)"
+                                                ));
+                                                // Network info
+                                                let filename = "PortsInfo.txt";
+                                                network_info::run_network_info(filename, &path);
+                                            }
+                                            &_ => dprintln!("[ERROR] Internal tool not found"),
+                                        }
+                                    }
+                                    config::TypeExec::System => {
+                                        pb.inc(1); // Increment the progress bar
+                                        pb.set_message(format!(
+                                            "[INFO] Running: {} tool",
+                                            executor.name.clone().expect(MSG_ERROR_CONFIG)
+                                        ));
+                                        run_system(
+                                            &executor.name.clone().expect(MSG_ERROR_CONFIG),
+                                            &args,
+                                            &executor.output_file.expect(MSG_ERROR_CONFIG),
+                                            &output_path,
+                                        );
+                                    }
+                                }
+                            }
+                            None => dprintln!("{}", MSG_ERROR_CONFIG),
+                        }
+                    }
+                }
+            }
         }
     }
 
-    let path = Path::new(&output_path);
+    let ntfs_drives = list_ntfs_drives()?;
+    // Loop through each NTFS drive and process, skipping the C drive
+    for drive in ntfs_drives {
+        // Skip C drive since you process it separately
+        if drive.starts_with("C:") {
+            continue;
+        }
+        dprintln!("[INFO] Tasksing drive: {}", drive);
+        let drive_letter = match drive.chars().next() {
+            Some(l) => l,
+            None => continue,
+        };
+        let output_path = format!("{}\\{}", root_output, drive_letter);
 
-    // Processes info
-    let filename = "ProcInfo.txt";
-    if let Err(e) = process::run_ps(filename, &path) {
-        dprintln!("[ERROR] ProcInfo : {}", e);
-    } else {
-        pb.inc(1); // Increment the progress bar
-        pb.set_message(format!("[INFO] Processing {} tool", "ProcInfo"));
-    }
+        ensure_directory_exists(&output_path)?;
 
-    // Process details
-    let filename = "ProcDetailsInfo.txt";
-    if let Err(e) = process_details::run(&filename, &path) {
-        dprintln!("[ERROR] ProcDetailsInfo : {}", e);
-    } else {
-        pb.inc(1); // Increment the progress bar
-        pb.set_message(format!("[INFO] Processing {} tool", "ProcDetailsInfo"));
-    }
+        let f = File::open(format!("\\\\.\\{}:", drive_letter))?;
+        let sr = SectorReader::new(f, 4096)?; // Adjust sector size if needed
+        let mut fs = BufReader::new(sr);
 
-    // Network info
-    let filename = "PortsInfo.txt";
+        // Initialize NTFS and process the MFT
+        if let Ok(ntfs) = ntfs_reader::initialize_ntfs(&mut fs) {
+            let mut info = ntfs_reader::initialize_command_info(fs, &ntfs)?;
 
-    if let Err(e) = network_info::run_network_info(filename, &path) {
-        dprintln!("[ERROR] Writing network info: {}", e);
-    } else {
-        pb.inc(1); // Increment the progress bar
-        pb.set_message(format!("[INFO] Processing {} tool", "NetworkInfo (PortsInfo)"));
-    }
+            // Prepare search configuration to target the MFT file
+            let search_config = SearchConfig {
+                dir_path: Some("".to_string()),
+                objects: Some(vec!["$MFT".to_string()]),
+                max_size: None,
+                encrypt: None,
+                r#type: Some(TypeConfig::String),
+                name: None,
+                output_file: None,
+                exec_type: None,
+                args: None,
+            };
 
-    // Get Files
-
-    // Track already processed paths
-    let mut processed_paths = HashSet::new();
-
-    // Process each consolidated configuration
-    for (user, search_config) in consolidated_configs {
-        let path_key = format!(
-            "{}\\{:?}",
-            search_config.get_expanded_dir_path(),
-            search_config.objects.clone().unwrap_or_default()
-        );
-
-        // Skip processing if this path has already been processed
-        if !processed_paths.contains(&path_key) {
-            search_in_config(&mut info, &search_config, root_output)?;
-            pb.inc(1); // Increment the progress bar
-            pb.set_message(format!("[INFO] Processing {} for user {}", path_key, user));
-
-            // Mark the path as processed
-            processed_paths.insert(path_key);
+            // Use find_files_in_dir to process the $MFT file for each drive
+            ntfs_reader::find_files_in_dir(&mut info, &search_config, &output_path)?;
+        } else {
+            dprintln!(
+                "Drive {} is not an NTFS file system or cannot be read.",
+                drive
+            );
         }
     }
-    
-    dprintln!("Collect completed");
+
+    dprintln!("Tasks completed");
 
     // Move the logfile into the root folder
     let logfile = "aralez.log";
@@ -377,26 +422,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-// Function to expand the configuration for all users and consolidate them
-fn expand_configs_for_all_users(config: &Config, users: &[String]) -> Vec<(String, SearchConfig)> {
-    let mut consolidated_configs = Vec::new();
-
-    for user in users {
-        let mut variables = HashMap::new();
-        variables.insert("user".to_string(), user.clone());
-
-        let user_specific_config = config.expand_placeholders(&variables);
-
-        for (_key, configs) in &user_specific_config.entries {
-            for config in configs {
-                consolidated_configs.push((user.clone(), config.clone()));
-            }
-        }
-    }
-
-    consolidated_configs
-}
-
 fn search_in_config<T>(
     info: &mut CommandInfo<T>,
     config: &SearchConfig,
@@ -406,9 +431,12 @@ where
     T: Read + Seek,
 {
     let drive = format!("{}\\{}", root_output.to_string(), "C");
-    ntfs_reader::find_files_in_dir(info, config, &format!("{}\\{}", drive, &config.get_expanded_dir_path()))
+    ntfs_reader::find_files_in_dir(
+        info,
+        config,
+        &format!("{}\\{}", drive, &config.get_expanded_dir_path()),
+    )
 }
-
 
 fn zip_dir(dir_name: &str) -> io::Result<()> {
     // Create a directory with the given name
@@ -456,4 +484,3 @@ fn add_directory_to_zip<W: Write + Seek>(
 
     Ok(())
 }
-

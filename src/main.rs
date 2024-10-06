@@ -293,7 +293,7 @@ fn main() -> Result<()> {
                                     }
                                     config::TypeExec::Internal => {
                                         let path = Path::new(&output_path);
-
+                                        let filename = executor.output_file.expect(MSG_ERROR_CONFIG);
                                         match executor.name.expect(MSG_ERROR_CONFIG).as_str() {
                                             "ProcInfo" => {
                                                 pb.inc(1); // Increment the progress bar
@@ -302,8 +302,7 @@ fn main() -> Result<()> {
                                                     "ProcInfo"
                                                 ));
                                                 // Process info
-                                                let filename = "ProcInfo.txt";
-                                                process::run_ps(filename, &path);
+                                                process::run_ps(&filename, &path);
                                             }
                                             "ProcDetailsInfo" => {
                                                 pb.inc(1); // Increment the progress bar
@@ -312,7 +311,6 @@ fn main() -> Result<()> {
                                                     "ProcDetailsInfo"
                                                 ));
                                                 // Process details
-                                                let filename = "ProcDetailsInfo.txt";
                                                 process_details::run(&filename, &path)
                                             }
                                             "PortsInfo" => {
@@ -322,8 +320,7 @@ fn main() -> Result<()> {
                                                     "NetworkInfo (PortsInfo)"
                                                 ));
                                                 // Network info
-                                                let filename = "PortsInfo.txt";
-                                                network_info::run_network_info(filename, &path);
+                                                network_info::run_network_info(&filename, &path);
                                             }
                                             &_ => dprintln!("[ERROR] Internal tool not found"),
                                         }

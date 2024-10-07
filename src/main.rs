@@ -12,10 +12,7 @@ mod macros;
 mod command_info;
 mod config;
 mod execute;
-mod network_info;
 mod ntfs_reader;
-mod process;
-mod process_details;
 mod sector_reader;
 mod utils;
 
@@ -24,7 +21,7 @@ use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
 use config::{Config, SearchConfig, TypeConfig};
-use execute::get_bin;
+use execute::{get_bin, run_internal};
 use execute::run_external;
 use execute::run_system;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -131,6 +128,25 @@ fn find_marker(data: &[u8], marker: &[u8]) -> Option<usize> {
     data.windows(marker.len())
         .rposition(|window| window == marker) // rposition finds the last occurrence
 }
+
+fn save_config_to_file(config: &Config, output_dir: &str) -> std::io::Result<()> {
+    let yaml_string = serde_yaml::to_string(&config).expect("Failed to serialize config to YAML");
+
+    // Ensure the root_output folder exists
+    let path = Path::new(output_dir);
+    if !path.exists() {
+        fs::create_dir_all(path)?;
+    }
+
+    // Define the output file path
+    let config_file_path = path.join("config.yaml");
+
+    // Write the YAML string to the file
+    let mut file = fs::File::create(config_file_path)?;
+    file.write_all(yaml_string.as_bytes())?;
+    Ok(())
+}
+
 fn main() -> Result<()> {
     // Print the welcome message
     println!(
@@ -209,6 +225,8 @@ fn main() -> Result<()> {
     }
 
     let root_output = &config.get_output_filename();
+    
+    save_config_to_file(&config, root_output)?;
 
     dprintln!("Aralez version: {}", env!("CARGO_PKG_VERSION"));
 
@@ -232,7 +250,8 @@ fn main() -> Result<()> {
 
     let sorted_tasks = config.get_tasks();
 
-    for (_, section_config) in sorted_tasks {
+    for (section_name, section_config) in sorted_tasks {
+        dprintln!("[INFO] START TASK {}",section_name);
         match section_config.r#type {
             config::TypeTasks::Collect => {
                 let mut processed_paths = HashSet::new();
@@ -248,7 +267,7 @@ fn main() -> Result<()> {
                         if !processed_paths.contains(&path_key) {
                             search_in_config(&mut info, &artifact, root_output)?;
                             pb.inc(1); // Increment the progress bar
-                            pb.set_message(format!("[INFO] Tasksing {}", path_key));
+                            pb.set_message(format!("[INFO] Running {}", path_key));
 
                             // Mark the path as processed
                             processed_paths.insert(path_key);
@@ -292,38 +311,14 @@ fn main() -> Result<()> {
                                         );
                                     }
                                     config::TypeExec::Internal => {
-                                        let path = Path::new(&output_path);
                                         let filename = executor.output_file.expect(MSG_ERROR_CONFIG);
-                                        match executor.name.expect(MSG_ERROR_CONFIG).as_str() {
-                                            "ProcInfo" => {
-                                                pb.inc(1); // Increment the progress bar
-                                                pb.set_message(format!(
-                                                    "[INFO] Running {} tool",
-                                                    "ProcInfo"
-                                                ));
-                                                // Process info
-                                                process::run_ps(&filename, &path);
-                                            }
-                                            "ProcDetailsInfo" => {
-                                                pb.inc(1); // Increment the progress bar
-                                                pb.set_message(format!(
-                                                    "[INFO] Running {} tool",
-                                                    "ProcDetailsInfo"
-                                                ));
-                                                // Process details
-                                                process_details::run(&filename, &path)
-                                            }
-                                            "PortsInfo" => {
-                                                pb.inc(1); // Increment the progress bar
-                                                pb.set_message(format!(
-                                                    "[INFO] Running {} tool",
-                                                    "NetworkInfo (PortsInfo)"
-                                                ));
-                                                // Network info
-                                                network_info::run_network_info(&filename, &path);
-                                            }
-                                            &_ => dprintln!("[ERROR] Internal tool not found"),
-                                        }
+                                        let tool_name = executor.name.expect(MSG_ERROR_CONFIG);
+                                        pb.inc(1); // Increment the progress bar
+                                        pb.set_message(format!(
+                                            "[INFO] Running {} tool",
+                                            tool_name
+                                        ));
+                                        run_internal(&tool_name, &filename, &output_path);
                                     }
                                     config::TypeExec::System => {
                                         pb.inc(1); // Increment the progress bar
@@ -355,7 +350,7 @@ fn main() -> Result<()> {
         if drive.starts_with("C:") {
             continue;
         }
-        dprintln!("[INFO] Tasksing drive: {}", drive);
+        dprintln!("[INFO] Running drive: {}", drive);
         let drive_letter = match drive.chars().next() {
             Some(l) => l,
             None => continue,

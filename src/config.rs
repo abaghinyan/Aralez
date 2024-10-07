@@ -8,7 +8,7 @@
 
 use crate::utils::replace_env_vars;
 use anyhow::Result;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use hostname::get;
 use chrono::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -17,8 +17,7 @@ use std::fmt;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
-    // Tasks now use a HashMap to store dynamic sections (memory_tools, artifacts, etc.)
-    pub tasks: HashMap<String, SectionConfig>,
+    pub tasks: IndexMap<String, SectionConfig>,
     pub output_filename: String,
 }
 
@@ -26,7 +25,7 @@ pub struct Config {
 pub struct SectionConfig {
     pub priority: u8,
     pub r#type: TypeTasks,
-    pub entries: HashMap<String, Vec<SearchConfig>>,
+    pub entries: IndexMap<String, Vec<SearchConfig>>,
 }
 
 #[derive(Debug, Clone)]
@@ -210,7 +209,7 @@ impl Config {
         let local: DateTime<Local> = Local::now();
         let datetime = local.format("%Y-%m-%d_%H-%M-%S").to_string();
 
-        let mut vars: HashMap<&str, &str> = HashMap::new();
+        let mut vars: IndexMap<&str, &str> = IndexMap::new();
         vars.insert("hostname", &machine_name);
         vars.insert("datetime", &datetime);
 
@@ -235,7 +234,7 @@ impl Config {
     pub fn tasks_entries_len(&self) -> u64 {
         let mut len: u64 = 0;
         for (_, section_config) in &self.tasks {
-            // Iterate over each entry in the HashMap (artifacts, etc.)
+            // Iterate over each entry in the IndexMap (artifacts, etc.)
             for (_, entries) in &section_config.entries {
                 len += entries.len() as u64;
             }

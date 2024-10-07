@@ -6,6 +6,10 @@
 // Author(s): Areg Baghinyan
 //
 
+mod network_info;
+mod process;
+mod process_details;
+
 use std::process::{Command, Stdio};
 use std::fs;
 use std::io::{self, Write};
@@ -13,6 +17,8 @@ use std::fs::{File, remove_file};
 use std::path::{Path, PathBuf};
 
 pub fn run_system(tool_name: &str, args: &[&str], output_filename: &str, output_path: &str) {
+    dprintln!("[INFO] Execution of {}", tool_name);
+
     // Create the full path for the output file
     let output_file_path = Path::new(output_path).join(output_filename);
 
@@ -47,8 +53,33 @@ pub fn run_system(tool_name: &str, args: &[&str], output_filename: &str, output_
     }
 
     dprintln!("[INFO] Tool output has been saved to: {}", output_file_path.display());
+    dprintln!("[INFO] Execution of {} completed", tool_name);
 }
 
+pub fn run_internal(tool_name:&str, output_filename: &str, output_path: &str) {
+    dprintln!("[INFO] Execution of {}", tool_name);
+
+    // Create the full path for the output file
+    let output_file_path = Path::new(output_path).join(output_filename);
+
+    match tool_name {
+        "ProcInfo" => {
+            process::run(&output_file_path);
+        }
+        "ProcDetailsInfo" => {
+            process_details::run(&output_file_path)
+        }
+        "PortsInfo" => {
+            network_info::run_network_info(&output_file_path);
+        }
+        &_ => {
+            dprintln!("[ERROR] Internal tool {} not found", tool_name);
+            return;
+        }
+    }
+    dprintln!("[INFO] Tool output has been saved to: {}", output_path);
+    dprintln!("[INFO] Execution of {} completed", tool_name);
+}
 
 pub fn run_external(
     exe_bytes: &[u8], 
@@ -95,7 +126,8 @@ pub fn run_external(
         dprintln!("[ERROR] Failed to clean up temp file: {}", e);
     }
 
-    dprintln!("[INFO] Execution of {} completed successfully", filename);
+    dprintln!("[INFO] Tool output has been saved to: {}", output_path);
+    dprintln!("[INFO] Execution of {} completed", filename);
 }
 
 pub fn get_bin(name: String) -> Result<&'static [u8], anyhow::Error> {
@@ -147,3 +179,4 @@ fn cleanup_temp_file(temp_exe_path: &Path) -> io::Result<()> {
     }
     Ok(())
 }
+

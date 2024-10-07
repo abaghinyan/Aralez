@@ -74,12 +74,9 @@ pub fn get_tcp_connections() -> Vec<(Ipv4Addr, u16, Ipv4Addr, u16, &'static str)
     tcp_connections
 }
 
-pub fn run_network_info(filename: &str, path: &Path) {
+pub fn run_network_info(full_path: &Path) {
     // Get TCP connections
     let tcp_connections = get_tcp_connections();
-
-    // Create the full path for the output file
-    let full_path = path.join(filename);
 
     // Try to create the file, log error if it fails
     let mut file = match File::create(&full_path) {

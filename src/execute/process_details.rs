@@ -376,10 +376,7 @@ fn list_all_processes() -> Result<Vec<ProcessInfo>> {
     Ok(processes)
 }
 
-pub fn run(filename: &str, path: &Path) {
-    // Create the full path
-    let full_path = path.join(filename);
-
+pub fn run(full_path: &Path) {
     // Try to create the file, log error if it fails
     let mut file = match File::create(&full_path) {
         Ok(f) => f,

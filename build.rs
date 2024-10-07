@@ -8,18 +8,25 @@ use std::process::Command;
 use winres::WindowsResource;
 
 fn main() -> io::Result<()> {
-    // Get the filename from the CONFIG_FILE environment variable, or default to "config.yml"
+    // Get the CONFIG_FILE environment variable, or default to default_config
     let config_filename = env::var("CONFIG_FILE").unwrap_or_else(|_| "config.yml".to_string());
     let config_path = Path::new("config").join(&config_filename);
 
-    // Check if the specified configuration file exists
+    // The target file where we will copy the configuration
+    let target_config = Path::new("config").join(".config.yml");
+
+    // Check if the selected config file exists
     if !config_path.exists() {
         eprintln!(
-            "Error: Configuration file '{}' not found in the 'config' folder.",
-            config_filename
+            "Error: Configuration file '{}' not found.",
+            config_path.display()
         );
-        std::process::exit(1); // Exit with an error code
+        std::process::exit(1); // Exit with an error code if file not found
     }
+
+    // Copy the selected config file to `.config.yml`
+    fs::copy(&config_path, &target_config)
+        .expect("Failed to copy config file to .config.yml");
 
     let target = std::env::var("TARGET").unwrap();
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();

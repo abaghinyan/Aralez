@@ -352,7 +352,7 @@ where
         }
         (Some(folder_patterns), Some(file_patterns))
     }).unwrap_or((None, None));
-    while let Some(entry_result) = entries.next(&mut info.fs) {
+    'outer_while: while let Some(entry_result) = entries.next(&mut info.fs) {
         let entry = match entry_result {
             Ok(entry) => entry,
             Err(_e) => {
@@ -385,8 +385,8 @@ where
                     } else {
                         format!("{}", object_name.clone())
                     };
-                    folder_patterns.as_ref().map(|patterns| {
-                        for pattern in patterns {
+                    if let Some(folder_patterns) = folder_patterns.as_ref() {
+                        for pattern in folder_patterns {
                             if pattern.starts_with("**/") {
                                 let folder_output_path = format!("{}/{}", out_dir, object_name);
                                 directories_to_recurse.push((file.clone(), folder_output_path, reg_data.clone()));
@@ -397,14 +397,20 @@ where
                                         if Pattern::new(subpath.as_str()).expect("Failed to read glob pattern").matches(&reg_data) {
                                             let folder_output_path = format!("{}/{}", out_dir, object_name);
                                             directories_to_recurse.push((file.clone(), folder_output_path, reg_data.clone()));
+
+                                            let components: Vec<&str> = subpath.split('/').collect();
+                                            if let Some(last_element) = components.last() {
+                                                if !last_element.contains('*') && !last_element.contains('?') {
+                                                    break 'outer_while;
+                                                }
+                                            }
                                         }
-                                    },
+                                    }
                                     None => continue,
                                 }
-                            } 
-                            
+                            }
                         }
-                    });
+                    }
                 } else {
                     config.objects.as_ref().map(|patterns| {
                         for pattern in patterns {

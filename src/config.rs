@@ -14,6 +14,9 @@ use chrono::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{self, Visitor};
 use std::fmt;
+use std::fs;
+use std::env;
+use std::path::Path;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
@@ -194,8 +197,15 @@ pub struct SearchConfig {
 impl Config {
     pub fn load_from_embedded() -> Result<Self> {
         // Embed the YAML content directly into the binary
-        let yaml_data = include_str!("config.yml");
-        let config: Config = serde_yaml::from_str(yaml_data)?;
+        let config_filename = env::var("CONFIG_FILE").unwrap_or_else(|_| "config.yml".to_string());
+        let config_path = Path::new("config").join(config_filename);
+            // Read the YAML file into a string
+        let yaml_data = fs::read_to_string(&config_path)
+        .expect(&format!("Error reading configuration file at {:?}", config_path));
+
+        // Deserialize the YAML string into the `Config` struct
+        let config: Config = serde_yaml::from_str(&yaml_data)?;
+
         Ok(config)
     }
 

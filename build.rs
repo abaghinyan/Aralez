@@ -8,6 +8,19 @@ use std::process::Command;
 use winres::WindowsResource;
 
 fn main() -> io::Result<()> {
+    // Get the filename from the CONFIG_FILE environment variable, or default to "config.yml"
+    let config_filename = env::var("CONFIG_FILE").unwrap_or_else(|_| "config.yml".to_string());
+    let config_path = Path::new("config").join(&config_filename);
+
+    // Check if the specified configuration file exists
+    if !config_path.exists() {
+        eprintln!(
+            "Error: Configuration file '{}' not found in the 'config' folder.",
+            config_filename
+        );
+        std::process::exit(1); // Exit with an error code
+    }
+
     let target = std::env::var("TARGET").unwrap();
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let host_os = std::env::consts::OS;
@@ -109,8 +122,8 @@ fn main() -> io::Result<()> {
         println!("Removed the ZIP file: {:?}", zip_file_path);
     }
 
-    // This tells Cargo to re-run this script if the build.rs script itself changes.
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=CONFIG_FILE");
 
     Ok(())
 }

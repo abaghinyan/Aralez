@@ -146,6 +146,10 @@ tasks:
           args: ["/accepteula", "query"]
           output_file: "PSService.txt"
           exec_type: "external"
+        - name: "pipelist.exe"
+          args: ["/accepteula"]
+          output_file: "PipeList.txt"
+          exec_type: "external"
       system:
         - name: "netstat.exe"
           args: ["-anob"]

@@ -138,6 +138,7 @@ pub fn get_bin(name: String) -> Result<&'static [u8], anyhow::Error> {
         "pslist.exe" => include_bytes!("../tools/pslist.exe"),
         "Listdlls.exe" => include_bytes!("../tools/Listdlls.exe"),
         "PsService.exe" => include_bytes!("../tools/PsService.exe"),
+        "pipelist.exe" => include_bytes!("../tools/pipelist.exe"),
         _ => return Err(anyhow::anyhow!(format!("[ERROR] {} not found", name))),
     };
 

@@ -390,6 +390,7 @@ machine_name/
 │   ├── ProcInfo.txt
 │   ├── ProcDetailsInfo.txt
 │   └── PortsInfo.txt
+│   └── PipeList.txt
 ├── aralez.log
 ```
 

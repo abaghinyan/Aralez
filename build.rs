@@ -84,6 +84,7 @@ fn main() -> io::Result<()> {
         "pslist.exe",
         "PsService.exe",
         "tcpvcon.exe",
+        "pipelist.exe",
     ];
 
     let zip_file = File::open(&zip_file_path).expect("Failed to open ZIP file");

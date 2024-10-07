@@ -69,12 +69,14 @@ pub fn initialize_command_info<'n, T: Read + Seek>(fs: T, ntfs: &'n Ntfs) -> Res
 }
 
 /// Navigate to the Logs directory and find all files.
-pub fn find_files_in_dir<T>(info: &mut CommandInfo<T>, element: &SearchConfig, out_dir: &str) -> Result<()>
+pub fn find_files_in_dir<T>(info: &mut CommandInfo<T>, element: &mut SearchConfig, out_dir: &str) -> Result<()>
 where
     T: Read + Seek,
 {
     // Navigate to the Logs directory
-    navigate_to_directory(info, &element.get_expanded_dir_path())?;
+    let dir_path = element.get_expanded_dir_path();
+    
+    navigate_to_directory(info, &dir_path)?;
 
     // List all files in the Logs directory
     match &element.r#type {
@@ -163,7 +165,7 @@ where
                     if objects.contains(&".*".to_string()) && !file.is_directory() {
                         if seen_files.insert(file_name.clone()) && config.max_size.map_or(true, |max| file_size <= max) {
                             dprintln!("[INFO] Found file: {}", file_name);
-                            get(&file, &file_name, out_dir, &mut info.fs, config.encrypt.as_ref())?;
+                            get(&file, &file_name, out_dir, &mut info.fs, config.encrypt.as_ref());
                         }
                     } else if objects.contains(&"".to_string()) {
                         if seen_files.insert(file_name.clone()) {
@@ -174,7 +176,7 @@ where
                                 directories_to_recurse.push((file, dir_path));
                             } else if config.max_size.map_or(true, |max| file_size <= max) {
                                 dprintln!("[INFO] Found file: {}", file_name);
-                                get(&file, &file_name, out_dir, &mut info.fs, config.encrypt.as_ref())?;
+                                get(&file, &file_name, out_dir, &mut info.fs, config.encrypt.as_ref());
                             }
                         }
                     } else {
@@ -182,7 +184,7 @@ where
                             if !file.is_directory() && file_name.ends_with(ext) && seen_files.insert(file_name.clone()) {
                                 if config.max_size.map_or(true, |max| file_size <= max) {
                                     dprintln!("[INFO] Found file: {}", file_name);
-                                    get(&file, &file_name, out_dir, &mut info.fs, config.encrypt.as_ref())?;
+                                    get(&file, &file_name, out_dir, &mut info.fs, config.encrypt.as_ref());
                                 }
                                 break;
                             }
@@ -193,7 +195,7 @@ where
                     if !file.is_directory() && seen_files.insert(file_name.clone()) {
                         if config.max_size.map_or(true, |max| file_size <= max) {
                             dprintln!("[INFO] Found file: {}", file_name);
-                            get(&file, &file_name, out_dir, &mut info.fs, config.encrypt.as_ref())?;
+                            get(&file, &file_name, out_dir, &mut info.fs, config.encrypt.as_ref());
                         }
                     }
                 }
@@ -300,7 +302,7 @@ where
                             // Respect the original file size limit
                             if config.max_size.map_or(true, |max| file_size <= max) {
                                 dprintln!("[INFO] Found file: {}", object_name);
-                                get(&file, &object_name, out_dir, &mut info.fs, config.encrypt.as_ref())?;
+                                get(&file, &object_name, out_dir, &mut info.fs, config.encrypt.as_ref());
                             }
                         }
                     }
@@ -379,39 +381,40 @@ where
             Ok(object_name) => {
                 if file.is_directory() && (!relative_path.is_empty() || !config.get_dir_path().is_empty()) {
                     let reg_data =  if !relative_path.is_empty() {
-                        format!("{}{}/", relative_path, object_name.clone())
+                        format!("{}/{}", relative_path, object_name.clone())
                     } else {
-                        format!("{}/", object_name.clone())
+                        format!("{}", object_name.clone())
                     };
                     folder_patterns.as_ref().map(|patterns| {
                         for pattern in patterns {
-                            let level = get_subfolder_level(&reg_data);
-                            match get_level_path(pattern, level) {
-                                Some(subpath) => {
-                                    if Pattern::new(subpath.as_str()).expect("Failed to read glob pattern").matches(&reg_data) {
-                                        let folder_output_path = format!("{}/{}", out_dir, object_name);
-                                        directories_to_recurse.push((file.clone(), folder_output_path, reg_data.clone()));
-                                    }
-                                },
-                                None => {
-                                    if Pattern::new(pattern).expect("Failed to read glob pattern").matches(&reg_data) {
-                                        let folder_output_path = format!("{}/{}", out_dir, object_name);
-                                        directories_to_recurse.push((file.clone(), folder_output_path, reg_data.clone()));
-                                    }
-                                },
-                            }
+                            if pattern.starts_with("**/") {
+                                let folder_output_path = format!("{}/{}", out_dir, object_name);
+                                directories_to_recurse.push((file.clone(), folder_output_path, reg_data.clone()));
+                            } else {
+                                let level = get_subfolder_level(&reg_data);
+                                match get_level_path(pattern, level) {
+                                    Some(subpath) => {
+                                        if Pattern::new(subpath.as_str()).expect("Failed to read glob pattern").matches(&reg_data) {
+                                            let folder_output_path = format!("{}/{}", out_dir, object_name);
+                                            directories_to_recurse.push((file.clone(), folder_output_path, reg_data.clone()));
+                                        }
+                                    },
+                                    None => continue,
+                                }
+                            } 
+                            
                         }
                     });
                 } else {
                     config.objects.as_ref().map(|patterns| {
                         for pattern in patterns {
-                            let rel_path = format!("{}{}", relative_path, object_name.clone());
+                            let rel_path = format!("{}/{}", relative_path, object_name.clone());
                             if Pattern::new(&pattern.replace("\\", "/")).expect("Failed to read glob pattern").matches(&rel_path) && 
                                 seen_files.insert(object_name.clone()) {
                                 // Respect the original file size limit
                                 if config.max_size.map_or(true, |max| file_size <= max) {
                                     dprintln!("[INFO] Found file: {}", object_name);
-                                    get(&file, &object_name, out_dir, &mut info.fs, config.encrypt.as_ref()).expect("Can't get file");
+                                    get(&file, &object_name, out_dir, &mut info.fs, config.encrypt.as_ref());
                                 }
                             }                    
                         }

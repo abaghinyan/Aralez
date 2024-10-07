@@ -250,14 +250,14 @@ fn main() -> Result<()> {
 
     let sorted_tasks = config.get_tasks();
 
-    for (section_name, section_config) in sorted_tasks {
+    for (section_name, mut section_config) in sorted_tasks {
         dprintln!("[INFO] START TASK {}",section_name);
         match section_config.r#type {
             config::TypeTasks::Collect => {
                 let mut processed_paths = HashSet::new();
 
-                for (_, artifacts) in &section_config.entries {
-                    for artifact in artifacts {
+                for (_, artifacts) in &mut section_config.entries {
+                    for mut artifact in artifacts {
                         let path_key = format!(
                             "{}\\{:?}",
                             artifact.get_expanded_dir_path(),
@@ -265,7 +265,7 @@ fn main() -> Result<()> {
                         );
 
                         if !processed_paths.contains(&path_key) {
-                            search_in_config(&mut info, &artifact, root_output)?;
+                            search_in_config(&mut info, &mut artifact, root_output)?;
                             pb.inc(1); // Increment the progress bar
                             pb.set_message(format!("[INFO] Running {}", path_key));
 
@@ -368,7 +368,7 @@ fn main() -> Result<()> {
             let mut info = ntfs_reader::initialize_command_info(fs, &ntfs)?;
 
             // Prepare search configuration to target the MFT file
-            let search_config = SearchConfig {
+            let mut search_config = SearchConfig {
                 dir_path: Some("".to_string()),
                 objects: Some(vec!["$MFT".to_string()]),
                 max_size: None,
@@ -379,9 +379,10 @@ fn main() -> Result<()> {
                 exec_type: None,
                 args: None,
             };
-
-            // Use find_files_in_dir to process the $MFT file for each drive
-            ntfs_reader::find_files_in_dir(&mut info, &search_config, &output_path)?;
+            match search_config.sanitize() {
+                Ok(_) => ntfs_reader::find_files_in_dir(&mut info, &mut search_config, &output_path)?,
+                Err(_) => dprintln!("[ERROR] Config sanitization failed"),
+            };
         } else {
             dprintln!(
                 "Drive {} is not an NTFS file system or cannot be read.",
@@ -416,12 +417,14 @@ fn main() -> Result<()> {
 
 fn search_in_config<T>(
     info: &mut CommandInfo<T>,
-    config: &SearchConfig,
+    config: &mut SearchConfig,
     root_output: &str,
 ) -> Result<()>
 where
     T: Read + Seek,
 {
+    
+    config.sanitize().expect("[ERROR] Config sanitization failed");
     let drive = format!("{}\\{}", root_output.to_string(), "C");
     ntfs_reader::find_files_in_dir(
         info,

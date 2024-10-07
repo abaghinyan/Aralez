@@ -256,4 +256,52 @@ impl SearchConfig {
             None => String::new(),
         }
     }
+
+      // Method to sanitize dir_path and objects based on metacharacters
+      pub fn sanitize(&mut self) -> Result<(), String> {
+        if let Some(dir_path) = &self.dir_path {
+            // Check if the dir_path contains a glob element (*, **, ?, or bracketed expressions)
+            if dir_path.contains("*") || dir_path.contains("?") || dir_path.contains("[") || dir_path.contains("]") {
+                let parts: Vec<&str> = dir_path.split("\\").collect();
+                
+                // Extract the common part (before any glob or metacharacter)
+                let mut new_dir_path = String::new();
+                let mut remaining_path = Vec::new();
+                
+                for part in parts.iter() {
+                    if part.contains("*") || part.contains("**") || part.contains("?") || part.contains("[") || part.contains("]") {
+                        remaining_path.push(part.to_string());
+                    } else {
+                        if !remaining_path.is_empty() {
+                            remaining_path.push(part.to_string());
+                        } else {
+                            if !new_dir_path.is_empty() {
+                                new_dir_path.push_str("\\");
+                            }
+                            new_dir_path.push_str(part);
+                        }
+                    }
+                }
+
+                // If there's no remaining path, assume it's for the current directory
+                let remaining_path_str = if !remaining_path.is_empty() {
+                    remaining_path.join("\\")
+                } else {
+                    "*".to_string() // A wildcard to match anything in the current directory
+                };
+
+                // Update objects by prepending the remaining path to each object pattern
+                if let Some(ref mut objects) = self.objects {
+                    for object in objects.iter_mut() {
+                        *object = format!("{}\\{}", remaining_path_str, object);
+                    }
+                }
+
+                // Update the dir_path with the new common part
+                self.dir_path = Some(new_dir_path);
+            }
+        }
+
+        Ok(())
+    }
 }

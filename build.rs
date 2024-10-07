@@ -131,6 +131,7 @@ fn main() -> io::Result<()> {
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=CONFIG_FILE");
-
+    println!("cargo:rerun-if-changed=config");
+    
     Ok(())
 }

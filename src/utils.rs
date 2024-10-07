@@ -6,7 +6,7 @@
 // Author(s): Areg Baghinyan
 //
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use ntfs::{NtfsFile, NtfsReadSeek, NtfsError, structured_values::NtfsFileNamespace};
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::{Read, Seek, Write};
@@ -20,23 +20,28 @@ use regex::Regex;
 use std::env;
 use std::io;
 
-pub fn get<T>(file: &NtfsFile, filename: &str, out_dir: &str, fs: &mut T, encrypt: Option<&String>) -> Result<()>
+pub fn get<T>(file: &NtfsFile, filename: &str, out_dir: &str, fs: &mut T, encrypt: Option<&String>)
 where
     T: Read + Seek,
-{   
-    let (file_name, data_stream_name) = (get_object_name(file, fs).unwrap_or_else(|_| filename.to_string()), out_dir);
-    create_dir_all(out_dir)?;
+{
+    // Get the file name or use the provided filename, log errors if they occur
+    let (file_name, data_stream_name) = match get_object_name(file, fs) {
+        Ok(name) => (name, out_dir),
+        Err(_) => (filename.to_string(), out_dir),
+    };
 
-    // Check if encryption is required
+    // Try to create the directory, log error if it fails
+    if let Err(e) = create_dir_all(out_dir) {
+        dprintln!("[ERROR] Failed to create directory `{}`: {}", out_dir, e);
+        return;
+    }
+
+    // Check if encryption is required and construct the output file name
     let output_file_name = if let Some(ref password) = encrypt {
         if !password.is_empty() {
-            // Modify the file name to add .enc before the extension
             let path = Path::new(&file_name);
             let new_file_name = if let Some(extension) = path.extension() {
-                format!(
-                    "{}.enc",
-                    path.with_extension(extension).to_string_lossy()
-                )
+                format!("{}.enc", path.with_extension(extension).to_string_lossy())
             } else {
                 format!("{}.enc", path.to_string_lossy())
             };
@@ -48,25 +53,50 @@ where
         format!("{}/{}", out_dir, file_name)
     };
 
-    let mut output_file = OpenOptions::new()
+    // Try to open the file for writing, log error if it fails
+    let mut output_file = match OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&output_file_name)
-        .with_context(|| format!("Tried to open \"{output_file_name}\" for writing"))?;
-
-    let data_item = match file.data(fs, "") {
-        Some(data_item) => data_item?,
-        None => {
-            dprintln!("[WARN] The file does not have a \"{data_stream_name}\" $DATA attribute.");
-            return Ok(());
+    {
+        Ok(f) => f,
+        Err(e) => {
+            dprintln!("[ERROR] Failed to open file `{}` for writing: {}", output_file_name, e);
+            return;
         }
     };
 
-    let data_attribute = data_item.to_attribute()?;
-    let mut data_value = data_attribute.value(fs)?;
+    // Try to get the data item, log warning if it does not exist
+    let data_item = match file.data(fs, "") {
+        Some(Ok(item)) => item,
+        Some(Err(e)) => {
+            dprintln!("[ERROR] Failed to retrieve data for `{}`: {}", data_stream_name, e);
+            return;
+        }
+        None => {
+            dprintln!("[WARN] The file does not have a `{}` $DATA attribute.", data_stream_name);
+            return;
+        }
+    };
+
+    let data_attribute = match data_item.to_attribute() {
+        Ok(attr) => attr,
+        Err(e) => {
+            dprintln!("[ERROR] Failed to retrieve attribute for `{}`: {}", data_stream_name, e);
+            return;
+        }
+    };
+
+    let mut data_value = match data_attribute.value(fs) {
+        Ok(val) => val,
+        Err(e) => {
+            dprintln!("[ERROR] Failed to retrieve data value for `{}`: {}", data_stream_name, e);
+            return;
+        }
+    };
 
     dprintln!(
-        "[INFO] Saving {} bytes of data in \"{}\"...",
+        "[INFO] Saving {} bytes of data in `{}`...",
         data_value.len(),
         output_file_name
     );
@@ -82,7 +112,7 @@ where
 
     if let Some(ref password) = encrypt {
         if !password.is_empty() {
-            // Derive the key from the password using SHA-256
+            // Derive the key and handle encryption
             let mut hasher = Sha256::new();
             hasher.update(password.as_bytes());
             let key_bytes = hasher.finalize();
@@ -93,23 +123,38 @@ where
             OsRng.fill_bytes(&mut nonce);
 
             let nonce = Nonce::from_slice(&nonce);
-            let ciphertext = cipher.encrypt(nonce, buf.as_ref())
-                .expect("encryption failure!");
+            let ciphertext = match cipher.encrypt(nonce, buf.as_ref()) {
+                Ok(ct) => ct,
+                Err(e) => {
+                    dprintln!("[ERROR] Encryption failed: {}", e);
+                    return;
+                }
+            };
 
             // Write nonce and ciphertext to the file
-            output_file.write_all(nonce)?;
-            output_file.write_all(&ciphertext)?;
+            if output_file.write_all(nonce).is_err() || output_file.write_all(&ciphertext).is_err() {
+                dprintln!("[ERROR] Failed to write encrypted data to `{}`", output_file_name);
+                return;
+            }
         } else {
-            // If the password is empty, write the file normally
-            output_file.write_all(&buf)?;
+            // Write the file normally if no encryption is needed
+            if output_file.write_all(&buf).is_err() {
+                dprintln!("[ERROR] Failed to write data to `{}`", output_file_name);
+                return;
+            }
         }
     } else {
         // No encryption, write the file normally
-        output_file.write_all(&buf)?;
+        if output_file.write_all(&buf).is_err() {
+            dprintln!("[ERROR] Failed to write data to `{}`", output_file_name);
+            return;
+        }
     }
 
-    Ok(())
+    dprintln!("[INFO] Data successfully saved to `{}`", output_file_name);
 }
+
+
 /// Retrieves the name of the file from the NTFS $FILE_NAME attribute.
 pub fn get_object_name<T: Read + Seek>(file: &NtfsFile, fs: &mut T) -> Result<String, NtfsError> {
     if let Some(result) = file.name(fs, Some(NtfsFileNamespace::Win32), None) {
@@ -200,7 +245,7 @@ pub fn remove_dir_all(path: &str) -> io::Result<()> {
 
 pub fn get_subfolder_level(path: &str) -> usize {
     // Count the number of '/' characters in the path
-    path.matches('/').count()
+    path.matches('/').count() 
 }
 
 pub fn get_level_path(path: &str, level: usize) -> Option<String> {

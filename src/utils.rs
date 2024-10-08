@@ -248,13 +248,16 @@ pub fn get_subfolder_level(path: &str) -> usize {
     path.matches('/').count() 
 }
 
-pub fn get_level_path(path: &str, level: usize) -> Option<String> {
+pub fn get_level_path_pattern(path: &str, level: usize) -> Option<String> {
     let parts: Vec<&str> = path.split('/').collect();
     
     if level < parts.len() {
         // Join the parts up to the requested level (inclusive)
         Some(parts[..=level].join("/"))
     } else {
+        if path.ends_with("**") {
+            return Some(path.to_string())
+        }
         None // Return None if the level doesn't exist
     }
 }

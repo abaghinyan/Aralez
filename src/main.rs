@@ -369,7 +369,7 @@ fn main() -> Result<()> {
 
             // Prepare search configuration to target the MFT file
             let mut search_config = SearchConfig {
-                dir_path: Some("".to_string()),
+                dir_path: Some(".".to_string()),
                 objects: Some(vec!["$MFT".to_string()]),
                 max_size: None,
                 encrypt: None,

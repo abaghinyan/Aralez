@@ -20,7 +20,7 @@ tasks:
     priority: 1
     entries: 
       mft:
-        - dir_path: ""
+        - dir_path: "."
           objects: ["$MFT"]
       extend:
         - dir_path: "$Extend"

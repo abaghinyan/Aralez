@@ -277,3 +277,11 @@ pub fn get_level_path_regex(path: &str, level: usize) -> Option<String> {
         None // Return None if the level doesn't exist
     }
 }
+
+pub fn remove_trailing_backslashes(input: &str) -> String {
+    if input.ends_with("\\") {
+        input.strip_suffix("\\").unwrap_or(input).to_string()
+    } else {
+        input.to_string()
+    }
+}

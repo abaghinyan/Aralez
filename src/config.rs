@@ -8,11 +8,11 @@
 
 use crate::utils::replace_env_vars;
 use anyhow::Result;
-use indexmap::IndexMap;
-use hostname::get;
 use chrono::prelude::*;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use hostname::get;
+use indexmap::IndexMap;
 use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -70,7 +70,10 @@ impl<'de> Deserialize<'de> for TypeConfig {
                     "string" => Ok(TypeConfig::String),
                     "glob" => Ok(TypeConfig::Glob),
                     "regex" => Ok(TypeConfig::Regex),
-                    _ => Err(de::Error::unknown_variant(value, &["string", "glob", "regex"])),
+                    _ => Err(de::Error::unknown_variant(
+                        value,
+                        &["string", "glob", "regex"],
+                    )),
                 }
             }
         }
@@ -169,7 +172,10 @@ impl<'de> Deserialize<'de> for TypeExec {
                     "external" => Ok(TypeExec::External),
                     "internal" => Ok(TypeExec::Internal),
                     "system" => Ok(TypeExec::System),
-                    _ => Err(de::Error::unknown_variant(value, &["external", "internal", "system"])),
+                    _ => Err(de::Error::unknown_variant(
+                        value,
+                        &["external", "internal", "system"],
+                    )),
                 }
             }
         }
@@ -200,7 +206,6 @@ impl Config {
     }
 
     pub fn get_output_filename(&self) -> String {
-
         let machine_name = get()
             .ok()
             .and_then(|hostname| hostname.into_string().ok())
@@ -216,7 +221,8 @@ impl Config {
         let mut output_filename_expand = self.output_filename.clone();
 
         for (key, value) in vars {
-            output_filename_expand = output_filename_expand.replace(&format!("{{{{{}}}}}", key), value);
+            output_filename_expand =
+                output_filename_expand.replace(&format!("{{{{{}}}}}", key), value);
         }
         output_filename_expand
     }
@@ -241,7 +247,6 @@ impl Config {
         }
         len
     }
-
 }
 
 impl SearchConfig {
@@ -250,26 +255,28 @@ impl SearchConfig {
         replace_env_vars(&self.dir_path.clone().unwrap_or_default())
     }
 
-    pub fn get_dir_path (&self) -> String {
-        match &self.dir_path {
-            Some(path) => path.to_string(),
-            None => String::new(),
-        }
-    }
-
-      // Method to sanitize dir_path and objects based on metacharacters
-      pub fn sanitize(&mut self) -> Result<(), String> {
+    // Method to sanitize dir_path and objects based on metacharacters
+    pub fn sanitize(&mut self) -> Result<(), String> {
         if let Some(dir_path) = &self.dir_path {
             // Check if the dir_path contains a glob element (*, **, ?, or bracketed expressions)
-            if dir_path.contains("*") || dir_path.contains("?") || dir_path.contains("[") || dir_path.contains("]") {
+            if dir_path.contains("*")
+                || dir_path.contains("?")
+                || dir_path.contains("[")
+                || dir_path.contains("]")
+            {
                 let parts: Vec<&str> = dir_path.split("\\").collect();
-                
+
                 // Extract the common part (before any glob or metacharacter)
                 let mut new_dir_path = String::new();
                 let mut remaining_path = Vec::new();
-                
+
                 for part in parts.iter() {
-                    if part.contains("*") || part.contains("**") || part.contains("?") || part.contains("[") || part.contains("]") {
+                    if part.contains("*")
+                        || part.contains("**")
+                        || part.contains("?")
+                        || part.contains("[")
+                        || part.contains("]")
+                    {
                         remaining_path.push(part.to_string());
                     } else {
                         if !remaining_path.is_empty() {

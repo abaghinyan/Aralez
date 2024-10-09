@@ -249,13 +249,11 @@ fn main() -> Result<()> {
     );
 
     let sorted_tasks = config.get_tasks();
-
     for (section_name, mut section_config) in sorted_tasks {
         dprintln!("[INFO] START TASK {}",section_name);
         match section_config.r#type {
             config::TypeTasks::Collect => {
                 let mut processed_paths = HashSet::new();
-
                 for (_, artifacts) in &mut section_config.entries {
                     for mut artifact in artifacts {
                         let path_key = format!(
@@ -263,12 +261,10 @@ fn main() -> Result<()> {
                             artifact.get_expanded_dir_path(),
                             artifact.objects.clone().unwrap_or_default()
                         );
-
                         if !processed_paths.contains(&path_key) {
-                            search_in_config(&mut info, &mut artifact, root_output)?;
                             pb.inc(1); // Increment the progress bar
                             pb.set_message(format!("[INFO] Running {}", path_key));
-
+                            search_in_config(&mut info, &mut artifact, root_output)?;
                             // Mark the path as processed
                             processed_paths.insert(path_key);
                         }

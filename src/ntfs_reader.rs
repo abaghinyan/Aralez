@@ -9,8 +9,7 @@
 use crate::command_info::CommandInfo;
 use crate::config::{SearchConfig, TypeConfig};
 use crate::utils::{
-    get, get_level_path_pattern, get_level_path_regex, get_object_name, get_subfolder_level,
-    get_subfolder_level_regex,
+    get, get_level_path_pattern, get_level_path_regex, get_object_name, get_subfolder_level, get_subfolder_level_regex, remove_trailing_backslashes
 };
 use anyhow::Result;
 use glob::Pattern;
@@ -84,11 +83,12 @@ where
     T: Read + Seek,
 {
     // Navigate to the Logs directory
-    let dir_path = element.get_expanded_dir_path();
+    let dir_path = remove_trailing_backslashes(&element.get_expanded_dir_path());
     match navigate_to_directory(info, &dir_path) {
         Ok(_) => {
             // List all files in the Logs directory
             let mut seen_files: HashSet<String> = HashSet::new();
+            let mut visited_dirs = HashSet::new();
             return match &element.r#type {
                 Some(el_type) => match el_type {
                     TypeConfig::String => list_files_in_current_dir(info, element, out_dir),
@@ -98,6 +98,7 @@ where
                         out_dir,
                         String::new(),
                         &mut seen_files,
+                        &mut visited_dirs,
                     ),
                     TypeConfig::Regex => {
                         list_files_in_current_dir_regex(info, element, out_dir, String::new())
@@ -109,6 +110,7 @@ where
                     out_dir,
                     String::new(),
                     &mut seen_files,
+                    &mut visited_dirs,
                 ),
             };
         }
@@ -413,12 +415,17 @@ where
     Ok(())
 }
 
+
+/// **      : files of current folder and subfolders
+/// **\\*   : files of subfolders
+/// *       : files of current folder   
 pub fn list_files_in_current_dir_glob<T>(
     info: &mut CommandInfo<T>,
     config: &SearchConfig,
     out_dir: &str,
     relative_path: String,
     seen_files: &mut HashSet<String>,
+    visited_dirs: &mut HashSet<String>, // Keep track of visited directories
 ) -> Result<()>
 where
     T: Read + Seek,
@@ -427,27 +434,33 @@ where
     let index = current_directory.directory_index(&mut info.fs)?;
     let mut entries = index.entries();
 
-    let (folder_patterns, file_patterns) = config
+    // Extract folder and file pattern pairs from the configuration
+    let folder_file_pairs = config
         .objects
         .as_ref()
         .map(|patterns| {
-            let mut folder_patterns = Vec::new();
-            let mut file_patterns = Vec::new();
+            let mut folder_file_pairs = Vec::new();
             for pattern in patterns {
-                let sanitized_pattern = pattern.replace("\\", "/");
-                if let Some(last_sep) = sanitized_pattern.rfind("/") {
-                    let folder_part = &sanitized_pattern[..last_sep];
-                    let file_part = &sanitized_pattern[last_sep + 1..];
-                    folder_patterns.push(folder_part.to_string());
-                    file_patterns.push(file_part.to_string());
+                if pattern.ends_with("**") {
+                    let folder_part = pattern;
+                    let file_part = "**";
+                    folder_file_pairs.push((folder_part.to_string(), file_part.to_string()));
                 } else {
-                    file_patterns.push(sanitized_pattern);
-                }
+                    let sanitized_pattern = pattern.replace("\\", "/");
+                    if let Some(last_sep) = sanitized_pattern.rfind("/") {
+                        let folder_part = &sanitized_pattern[..last_sep];
+                        let file_part = &sanitized_pattern[last_sep + 1..];
+                        folder_file_pairs.push((folder_part.to_string(), file_part.to_string()));
+                    } else {
+                        folder_file_pairs.push((String::new(), sanitized_pattern.clone()));
+                        // No file part, treat the whole thing as a folder
+                    }
+                } 
             }
-            (Some(folder_patterns), Some(file_patterns))
+            folder_file_pairs
         })
-        .unwrap_or((None, None));
-    // Iterate over entries in the current directory
+        .unwrap_or_default(); // In case there are no patterns, return an empty Vec
+
     while let Some(entry_result) = entries.next(&mut info.fs) {
         let entry = match entry_result {
             Ok(entry) => entry,
@@ -471,109 +484,95 @@ where
 
         match get_object_name(&file, &mut info.fs) {
             Ok(object_name) => {
-                // Process directories
-                if file.is_directory()
-                    && (!relative_path.is_empty() || !config.get_dir_path().is_empty())
-                {
+                let full_path = format!("{}/{}", relative_path, object_name);
+
+                // Prevent directory loop by checking if this directory has been visited before
+                if file.is_directory() {
+                    if visited_dirs.contains(&full_path) {
+                        dprintln!("[WARN] Skipping directory loop: {}", full_path);
+                        continue;
+                    }
+                    visited_dirs.insert(full_path.clone()); // Mark directory as visited
+
+                    // Proceed with directory traversal logic
                     let reg_data = if !relative_path.is_empty() {
                         format!("{}/{}", relative_path, object_name)
                     } else {
                         object_name.clone()
                     };
+                    for (folder_pattern, _) in &folder_file_pairs {
+                        if folder_pattern.starts_with("**/") {
+                            let folder_output_path = format!("{}/{}", out_dir, object_name);
+                            info.current_directory.push(file.clone());
+                            list_files_in_current_dir_glob(
+                                info,
+                                config,
+                                &folder_output_path,
+                                reg_data.clone(),
+                                seen_files,
+                                visited_dirs, // Pass visited dirs to prevent loops
+                            )?;
+                        } else {
+                            let level = get_subfolder_level(&reg_data);
 
-                    if let Some(folder_patterns) = folder_patterns.as_ref() {
-                        for pattern in folder_patterns {
-                            if pattern.starts_with("**/") {
-                                let folder_output_path = format!("{}/{}", out_dir, object_name);
-                                info.current_directory.push(file.clone());
-                                list_files_in_current_dir_glob(
-                                    info,
-                                    config,
-                                    &folder_output_path,
-                                    reg_data.clone(),
-                                    seen_files,
-                                )?;
-                            } else {
-                                let level = get_subfolder_level(&reg_data);
-
-                                if let Some(subpath) = get_level_path_pattern(pattern, level) {
-                                    if Pattern::new(&subpath)
-                                        .expect("Failed to read glob pattern")
-                                        .matches(&reg_data)
-                                        || subpath.ends_with("**")
-                                    {
-                                        let folder_output_path =
-                                            format!("{}/{}", out_dir, object_name);
-                                        info.current_directory.push(file.clone());
-                                        list_files_in_current_dir_glob(
-                                            info,
-                                            config,
-                                            &folder_output_path,
-                                            reg_data.clone(),
-                                            seen_files,
-                                        )?;
-                                    }
+                            if let Some(subpath) = get_level_path_pattern(folder_pattern, level) {
+                                if Pattern::new(&subpath)
+                                    .expect("Failed to read glob pattern")
+                                    .matches(&reg_data)
+                                    || subpath.ends_with("**")
+                                {
+                                    let folder_output_path = format!("{}/{}", out_dir, object_name);
+                                    info.current_directory.push(file.clone());
+                                    list_files_in_current_dir_glob(
+                                        info,
+                                        config,
+                                        &folder_output_path,
+                                        reg_data.clone(),
+                                        seen_files,
+                                        visited_dirs, // Pass visited dirs to prevent loops
+                                    )?;
                                 }
                             }
                         }
                     }
                 } else {
                     // Process files
-                    if let Some(ref file_patterns) = file_patterns {
-                        for file_pattern in file_patterns {
-                            if let Some(folder_patterns) = folder_patterns.as_ref() {
-                                if folder_patterns.is_empty() {
-                                    let rel_path = if !relative_path.is_empty() {
-                                        format!("{}/{}", relative_path, object_name)
-                                    } else {
-                                        object_name.clone()
-                                    };
+                    for (folder_pattern, file_pattern) in &folder_file_pairs {
+                        if !file_pattern.is_empty() {
+                            let rel_path = if !relative_path.is_empty() {
+                                format!("{}/{}", relative_path, object_name)
+                            } else {
+                                object_name.clone()
+                            };
+                            let full_pattern = if folder_pattern.is_empty() {
+                                file_pattern.to_string()
+                            } else {
+                                format!("{}/{}", folder_pattern, file_pattern)
+                            };
+                            // Manage the case **\\*, if folder_pattern and rel_path are on the same level
+                            if folder_pattern.ends_with("**") && file_pattern != "**" {
+                                let level_rel_path = get_subfolder_level(&rel_path);
+                                let level_folder_pattern = get_subfolder_level(&folder_pattern);
+                                if level_rel_path <= level_folder_pattern {
+                                    break;
+                                }
+                            } 
 
-                                    if Pattern::new(&file_pattern.replace("\\", "/"))
-                                        .expect("Failed to read glob pattern")
-                                        .matches(&rel_path)
-                                        && !seen_files.contains(&rel_path)
-                                    {
-                                        if config.max_size.map_or(true, |max| file_size <= max) {
-                                            dprintln!("[INFO] Found file: {}", object_name);
-                                            get(
-                                                &file,
-                                                &object_name,
-                                                out_dir,
-                                                &mut info.fs,
-                                                config.encrypt.as_ref(),
-                                            );
-                                            seen_files.insert(rel_path.clone());
-                                        }
-                                    }
-                                } else {
-                                    for folder_pattern in folder_patterns {
-                                        let rel_path = if !relative_path.is_empty() {
-                                            format!("{}/{}", relative_path, object_name)
-                                        } else {
-                                            object_name.clone()
-                                        };
-                                        let full_pattern =
-                                            format!("{}/{}", folder_pattern, file_pattern);
-                                        if Pattern::new(&full_pattern.replace("\\", "/"))
-                                            .expect("Failed to read glob pattern")
-                                            .matches(&rel_path)
-                                            && !seen_files.contains(&rel_path)
-                                        {
-                                            if config.max_size.map_or(true, |max| file_size <= max)
-                                            {
-                                                dprintln!("[INFO] Found file: {}", object_name);
-                                                get(
-                                                    &file,
-                                                    &object_name,
-                                                    out_dir,
-                                                    &mut info.fs,
-                                                    config.encrypt.as_ref(),
-                                                );
-                                                seen_files.insert(rel_path.clone());
-                                            }
-                                        }
-                                    }
+                            if Pattern::new(&full_pattern.replace("\\", "/"))
+                                .expect("Failed to read glob pattern")
+                                .matches(&rel_path)
+                                && !seen_files.contains(&rel_path)
+                            {
+                                if config.max_size.map_or(true, |max| file_size <= max) {
+                                    dprintln!("[INFO] Found file: {}", object_name);
+                                    get(
+                                        &file,
+                                        &object_name,
+                                        out_dir,
+                                        &mut info.fs,
+                                        config.encrypt.as_ref(),
+                                    );
+                                    seen_files.insert(rel_path.clone());
                                 }
                             }
                         }

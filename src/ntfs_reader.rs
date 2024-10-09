@@ -7,9 +7,10 @@
 //
 
 use crate::command_info::CommandInfo;
-use crate::config::{SearchConfig, TypeConfig};
+use crate::config::{SearchConfig, SectionConfig, TypeConfig};
+use crate::sector_reader::SectorReader;
 use crate::utils::{
-    get, get_level_path_pattern, get_level_path_regex, get_object_name, get_subfolder_level, get_subfolder_level_regex, remove_trailing_backslashes
+    ensure_directory_exists, get, get_level_path_pattern, get_level_path_regex, get_object_name, get_subfolder_level, get_subfolder_level_regex, remove_trailing_backslashes
 };
 use anyhow::Result;
 use glob::Pattern;
@@ -22,6 +23,7 @@ use std::fs::File;
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::io::BufReader;
 
 const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
 
@@ -581,6 +583,79 @@ where
                 continue;
             }
         }
+    }
+
+    Ok(())
+}
+
+fn search_in_config<T>(
+    info: &mut CommandInfo<T>,
+    config: &mut SearchConfig,
+    root_output: &str,
+    drive: String,
+) -> Result<()>
+where
+    T: Read + Seek,
+{
+    
+    config.sanitize().expect("[ERROR] Config sanitization failed");
+    let drive = format!("{}\\{}", root_output.to_string(), drive);
+    find_files_in_dir(
+        info,
+        config,
+        &format!("{}\\{}", drive, &config.get_expanded_dir_path()),
+    )
+}
+
+pub fn process_drive_artifacts(
+    drive: &str,
+    section_config: &mut SectionConfig,
+    root_output: &str,
+) -> Result<()> {
+    let drive_letter = drive.chars().next().unwrap();
+    let output_path = format!("{}\\{}", root_output, drive_letter);
+
+    ensure_directory_exists(&output_path)?;
+
+    let f = File::open(format!("\\\\.\\{}:", drive_letter))?;
+    let sr = SectorReader::new(f, 4096)?;
+    let mut fs = BufReader::new(sr);
+    let ntfs = initialize_ntfs(&mut fs)?;
+
+    let mut info = initialize_command_info(fs, &ntfs)?;
+    let mut processed_paths = HashSet::new();
+
+    for (_, artifacts) in &mut section_config.entries {
+        for mut artifact in artifacts {
+            let path_key = format!(
+                "{}\\{:?}",
+                artifact.get_expanded_dir_path(),
+                artifact.objects.clone().unwrap_or_default()
+            );
+            if !processed_paths.contains(&path_key) {
+                dprintln!("[INFO] Running {}", path_key);  // Replaced the progress bar message with dprintln!
+                search_in_config(&mut info, &mut artifact, root_output, drive_letter.to_string())?;
+                processed_paths.insert(path_key);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Process all NTFS drives except the C drive
+pub fn process_all_drives(
+    section_config: &mut SectionConfig,
+    root_output: &str,
+) -> Result<()> {
+    let ntfs_drives = list_ntfs_drives()?;
+
+    for drive in ntfs_drives {
+        if drive.starts_with("C:") {
+            continue; // Skip the C drive
+        }
+        
+        process_drive_artifacts(&drive, section_config, root_output)?;
     }
 
     Ok(())

@@ -1,4 +1,3 @@
-//
 // SPDX-License-Identifier: Apache-2.0
 //
 // Copyright © 2024 Areg Baghinyan. All Rights Reserved.
@@ -16,26 +15,21 @@ mod ntfs_reader;
 mod sector_reader;
 mod utils;
 
-use crate::command_info::CommandInfo;
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
-use config::{Config, SearchConfig, TypeConfig};
+use config::Config;
 use execute::{get_bin, run_internal};
 use execute::run_external;
 use execute::run_system;
 use indicatif::{ProgressBar, ProgressStyle};
-use ntfs_reader::list_ntfs_drives;
-use sector_reader::SectorReader;
-use std::collections::HashSet;
+use ntfs_reader::{process_all_drives, process_drive_artifacts};
 use std::env;
 use std::fs::{self, File, OpenOptions};
-use std::io::BufReader;
 use std::io::{self, Write};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
-use utils::ensure_directory_exists;
-use utils::remove_dir_all;
+use utils::{ensure_directory_exists, remove_dir_all};
 use zip::{write::FileOptions, ZipWriter};
 
 const CONFIG_MARKER_START: &[u8] = b"# CONFIG_START";
@@ -230,45 +224,30 @@ fn main() -> Result<()> {
 
     dprintln!("Aralez version: {}", env!("CARGO_PKG_VERSION"));
 
-    // Open the NTFS disk image or partition (replace with the correct path)
-    let f = File::open("\\\\.\\C:")?;
-    let sr = SectorReader::new(f, 4096)?;
-    let mut fs = BufReader::new(sr);
-    let ntfs = ntfs_reader::initialize_ntfs(&mut fs)?;
-
-    // Initialize the command state with the root directory
-    let mut info = ntfs_reader::initialize_command_info(fs, &ntfs)?;
-
-    // Create a progress bar based on the total number of tasks
-    let pb = ProgressBar::new(config.tasks_entries_len() as u64);
-    pb.set_style(
-        ProgressStyle::with_template(
-            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) - {msg}",
-        )?
-        .progress_chars("#>-"),
+    // Create a spinner
+    let spinner = ProgressBar::new_spinner();
+    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .tick_strings(&["-", "\\", "|", "/"])
+            .template("{spinner:.green} {msg}")?,
     );
+
+    spinner.set_message("Starting tasks...");
 
     let sorted_tasks = config.get_tasks();
     for (section_name, mut section_config) in sorted_tasks {
-        dprintln!("[INFO] START TASK {}",section_name);
+        dprintln!("[INFO] START TASK {}", section_name);
+        spinner.set_message(format!("Processing: {} task", section_name));
         match section_config.r#type {
             config::TypeTasks::Collect => {
-                let mut processed_paths = HashSet::new();
-                for (_, artifacts) in &mut section_config.entries {
-                    for mut artifact in artifacts {
-                        let path_key = format!(
-                            "{}\\{:?}",
-                            artifact.get_expanded_dir_path(),
-                            artifact.objects.clone().unwrap_or_default()
-                        );
-                        if !processed_paths.contains(&path_key) {
-                            pb.inc(1); // Increment the progress bar
-                            pb.set_message(format!("[INFO] Running {}", path_key));
-                            search_in_config(&mut info, &mut artifact, root_output)?;
-                            // Mark the path as processed
-                            processed_paths.insert(path_key);
-                        }
-                    }
+                let drive = section_config.drive.clone().unwrap_or_else(|| "C".to_string());
+                spinner.set_message(format!("Processing: {} drive", drive));
+
+                if drive == "*" {
+                    process_all_drives(&mut section_config, root_output)?;
+                } else {
+                    process_drive_artifacts(&drive, &mut section_config, root_output)?;
                 }
             }
             config::TypeTasks::Execute => {
@@ -289,13 +268,10 @@ fn main() -> Result<()> {
 
                                 match exec_type {
                                     config::TypeExec::External => {
-                                        pb.inc(1); // Increment the progress bar
-                                        pb.set_message(format!(
-                                            "[INFO] Running: {} tool",
-                                            executor.name.clone().expect(MSG_ERROR_CONFIG)
-                                        ));
+                                        let executor_name = executor.name.clone().expect(MSG_ERROR_CONFIG);
+                                        spinner.set_message(format!("Processing: {} tool", executor_name));
                                         run_external(
-                                            get_bin(executor.name.clone().expect(MSG_ERROR_CONFIG))?,
+                                            get_bin(executor_name)?,
                                             &executor
                                                 .name
                                                 .clone()
@@ -309,21 +285,14 @@ fn main() -> Result<()> {
                                     config::TypeExec::Internal => {
                                         let filename = executor.output_file.expect(MSG_ERROR_CONFIG);
                                         let tool_name = executor.name.expect(MSG_ERROR_CONFIG);
-                                        pb.inc(1); // Increment the progress bar
-                                        pb.set_message(format!(
-                                            "[INFO] Running {} tool",
-                                            tool_name
-                                        ));
+                                        spinner.set_message(format!("Processing: {} tool", tool_name));
                                         run_internal(&tool_name, &filename, &output_path);
                                     }
                                     config::TypeExec::System => {
-                                        pb.inc(1); // Increment the progress bar
-                                        pb.set_message(format!(
-                                            "[INFO] Running: {} tool",
-                                            executor.name.clone().expect(MSG_ERROR_CONFIG)
-                                        ));
+                                        let executor_name = executor.name.expect(MSG_ERROR_CONFIG);
+                                        spinner.set_message(format!("Processing: {} tool", executor_name));
                                         run_system(
-                                            &executor.name.clone().expect(MSG_ERROR_CONFIG),
+                                            &executor_name,
                                             &args,
                                             &executor.output_file.expect(MSG_ERROR_CONFIG),
                                             &output_path,
@@ -339,55 +308,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let ntfs_drives = list_ntfs_drives()?;
-    // Loop through each NTFS drive and process, skipping the C drive
-    for drive in ntfs_drives {
-        // Skip C drive since you process it separately
-        if drive.starts_with("C:") {
-            continue;
-        }
-        dprintln!("[INFO] Running drive: {}", drive);
-        let drive_letter = match drive.chars().next() {
-            Some(l) => l,
-            None => continue,
-        };
-        let output_path = format!("{}\\{}", root_output, drive_letter);
-
-        ensure_directory_exists(&output_path)?;
-
-        let f = File::open(format!("\\\\.\\{}:", drive_letter))?;
-        let sr = SectorReader::new(f, 4096)?; // Adjust sector size if needed
-        let mut fs = BufReader::new(sr);
-
-        // Initialize NTFS and process the MFT
-        if let Ok(ntfs) = ntfs_reader::initialize_ntfs(&mut fs) {
-            let mut info = ntfs_reader::initialize_command_info(fs, &ntfs)?;
-
-            // Prepare search configuration to target the MFT file
-            let mut search_config = SearchConfig {
-                dir_path: Some(".".to_string()),
-                objects: Some(vec!["$MFT".to_string()]),
-                max_size: None,
-                encrypt: None,
-                r#type: Some(TypeConfig::String),
-                name: None,
-                output_file: None,
-                exec_type: None,
-                args: None,
-            };
-            match search_config.sanitize() {
-                Ok(_) => ntfs_reader::find_files_in_dir(&mut info, &mut search_config, &output_path)?,
-                Err(_) => dprintln!("[ERROR] Config sanitization failed"),
-            };
-        } else {
-            dprintln!(
-                "Drive {} is not an NTFS file system or cannot be read.",
-                drive
-            );
-        }
-    }
-
-    dprintln!("Tasks completed");
+    spinner.finish_with_message("Tasks completed");
 
     // Move the logfile into the root folder
     let logfile = "aralez.log";
@@ -406,27 +327,7 @@ fn main() -> Result<()> {
 
     remove_dir_all(root_output)?;
 
-    pb.finish_with_message("[INFO] Collect complete!");
-
     Ok(())
-}
-
-fn search_in_config<T>(
-    info: &mut CommandInfo<T>,
-    config: &mut SearchConfig,
-    root_output: &str,
-) -> Result<()>
-where
-    T: Read + Seek,
-{
-    
-    config.sanitize().expect("[ERROR] Config sanitization failed");
-    let drive = format!("{}\\{}", root_output.to_string(), "C");
-    ntfs_reader::find_files_in_dir(
-        info,
-        config,
-        &format!("{}\\{}", drive, &config.get_expanded_dir_path()),
-    )
 }
 
 fn zip_dir(dir_name: &str) -> io::Result<()> {

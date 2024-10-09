@@ -25,6 +25,7 @@ pub struct Config {
 pub struct SectionConfig {
     pub priority: u8,
     pub r#type: TypeTasks,
+    pub drive: Option<String>,
     pub entries: IndexMap<String, Vec<SearchConfig>>,
 }
 
@@ -235,17 +236,6 @@ impl Config {
         tasks_vec.sort_by_key(|(_, section)| section.priority);
 
         tasks_vec
-    }
-
-    pub fn tasks_entries_len(&self) -> u64 {
-        let mut len: u64 = 0;
-        for (_, section_config) in &self.tasks {
-            // Iterate over each entry in the IndexMap (artifacts, etc.)
-            for (_, entries) in &section_config.entries {
-                len += entries.len() as u64;
-            }
-        }
-        len
     }
 }
 

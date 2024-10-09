@@ -117,8 +117,17 @@ tasks:
           max_size: 5242880
           encrypt: "infected"
 
-  tools:
+  all_drives__artifacts: 
+    type: "collect"
     priority: 2
+    drive: "*"
+    entries: 
+      mft:
+        - dir_path: "."
+          objects: ["$MFT"]
+
+  tools:
+    priority: 3
     type: "execute"
     entries: 
       external: 

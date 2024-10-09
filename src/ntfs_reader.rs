@@ -459,7 +459,6 @@ where
             folder_file_pairs
         })
         .unwrap_or_default(); // In case there are no patterns, return an empty Vec
-    println!("folder_file_pairs = {:?}", &folder_file_pairs);
     while let Some(entry_result) = entries.next(&mut info.fs) {
         let entry = match entry_result {
             Ok(entry) => entry,

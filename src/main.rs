@@ -275,17 +275,23 @@ fn main() -> Result<()> {
                                     config::TypeExec::External => {
                                         let executor_name = executor.name.clone().expect(MSG_ERROR_CONFIG);
                                         spinner.set_message(format!("Processing: {} tool", executor_name));
-                                        run_external(
-                                            get_bin(executor_name)?,
-                                            &executor
-                                                .name
-                                                .clone()
-                                                .expect(MSG_ERROR_CONFIG)
-                                                .as_str(),
-                                            &output_path,
-                                            &executor.output_file.expect(MSG_ERROR_CONFIG).as_str(),
-                                            &args,
-                                        );
+                                        match get_bin(executor_name) {
+                                            Ok(bin) => {
+                                                run_external(
+                                                    bin,
+                                                    &executor
+                                                        .name
+                                                        .clone()
+                                                        .expect(MSG_ERROR_CONFIG)
+                                                        .as_str(),
+                                                    &output_path,
+                                                    &executor.output_file.expect(MSG_ERROR_CONFIG).as_str(),
+                                                    &args,
+                                                );
+                                            },
+                                            Err(e) => dprintln!("{}", e),
+                                        }
+
                                     }
                                     config::TypeExec::Internal => {
                                         let filename = executor.output_file.expect(MSG_ERROR_CONFIG);

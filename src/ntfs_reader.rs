@@ -515,9 +515,9 @@ where
                             let level = get_subfolder_level(&reg_data);
 
                             if let Some(subpath) = get_level_path_pattern(folder_pattern, level) {
-                                if Pattern::new(&subpath)
+                                if Pattern::new(&subpath.to_lowercase())
                                     .expect("Failed to read glob pattern")
-                                    .matches(&reg_data)
+                                    .matches(&reg_data.to_lowercase())
                                     || subpath.ends_with("**")
                                 {
                                     let folder_output_path = format!("{}/{}", out_dir, object_name);
@@ -557,9 +557,9 @@ where
                                 }
                             } 
 
-                            if Pattern::new(&full_pattern.replace("\\", "/"))
+                            if Pattern::new(&full_pattern.replace("\\", "/").to_lowercase())
                                 .expect("Failed to read glob pattern")
-                                .matches(&rel_path)
+                                .matches(&rel_path.to_lowercase())
                                 && !visited_files.contains(&rel_path)
                             {
                                 if config.max_size.map_or(true, |max| file_size <= max) {

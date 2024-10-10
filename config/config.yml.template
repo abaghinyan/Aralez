@@ -121,6 +121,7 @@ tasks:
     type: "collect"
     priority: 2
     drive: "*"
+    exclude_drives: ["C"]
     entries: 
       mft:
         - dir_path: "."

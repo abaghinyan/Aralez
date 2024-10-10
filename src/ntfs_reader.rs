@@ -650,11 +650,14 @@ pub fn process_all_drives(
 ) -> Result<()> {
     let ntfs_drives = list_ntfs_drives()?;
 
-    for drive in ntfs_drives {
-        if drive.starts_with("C:") {
-            continue; // Skip the C drive
+    'for_drive: for drive in ntfs_drives {
+        if let Some(iter_drives) = &section_config.exclude_drives {
+            for iter_drive in iter_drives {
+                if drive.starts_with(iter_drive) {
+                    continue 'for_drive;
+                }
+            }
         }
-        
         process_drive_artifacts(&drive, section_config, root_output)?;
     }
 

@@ -26,6 +26,7 @@ pub struct SectionConfig {
     pub priority: u8,
     pub r#type: TypeTasks,
     pub drive: Option<String>,
+    pub exclude_drives: Option<Vec<String>>,
     pub entries: IndexMap<String, Vec<SearchConfig>>,
 }
 

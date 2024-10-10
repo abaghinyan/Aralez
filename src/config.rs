@@ -6,7 +6,7 @@
 // Author(s): Areg Baghinyan
 //
 
-use crate::utils::replace_env_vars;
+use crate::utils::{remove_trailing_backslashes, replace_env_vars};
 use anyhow::Result;
 use chrono::prelude::*;
 use hostname::get;
@@ -249,7 +249,9 @@ impl SearchConfig {
 
     // Method to sanitize dir_path and objects based on metacharacters
     pub fn sanitize(&mut self) -> Result<(), String> {
-        if let Some(dir_path) = &self.dir_path {
+        if let Some(dir_path_item) = &self.dir_path {
+            let dir_path = remove_trailing_backslashes(&dir_path_item);
+
             // Check if the dir_path contains a glob element (*, **, ?, or bracketed expressions)
             if dir_path.contains("*")
                 || dir_path.contains("?")

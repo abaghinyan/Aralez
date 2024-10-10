@@ -10,7 +10,7 @@ use crate::command_info::CommandInfo;
 use crate::config::{SearchConfig, SectionConfig, TypeConfig};
 use crate::sector_reader::SectorReader;
 use crate::utils::{
-    ensure_directory_exists, get, get_level_path_pattern, get_level_path_regex, get_object_name, get_subfolder_level, get_subfolder_level_regex, remove_trailing_backslashes
+    ensure_directory_exists, get, get_level_path_pattern, get_level_path_regex, get_object_name, get_subfolder_level, get_subfolder_level_regex
 };
 use anyhow::Result;
 use glob::Pattern;
@@ -85,7 +85,7 @@ where
     T: Read + Seek,
 {
     // Navigate to the Logs directory
-    let dir_path = remove_trailing_backslashes(&element.get_expanded_dir_path());
+    let dir_path = &element.get_expanded_dir_path();
     match navigate_to_directory(info, &dir_path) {
         Ok(_) => {
             // List all files in the Logs directory

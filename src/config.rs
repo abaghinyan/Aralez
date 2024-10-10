@@ -28,6 +28,7 @@ pub struct SectionConfig {
     pub drive: Option<String>,
     pub exclude_drives: Option<Vec<String>>,
     pub entries: IndexMap<String, Vec<SearchConfig>>,
+    pub disabled: Option<bool>,
 }
 
 #[derive(Debug, Clone)]

@@ -237,6 +237,11 @@ fn main() -> Result<()> {
 
     let sorted_tasks = config.get_tasks();
     for (section_name, mut section_config) in sorted_tasks {
+        if let Some(disabled_task) = section_config.disabled {
+            if disabled_task {
+                continue;
+            }
+        }
         dprintln!("[INFO] START TASK {}", section_name);
         spinner.set_message(format!("Processing: {} task", section_name));
         match section_config.r#type {

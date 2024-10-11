@@ -78,7 +78,10 @@ where
             dprintln!("[ERROR] Failed to retrieve data for `{}`: {}", file_name, e);
             return;
         }
-        None => return, // No $DATA attribute found
+        None => {
+            // dprintln!("[WARN] The file does not have a `{}` $DATA attribute.", data_stream_name);
+            return;
+        }
     };
 
     let data_attribute = match data_item.to_attribute() {
@@ -89,7 +92,6 @@ where
         }
     };
 
-    // Obtain the data value stream
     let mut data_value = match data_attribute.value(fs) {
         Ok(val) => val,
         Err(e) => {
@@ -99,7 +101,8 @@ where
     };
 
     dprintln!(
-        "[INFO] Saving data to `{}`...",
+        "[INFO] Saving {} bytes of data in `{}`...",
+        data_value.len(),
         output_file_name
     );
 

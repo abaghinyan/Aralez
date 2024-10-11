@@ -52,9 +52,12 @@ where
     } else {
         format!("{}/{}", out_dir, file_name)
     };
-    if !(ads.is_empty() || ads=="") {
-        output_file_name.push_str(&format!("%3A{}",ads));
+
+    // Append the Alternate Data Stream (ADS) name if it's not empty
+    if !(ads.is_empty() || ads == "") {
+        output_file_name.push_str(&format!("%3A{}", ads));
     }
+
     // Try to open the file for writing, log error if it fails
     let mut output_file = match OpenOptions::new()
         .write(true)
@@ -75,10 +78,7 @@ where
             dprintln!("[ERROR] Failed to retrieve data for `{}`: {}", file_name, e);
             return;
         }
-        None => {
-            // dprintln!("[WARN] The file does not have a `{}` $DATA attribute.", data_stream_name);
-            return;
-        }
+        None => return, // No $DATA attribute found
     };
 
     let data_attribute = match data_item.to_attribute() {
@@ -89,6 +89,7 @@ where
         }
     };
 
+    // Obtain the data value stream
     let mut data_value = match data_attribute.value(fs) {
         Ok(val) => val,
         Err(e) => {
@@ -98,58 +99,80 @@ where
     };
 
     dprintln!(
-        "[INFO] Saving {} bytes of data in `{}`...",
-        data_value.len(),
+        "[INFO] Saving data to `{}`...",
         output_file_name
     );
 
-    let mut buf = Vec::new();
+    // Buffer for reading chunks of the file
     let mut read_buf = [0u8; 4096];
-    while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
-        if bytes_read == 0 {
-            break;
-        }
-        buf.extend_from_slice(&read_buf[..bytes_read]);
-    }
 
+    // Stream data based on encryption
     if let Some(ref password) = encrypt {
         if !password.is_empty() {
-            // Derive the key and handle encryption
+            // Derive the encryption key using SHA256
             let mut hasher = Sha256::new();
             hasher.update(password.as_bytes());
             let key_bytes = hasher.finalize();
             let cipher_key = Key::<Aes256Gcm>::from_slice(&key_bytes[..32]); // AES-256 requires a 32-byte key
             let cipher = Aes256Gcm::new(cipher_key);
 
-            let mut nonce = [0u8; 12]; // 96-bits; unique per message
+            // Generate a nonce (unique for each message)
+            let mut nonce = [0u8; 12]; // 96-bit nonce for AES-GCM
             OsRng.fill_bytes(&mut nonce);
-
             let nonce = Nonce::from_slice(&nonce);
-            let ciphertext = match cipher.encrypt(nonce, buf.as_ref()) {
-                Ok(ct) => ct,
-                Err(e) => {
-                    dprintln!("[ERROR] Encryption failed: {}", e);
-                    return;
-                }
-            };
 
-            // Write nonce and ciphertext to the file
-            if output_file.write_all(nonce).is_err() || output_file.write_all(&ciphertext).is_err() {
-                dprintln!("[ERROR] Failed to write encrypted data to `{}`", output_file_name);
+            // Write the nonce to the file before writing encrypted data
+            if output_file.write_all(nonce).is_err() {
+                dprintln!("[ERROR] Failed to write nonce to `{}`", output_file_name);
                 return;
             }
+
+            // Stream data, encrypt each chunk, and write it to the file
+            while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
+                if bytes_read == 0 {
+                    break; // End of file
+                }
+                let chunk = &read_buf[..bytes_read];
+                let encrypted_chunk = match cipher.encrypt(nonce, chunk) {
+                    Ok(ct) => ct,
+                    Err(e) => {
+                        dprintln!("[ERROR] Encryption failed: {}", e);
+                        return;
+                    }
+                };
+
+                // Write the encrypted chunk to the output file
+                if output_file.write_all(&encrypted_chunk).is_err() {
+                    dprintln!("[ERROR] Failed to write encrypted chunk to `{}`", output_file_name);
+                    return;
+                }
+            }
         } else {
-            // Write the file normally if no encryption is needed
-            if output_file.write_all(&buf).is_err() {
-                dprintln!("[ERROR] Failed to write data to `{}`", output_file_name);
-                return;
+            // No encryption, stream and write data in chunks
+            while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
+                if bytes_read == 0 {
+                    break; // End of file
+                }
+
+                // Write the chunk to the output file
+                if output_file.write_all(&read_buf[..bytes_read]).is_err() {
+                    dprintln!("[ERROR] Failed to write data to `{}`", output_file_name);
+                    return;
+                }
             }
         }
     } else {
-        // No encryption, write the file normally
-        if output_file.write_all(&buf).is_err() {
-            dprintln!("[ERROR] Failed to write data to `{}`", output_file_name);
-            return;
+        // No encryption, write the file normally in chunks
+        while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
+            if bytes_read == 0 {
+                break; // End of file
+            }
+
+            // Write the chunk to the output file
+            if output_file.write_all(&read_buf[..bytes_read]).is_err() {
+                dprintln!("[ERROR] Failed to write data to `{}`", output_file_name);
+                return;
+            }
         }
     }
 

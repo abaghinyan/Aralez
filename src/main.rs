@@ -30,7 +30,7 @@ use std::io::{self, Write};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use utils::{ensure_directory_exists, remove_dir_all};
-use zip::{write::FileOptions, ZipWriter};
+use zip::{write::FileOptions, ZipWriter, CompressionMethod};
 
 const CONFIG_MARKER_START: &[u8] = b"# CONFIG_START";
 const CONFIG_MARKER_END: &[u8] = b"# CONFIG_END";
@@ -345,17 +345,23 @@ fn main() -> Result<()> {
 }
 
 fn zip_dir(dir_name: &str) -> io::Result<()> {
-    // Create a directory with the given name
+    // Create a directory with the given name (if it doesn't exist)
     let dir_path = Path::new(dir_name);
     fs::create_dir_all(&dir_path)?;
 
     // Create a ZIP file with the same name as the directory
     let zip_file_name = format!("{}.zip", dir_name);
     let zip_file = File::create(&zip_file_name)?;
+
+    // Initialize ZipWriter with ZIP64 enabled
     let mut zip = ZipWriter::new(zip_file);
+    
+    let options = FileOptions::<()>::default()
+        .compression_method(CompressionMethod::Stored)
+        .large_file(true); 
 
     // Add the directory to the ZIP file
-    add_directory_to_zip(&mut zip, dir_path, "")?;
+    add_directory_to_zip(&mut zip, dir_path, "", &options)?;
 
     // Finish the zip process
     zip.finish()?;
@@ -367,10 +373,8 @@ fn add_directory_to_zip<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
     dir_path: &Path,
     parent_dir: &str,
+    options: &FileOptions<()>, // Specify the correct generic parameter
 ) -> io::Result<()> {
-    // Specify the type for FileOptions
-    let options = FileOptions::<()>::default().unix_permissions(0o755);
-
     for entry in fs::read_dir(dir_path)? {
         let entry = entry?;
         let path = entry.path();
@@ -378,12 +382,12 @@ fn add_directory_to_zip<W: Write + Seek>(
 
         if path.is_dir() {
             // If the entry is a directory, add it to the ZIP and recurse into it
-            zip.add_directory(&name, options)?;
-            add_directory_to_zip(zip, &path, &format!("{}/", name))?;
+            zip.add_directory(&format!("{}/", name), *options)?;
+            add_directory_to_zip(zip, &path, &format!("{}/", name), options)?;
         } else {
             // If the entry is a file, add it to the ZIP
-            let mut file = File::open(path)?;
-            zip.start_file(name, options)?;
+            let mut file = File::open(&path)?;
+            zip.start_file(name, *options)?;
             io::copy(&mut file, zip)?;
         }
     }

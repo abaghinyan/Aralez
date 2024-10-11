@@ -319,7 +319,6 @@ fn main() -> Result<()> {
         }
     }
 
-    spinner.finish_with_message("Tasks completed");
 
     // Move the logfile into the root folder
     let logfile = "aralez.log";
@@ -334,9 +333,13 @@ fn main() -> Result<()> {
         dprintln!("[WARN] The log file not found");
     }
 
+    spinner.set_message("Running: compression");
+
     zip_dir(root_output)?;
 
     remove_dir_all(root_output)?;
+
+    spinner.finish_with_message("Tasks completed");
 
     Ok(())
 }

@@ -10,7 +10,8 @@ use crate::command_info::CommandInfo;
 use crate::config::{SearchConfig, SectionConfig, TypeConfig};
 use crate::sector_reader::SectorReader;
 use crate::utils::{
-    ensure_directory_exists, get, get_level_path_pattern, get_level_path_regex, get_object_name, get_subfolder_level, get_subfolder_level_regex
+    ensure_directory_exists, get, get_level_path_pattern, get_level_path_regex, get_object_name,
+    get_subfolder_level, get_subfolder_level_regex,
 };
 use anyhow::Result;
 use glob::Pattern;
@@ -21,9 +22,9 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io;
+use std::io::BufReader;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
-use std::io::BufReader;
 
 const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
 
@@ -215,6 +216,7 @@ where
                                 out_dir,
                                 &mut info.fs,
                                 config.encrypt.as_ref(),
+                                "",
                             );
                         }
                     } else if objects.contains(&"".to_string()) {
@@ -232,6 +234,7 @@ where
                                     out_dir,
                                     &mut info.fs,
                                     config.encrypt.as_ref(),
+                                    "",
                                 );
                             }
                         }
@@ -249,6 +252,7 @@ where
                                         out_dir,
                                         &mut info.fs,
                                         config.encrypt.as_ref(),
+                                        "",
                                     );
                                 }
                                 break;
@@ -266,6 +270,7 @@ where
                                 out_dir,
                                 &mut info.fs,
                                 config.encrypt.as_ref(),
+                                "",
                             );
                         }
                     }
@@ -394,6 +399,7 @@ where
                                     out_dir,
                                     &mut info.fs,
                                     config.encrypt.as_ref(),
+                                    "",
                                 );
                             }
                         }
@@ -416,7 +422,6 @@ where
 
     Ok(())
 }
-
 
 /// **      : files of current folder and subfolders
 /// **\\*   : files of subfolders
@@ -456,7 +461,7 @@ where
                     } else {
                         folder_file_pairs.push((String::new(), sanitized_pattern.clone()));
                     }
-                } 
+                }
             }
             folder_file_pairs
         })
@@ -538,40 +543,54 @@ where
                     // Process files
                     for (folder_pattern, file_pattern) in &folder_file_pairs {
                         if !file_pattern.is_empty() {
-                            let rel_path = if !relative_path.is_empty() {
+                            let mut rel_path = if !relative_path.is_empty() {
                                 format!("{}/{}", relative_path, object_name)
                             } else {
                                 object_name.clone()
+                            };
+                            let (file_pattern, ads) = match file_pattern.split_once(':') {
+                                Some((left, right)) => (&left.to_string(), right),
+                                None => (file_pattern, ""),
                             };
                             let full_pattern = if folder_pattern.is_empty() {
                                 file_pattern.to_string()
                             } else {
                                 format!("{}/{}", folder_pattern, file_pattern)
                             };
-                            // Manage the case **\\*, if folder_pattern and rel_path are on the same level
+
                             if folder_pattern.ends_with("**") && file_pattern != "**" {
                                 let level_rel_path = get_subfolder_level(&rel_path);
                                 let level_folder_pattern = get_subfolder_level(&folder_pattern);
                                 if level_rel_path <= level_folder_pattern {
                                     break;
                                 }
-                            } 
+                            }
 
                             if Pattern::new(&full_pattern.replace("\\", "/").to_lowercase())
                                 .expect("Failed to read glob pattern")
                                 .matches(&rel_path.to_lowercase())
-                                && !visited_files.contains(&rel_path)
                             {
-                                if config.max_size.map_or(true, |max| file_size <= max) {
-                                    dprintln!("[INFO] Found file: {}", object_name);
-                                    get(
-                                        &file,
-                                        &object_name,
-                                        out_dir,
-                                        &mut info.fs,
-                                        config.encrypt.as_ref(),
-                                    );
-                                    visited_files.insert(rel_path.clone());
+                                if ads != "" {
+                                    rel_path.push_str(&format!(":{}", ads));
+                                }
+                                if !visited_files.contains(&rel_path) {
+                                    if config
+                                        .max_size
+                                        .map_or(true, |max| u64::from(file_size) <= max)
+                                    {
+                                        dprintln!("[INFO] Found file: {}", rel_path);
+
+                                        get(
+                                            &file,
+                                            &object_name,
+                                            out_dir,
+                                            &mut info.fs,
+                                            config.encrypt.as_ref(),
+                                            ads,
+                                        );
+
+                                        visited_files.insert(rel_path.clone());
+                                    }
                                 }
                             }
                         }
@@ -597,8 +616,9 @@ fn search_in_config<T>(
 where
     T: Read + Seek,
 {
-    
-    config.sanitize().expect("[ERROR] Config sanitization failed");
+    config
+        .sanitize()
+        .expect("[ERROR] Config sanitization failed");
     let drive = format!("{}\\{}", root_output.to_string(), drive);
     find_files_in_dir(
         info,
@@ -633,8 +653,13 @@ pub fn process_drive_artifacts(
                 artifact.objects.clone().unwrap_or_default()
             );
             if !processed_paths.contains(&path_key) {
-                dprintln!("[INFO] Running {}", path_key);  // Replaced the progress bar message with dprintln!
-                search_in_config(&mut info, &mut artifact, root_output, drive_letter.to_string())?;
+                dprintln!("[INFO] Running {}", path_key); // Replaced the progress bar message with dprintln!
+                search_in_config(
+                    &mut info,
+                    &mut artifact,
+                    root_output,
+                    drive_letter.to_string(),
+                )?;
                 processed_paths.insert(path_key);
             }
         }
@@ -644,10 +669,7 @@ pub fn process_drive_artifacts(
 }
 
 /// Process all NTFS drives except the C drive
-pub fn process_all_drives(
-    section_config: &mut SectionConfig,
-    root_output: &str,
-) -> Result<()> {
+pub fn process_all_drives(section_config: &mut SectionConfig, root_output: &str) -> Result<()> {
     let ntfs_drives = list_ntfs_drives()?;
 
     'for_drive: for drive in ntfs_drives {

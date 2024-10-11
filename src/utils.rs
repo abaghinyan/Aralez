@@ -20,12 +20,12 @@ use regex::Regex;
 use std::env;
 use std::io;
 
-pub fn get<T>(file: &NtfsFile, filename: &str, out_dir: &str, fs: &mut T, encrypt: Option<&String>)
+pub fn get<T>(file: &NtfsFile, filename: &str, out_dir: &str, fs: &mut T, encrypt: Option<&String>, ads: &str)
 where
     T: Read + Seek,
 {
     // Get the file name or use the provided filename, log errors if they occur
-    let (file_name, data_stream_name) = match get_object_name(file, fs) {
+    let (file_name, _) = match get_object_name(file, fs) {
         Ok(name) => (name, out_dir),
         Err(_) => (filename.to_string(), out_dir),
     };
@@ -37,7 +37,7 @@ where
     }
 
     // Check if encryption is required and construct the output file name
-    let output_file_name = if let Some(ref password) = encrypt {
+    let mut output_file_name = if let Some(ref password) = encrypt {
         if !password.is_empty() {
             let path = Path::new(&file_name);
             let new_file_name = if let Some(extension) = path.extension() {
@@ -52,7 +52,9 @@ where
     } else {
         format!("{}/{}", out_dir, file_name)
     };
-
+    if !(ads.is_empty() || ads=="") {
+        output_file_name.push_str(&format!("%3A{}",ads));
+    }
     // Try to open the file for writing, log error if it fails
     let mut output_file = match OpenOptions::new()
         .write(true)
@@ -67,10 +69,10 @@ where
     };
 
     // Try to get the data item, log warning if it does not exist
-    let data_item = match file.data(fs, "") {
+    let data_item = match file.data(fs, ads) {
         Some(Ok(item)) => item,
         Some(Err(e)) => {
-            dprintln!("[ERROR] Failed to retrieve data for `{}`: {}", data_stream_name, e);
+            dprintln!("[ERROR] Failed to retrieve data for `{}`: {}", file_name, e);
             return;
         }
         None => {
@@ -82,7 +84,7 @@ where
     let data_attribute = match data_item.to_attribute() {
         Ok(attr) => attr,
         Err(e) => {
-            dprintln!("[ERROR] Failed to retrieve attribute for `{}`: {}", data_stream_name, e);
+            dprintln!("[ERROR] Failed to retrieve attribute for `{}`: {}", file_name, e);
             return;
         }
     };
@@ -90,7 +92,7 @@ where
     let mut data_value = match data_attribute.value(fs) {
         Ok(val) => val,
         Err(e) => {
-            dprintln!("[ERROR] Failed to retrieve data value for `{}`: {}", data_stream_name, e);
+            dprintln!("[ERROR] Failed to retrieve data value for `{}`: {}", file_name, e);
             return;
         }
     };

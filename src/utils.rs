@@ -108,6 +108,7 @@ where
 
     // Buffer for reading chunks of the file
     let mut read_buf = [0u8; 4096];
+    let mut leading_zeros_skipped = false;
 
     // Stream data based on encryption
     if let Some(ref password) = encrypt {
@@ -133,9 +134,20 @@ where
             // Stream data, encrypt each chunk, and write it to the file
             while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
                 if bytes_read == 0 {
-                    break; // End of file
+                    break;
                 }
-                let chunk = &read_buf[..bytes_read];
+
+                let chunk = if !leading_zeros_skipped {
+                    if let Some(non_zero_pos) = read_buf.iter().position(|&b| b != 0) {
+                        leading_zeros_skipped = true;
+                        &read_buf[non_zero_pos..bytes_read]
+                    } else {
+                        continue;
+                    }
+                } else {
+                    &read_buf[..bytes_read]
+                };
+
                 let encrypted_chunk = match cipher.encrypt(nonce, chunk) {
                     Ok(ct) => ct,
                     Err(e) => {
@@ -154,12 +166,21 @@ where
             // No encryption, stream and write data in chunks
             while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
                 if bytes_read == 0 {
-                    break; // End of file
+                    break;
                 }
 
-                // Write the chunk to the output file
-                if output_file.write_all(&read_buf[..bytes_read]).is_err() {
-                    dprintln!("[ERROR] Failed to write data to `{}`", output_file_name);
+                let chunk = if !leading_zeros_skipped {
+                    if let Some(non_zero_pos) = read_buf.iter().position(|&b| b != 0) {
+                        leading_zeros_skipped = true;
+                        &read_buf[non_zero_pos..bytes_read]
+                    } else {
+                        continue;
+                    }
+                } else {
+                    &read_buf[..bytes_read]
+                };
+
+                if output_file.write_all(chunk).is_err() {
                     return;
                 }
             }
@@ -168,12 +189,21 @@ where
         // No encryption, write the file normally in chunks
         while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
             if bytes_read == 0 {
-                break; // End of file
+                break;
             }
 
-            // Write the chunk to the output file
-            if output_file.write_all(&read_buf[..bytes_read]).is_err() {
-                dprintln!("[ERROR] Failed to write data to `{}`", output_file_name);
+            let chunk = if !leading_zeros_skipped {
+                if let Some(non_zero_pos) = read_buf.iter().position(|&b| b != 0) {
+                    leading_zeros_skipped = true;
+                    &read_buf[non_zero_pos..bytes_read]
+                } else {
+                    continue;
+                }
+            } else {
+                &read_buf[..bytes_read]
+            };
+
+            if output_file.write_all(chunk).is_err() {
                 return;
             }
         }
@@ -181,6 +211,7 @@ where
 
     dprintln!("[INFO] Data successfully saved to `{}`", output_file_name);
 }
+
 
 
 /// Retrieves the name of the file from the NTFS $FILE_NAME attribute.

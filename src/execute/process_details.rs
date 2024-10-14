@@ -116,7 +116,7 @@ fn list_loaded_modules(pid: u32) -> Result<Vec<ModuleInfo>> {
         let snapshot = match CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid) {
             Ok(handle) => handle,
             Err(e) if e.code() == HRESULT(0x80070005u32 as i32) => {
-                dprintln!("[WARN] Access denied for PID: {}. Skipping...", pid);
+                dprintln!("[WARN] Access denied for PID: {}. Skipped", pid);
                 return Ok(modules); // Return an empty list, or handle as needed
             }
             Err(e) => return Err(e), // Propagate other errors

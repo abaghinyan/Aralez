@@ -101,7 +101,7 @@ where
     };
 
     dprintln!(
-        "[INFO] Saving {} bytes of data in `{}`...",
+        "[INFO] Saving {} bytes of data in `{}`",
         data_value.len(),
         output_file_name
     );

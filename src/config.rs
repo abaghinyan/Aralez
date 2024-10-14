@@ -33,9 +33,7 @@ pub struct SectionConfig {
 
 #[derive(Debug, Clone)]
 pub enum TypeConfig {
-    String,
     Glob,
-    Regex,
 }
 
 impl Serialize for TypeConfig {
@@ -44,9 +42,7 @@ impl Serialize for TypeConfig {
         S: Serializer,
     {
         match *self {
-            TypeConfig::String => serializer.serialize_str("string"),
             TypeConfig::Glob => serializer.serialize_str("glob"),
-            TypeConfig::Regex => serializer.serialize_str("regex"),
         }
     }
 }
@@ -62,7 +58,7 @@ impl<'de> Deserialize<'de> for TypeConfig {
             type Value = TypeConfig;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a string containing 'string', 'glob', or 'regex'")
+                formatter.write_str("a string containing 'glob'")
             }
 
             fn visit_str<E>(self, value: &str) -> Result<TypeConfig, E>
@@ -70,12 +66,10 @@ impl<'de> Deserialize<'de> for TypeConfig {
                 E: de::Error,
             {
                 match value {
-                    "string" => Ok(TypeConfig::String),
                     "glob" => Ok(TypeConfig::Glob),
-                    "regex" => Ok(TypeConfig::Regex),
                     _ => Err(de::Error::unknown_variant(
                         value,
-                        &["string", "glob", "regex"],
+                        &["glob"],
                     )),
                 }
             }

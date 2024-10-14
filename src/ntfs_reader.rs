@@ -10,15 +10,14 @@ use crate::command_info::CommandInfo;
 use crate::config::{SearchConfig, SectionConfig, TypeConfig};
 use crate::sector_reader::SectorReader;
 use crate::utils::{
-    ensure_directory_exists, get, get_level_path_pattern, get_level_path_regex, get_object_name,
-    get_subfolder_level, get_subfolder_level_regex,
+    ensure_directory_exists, get, get_level_path_pattern, get_object_name,
+    get_subfolder_level, 
 };
 use anyhow::Result;
 use glob::Pattern;
 use ntfs::indexes::NtfsFileNameIndex;
 use ntfs::Ntfs;
 use ntfs::NtfsFile;
-use regex::Regex;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io;
@@ -94,7 +93,6 @@ where
             let mut visited_dirs = HashSet::new();
             return match &element.r#type {
                 Some(el_type) => match el_type {
-                    TypeConfig::String => list_files_in_current_dir(info, element, out_dir),
                     TypeConfig::Glob => list_files_in_current_dir_glob(
                         info,
                         element,
@@ -102,10 +100,7 @@ where
                         String::new(),
                         &mut visited_files,
                         &mut visited_dirs,
-                    ),
-                    TypeConfig::Regex => {
-                        list_files_in_current_dir_regex(info, element, out_dir, String::new())
-                    }
+                    )
                 },
                 None => list_files_in_current_dir_glob(
                     info,
@@ -157,269 +152,6 @@ where
             )));
         }
     }
-    Ok(())
-}
-
-pub fn list_files_in_current_dir<T>(
-    info: &mut CommandInfo<T>,
-    config: &SearchConfig,
-    out_dir: &str,
-) -> Result<()>
-where
-    T: Read + Seek,
-{
-    let mut directories_to_recurse = Vec::new();
-    let current_directory = info.current_directory.last().unwrap();
-    let index = current_directory.directory_index(&mut info.fs)?;
-
-    let mut entries = index.entries();
-    let mut visited_files = HashSet::new();
-
-    while let Some(entry_result) = entries.next(&mut info.fs) {
-        let entry = match entry_result {
-            Ok(entry) => entry,
-            Err(_e) => {
-                dprintln!("[ERROR] Error reading entry: {:?}", _e);
-                continue; // Skip to the next entry if there is an error
-            }
-        };
-
-        let file = match entry.to_file(info.ntfs, &mut info.fs) {
-            Ok(file) => file,
-            Err(_e) => {
-                dprintln!("[ERROR] Error converting entry to file: {:?}", _e);
-                continue; // Skip to the next entry if there is an error
-            }
-        };
-
-        // Get the file size
-        let file_size = match file.data(&mut info.fs, "") {
-            Some(data_item) => {
-                let data_item = data_item?; // Bind the data item to a variable to extend its lifetime
-                let data_attribute = data_item.to_attribute()?; // Now, this will live long enough
-                data_attribute.value_length() // Size of the data stream
-            }
-            None => 0, // In case there is no data attribute, treat the size as 0
-        };
-
-        match get_object_name(&file, &mut info.fs) {
-            Ok(file_name) => {
-                if let Some(ref objects) = config.objects {
-                    if objects.contains(&".*".to_string()) && !file.is_directory() {
-                        if visited_files.insert(file_name.clone())
-                            && config.max_size.map_or(true, |max| file_size <= max)
-                        {
-                            dprintln!("[INFO] Found file: {}", file_name);
-                            get(
-                                &file,
-                                &file_name,
-                                out_dir,
-                                &mut info.fs,
-                                config.encrypt.as_ref(),
-                                "",
-                            );
-                        }
-                    } else if objects.contains(&"".to_string()) {
-                        if visited_files.insert(file_name.clone()) {
-                            if file.is_directory() {
-                                dprintln!("[INFO] Found directory: {}", file_name);
-                                let dir_path = format!("{}/{}", out_dir, file_name);
-                                std::fs::create_dir_all(&dir_path)?;
-                                directories_to_recurse.push((file, dir_path));
-                            } else if config.max_size.map_or(true, |max| file_size <= max) {
-                                dprintln!("[INFO] Found file: {}", file_name);
-                                get(
-                                    &file,
-                                    &file_name,
-                                    out_dir,
-                                    &mut info.fs,
-                                    config.encrypt.as_ref(),
-                                    "",
-                                );
-                            }
-                        }
-                    } else {
-                        for ext in objects {
-                            if !file.is_directory()
-                                && file_name.ends_with(ext)
-                                && visited_files.insert(file_name.clone())
-                            {
-                                if config.max_size.map_or(true, |max| file_size <= max) {
-                                    dprintln!("[INFO] Found file: {}", file_name);
-                                    get(
-                                        &file,
-                                        &file_name,
-                                        out_dir,
-                                        &mut info.fs,
-                                        config.encrypt.as_ref(),
-                                        "",
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    // Handle the case where no objects are specified
-                    if !file.is_directory() && visited_files.insert(file_name.clone()) {
-                        if config.max_size.map_or(true, |max| file_size <= max) {
-                            dprintln!("[INFO] Found file: {}", file_name);
-                            get(
-                                &file,
-                                &file_name,
-                                out_dir,
-                                &mut info.fs,
-                                config.encrypt.as_ref(),
-                                "",
-                            );
-                        }
-                    }
-                }
-            }
-            Err(_e) => {
-                dprintln!("[ERROR] Error getting file name: {:?}", _e);
-                continue; // Skip to the next entry if there is an error
-            }
-        }
-    }
-
-    // Process directories after the current entries are done
-    for (directory, path) in directories_to_recurse {
-        info.current_directory.push(directory);
-        list_files_in_current_dir(info, config, &path)?;
-        info.current_directory.pop();
-    }
-
-    Ok(())
-}
-
-pub fn list_files_in_current_dir_regex<T>(
-    info: &mut CommandInfo<T>,
-    config: &SearchConfig,
-    out_dir: &str,
-    relative_path: String,
-) -> Result<()>
-where
-    T: Read + Seek,
-{
-    let mut directories_to_recurse = Vec::new();
-    let current_directory = info.current_directory.last().unwrap();
-    let index = current_directory.directory_index(&mut info.fs)?;
-
-    let mut entries = index.entries();
-    let mut visited_files = HashSet::new();
-
-    let (folder_patterns, file_patterns): (Option<Vec<Regex>>, Option<Vec<Regex>>) = config
-        .objects
-        .as_ref()
-        .map(|patterns| {
-            let mut folder_patterns = Vec::new();
-            let mut file_patterns = Vec::new();
-            for pattern in patterns {
-                if let Some(last_sep) = pattern.rfind("\\\\") {
-                    let folder_part = &format!("^{}$", &pattern[..last_sep]); // Folder path before the last `\`
-                    let file_part = &pattern[last_sep + 2..]; // File part after the last `\`
-                    file_patterns.push(Regex::new(&file_part).unwrap());
-                    folder_patterns.push(Regex::new(&folder_part).unwrap());
-                } else {
-                    file_patterns.push(Regex::new(&pattern).unwrap());
-                }
-            }
-            (Some(folder_patterns), Some(file_patterns))
-        })
-        .unwrap_or((None, None));
-    while let Some(entry_result) = entries.next(&mut info.fs) {
-        let entry = match entry_result {
-            Ok(entry) => entry,
-            Err(_e) => {
-                dprintln!("[ERROR] Error reading entry: {:?}", _e);
-                continue; // Skip to the next entry if there is an error
-            }
-        };
-
-        let file: ntfs::NtfsFile<'_> = match entry.to_file(info.ntfs, &mut info.fs) {
-            Ok(file) => file,
-            Err(_e) => {
-                dprintln!("[ERROR] Error converting entry to file: {:?}", _e);
-                continue; // Skip to the next entry if there is an error
-            }
-        };
-
-        // Get the file size
-        let file_size = match file.data(&mut info.fs, "") {
-            Some(data_item) => {
-                let data_item = data_item?; // Bind the data item to a variable to extend its lifetime
-                let data_attribute = data_item.to_attribute()?; // Now, this will live long enough
-                data_attribute.value_length() // Size of the data stream
-            }
-            None => 0, // In case there is no data attribute, treat the size as 0
-        };
-        match get_object_name(&file, &mut info.fs) {
-            Ok(object_name) => {
-                // Check if the current file or directory matches any of the regex patterns
-                if file.is_directory() {
-                    let mut reg_data = object_name.clone();
-                    if !relative_path.is_empty() {
-                        reg_data = format!("{}\\{}", relative_path, object_name.clone());
-                    }
-                    let level = get_subfolder_level_regex(&reg_data);
-                    let matches_pattern = folder_patterns.as_ref().map_or(true, |patterns| {
-                        patterns.iter().any(|regex| {
-                            Regex::new(&get_level_path_regex(regex.as_str(), level).unwrap())
-                                .expect("Regex problem")
-                                .is_match(&reg_data)
-                        })
-                    });
-                    if matches_pattern {
-                        let folder_output_path = format!("{}\\{}", out_dir, object_name);
-                        directories_to_recurse.push((file, folder_output_path, reg_data));
-                    }
-                } else {
-                    let matches_pattern = file_patterns.as_ref().map_or(true, |patterns| {
-                        patterns.iter().any(|regex| regex.is_match(&object_name))
-                    });
-                    if matches_pattern {
-                        let matches_folder_pattern =
-                            folder_patterns.as_ref().map_or(true, |patterns| {
-                                patterns.iter().any(|regex| regex.is_match(&relative_path))
-                            });
-                        // Keep `visited_files` logic untouched
-
-                        if (matches_folder_pattern
-                            || (relative_path.is_empty()
-                                && folder_patterns.as_ref().unwrap().len() == 0))
-                            && visited_files.insert(object_name.clone())
-                        {
-                            // Respect the original file size limit
-                            if config.max_size.map_or(true, |max| file_size <= max) {
-                                dprintln!("[INFO] Found file: {}", object_name);
-                                get(
-                                    &file,
-                                    &object_name,
-                                    out_dir,
-                                    &mut info.fs,
-                                    config.encrypt.as_ref(),
-                                    "",
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            Err(_e) => {
-                dprintln!("[ERROR] Error getting file name: {:?}", _e);
-                continue; // Skip to the next entry if there is an error
-            }
-        }
-    }
-
-    // Process directories after the current entries are done
-    for (directory, path, relative_path) in directories_to_recurse {
-        info.current_directory.push(directory);
-        list_files_in_current_dir_regex(info, config, &path, relative_path)?;
-        info.current_directory.pop();
-    }
-
     Ok(())
 }
 

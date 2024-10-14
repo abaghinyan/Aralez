@@ -135,12 +135,9 @@ Each search configuration specifies:
     - `*`: Matches any sequence of characters except the directory separator (`\\`), so `*.txt` matches all `.txt` files in the current directory.
     - `**`: Matches directories and their contents recursively. When an object terminates with `**`, it will take only the files in the folder and subdirectories. If the object ends with `**\\`, it will match both files and subdirectories.
     - **Note**: In glob patterns, the directory path separator is `\\`.
-  - `string`: Matches the object as an exact string. In this case, the object is treated as a specific filename or directory name to match exactly. Example: `report.txt` matches a file with the exact name `report.txt`.
-  - `regex`: Uses regular expressions to define complex search patterns. Regex allows advanced pattern matching, useful when you need to match files based on intricate naming conventions or dynamic content within the directory. Example: `.*\\.evtx$` matches all `.evtx` files in a directory.
-    - **Note**: In regex patterns, the directory path separator is `\\\\` (double backslash), which is required to escape the backslash character.
 
 > [!IMPORTANT] 
-> The default value for `type` is `glob`, but you can specify `string` or `regex` depending on your needs for object matching.
+> The default value for `type` is `glob`
 
 #### Windows Environment Variables for dir_path
 
@@ -164,12 +161,6 @@ entries:
 - `**\\`: If the `objects` element ends with `**\\`, the tool will match both files and subdirectories recursively within the specified directory.
 - **Note**: In glob patterns, the directory separator is `\\` (single backslash).
 
-#### Regex Pattern Example for Object Matching
-
-- `.*\\.evtx$`: Matches all files with an `.evtx` extension.
-- `.*\\\\.*\\.evtx$`: Recursively matches `.evtx` files in subdirectories.
-- **Note**: In regex patterns, the directory separator is `\\\\` (double backslash).
-
 For example:
 
 ```yaml
@@ -180,9 +171,6 @@ entries:
     - dir_path: "Program Files"
       objects: ["setup.exe"]
       type: "string"  # Matching exactly the file setup.exe
-    - dir_path: "Windows\\\\System32\\\\winevt\\\\Logs"
-      objects: [".*\\.evtx$"]
-      type: "regex"  # Using regex to match all .evtx files
     - dir_path: "Users\\{user}\\Documents"
       objects: ["**"]
       type: "glob"  # Match only files in the folder and subdirectories
@@ -210,22 +198,6 @@ entries:
       max_size: 1048576
       encrypt: "infected"
 ```
-
-#### Regex Patterns for objects
-
-Aralez allows you to define complex file search patterns using regular expressions (regex) **for objects only**, not for directory paths. You can use these patterns to retrieve files based on their extension or location within the directory tree.
-
-- `[".*\\.evtx$"]`: This pattern will match files with a `.evtx` extension located in the `dir_path` level. Specifically:
-  - `.*`: Matches any file name without extension.
-  - `\\.`: Matche dot.
-  - `evtx$`: Matches any file ending with the `evtx` extension.
-
-- `[".*\\\\.*\\.evtx$"]`: This pattern will match `.evtx` files located in a folder **or any of its subfolders**. It works recursively:
-  - `.*`: Matches any folder or subfolder (including recursive subdirectories).
-  - `\\\\`: A literal backslash, separating the folder from the file name.
-  - `*.evtx`: Matches any file ending with the `.evtx` extension.
-
-> **Note**: if the objects end by `\\\\` it means that the **objects** are folders. If not, it means that we want to search files.
 
 ### Example Configuration
 Collect some files:

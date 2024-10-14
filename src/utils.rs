@@ -321,22 +321,6 @@ pub fn get_level_path_pattern(path: &str, level: usize) -> Option<String> {
     }
 }
 
-pub fn get_subfolder_level_regex(path: &str) -> usize {
-    // Count the number of '/' characters in the path
-    path.matches("\\\\").count()
-}
-
-pub fn get_level_path_regex(path: &str, level: usize) -> Option<String> {
-    let parts: Vec<&str> = path.split("\\\\").collect();
-    
-    if level < parts.len() {
-        // Join the parts up to the requested level (inclusive)
-        Some(parts[..=level].join("\\\\"))
-    } else {
-        None // Return None if the level doesn't exist
-    }
-}
-
 pub fn remove_trailing_backslashes(input: &str) -> String {
     if input.ends_with("\\") {
         input.strip_suffix("\\").unwrap_or(input).to_string()

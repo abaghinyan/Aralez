@@ -305,9 +305,9 @@ impl SearchConfig {
 
     // Method to sanitize dir_path and objects based on metacharacters
     pub fn sanitize(&mut self) -> Result<(), String> {
+
         if let Some(dir_path_item) = &self.dir_path {
             let dir_path = remove_trailing_backslashes(&dir_path_item);
-
             // Check if the dir_path contains a glob element (*, **, ?, or bracketed expressions)
             if dir_path.contains("*")
                 || dir_path.contains("?")
@@ -356,6 +356,8 @@ impl SearchConfig {
 
                 // Update the dir_path with the new common part
                 self.dir_path = Some(new_dir_path);
+            } else {
+                self.dir_path = Some(dir_path);
             }
         }
 

@@ -17,7 +17,7 @@ use std::fs::{File, remove_file};
 use std::path::{Path, PathBuf};
 
 pub fn run_system(tool_name: &str, args: &[&str], output_filename: &str, output_path: &str) {
-    dprintln!("[INFO] Execution of {}", tool_name);
+    dprintln!("[INFO] Execution of {} {:?}", tool_name, args);
 
     // Create the full path for the output file
     let output_file_path = Path::new(output_path).join(output_filename);
@@ -88,7 +88,7 @@ pub fn run_external(
     output_file: &str, 
     args: &[&str]
 ) {
-    dprintln!("[INFO] Execution of {}", filename);
+    dprintln!("[INFO] Execution of {} {:?}", filename, args);
 
     // Save the executable to a temporary file
     let temp_exe_path = match save_to_temp_file(filename, exe_bytes, output_path) {

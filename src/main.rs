@@ -27,13 +27,10 @@ use ntfs_reader::{process_all_drives, process_drive_artifacts};
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Seek, SeekFrom};
 use std::path::Path;
 use utils::{ensure_directory_exists, remove_dir_all};
 use zip::{write::FileOptions, ZipWriter, CompressionMethod};
-
-const CONFIG_MARKER_START: &[u8] = b"# CONFIG_START";
-const CONFIG_MARKER_END: &[u8] = b"# CONFIG_END";
 
 #[derive(Parser)]
 struct Cli {
@@ -66,27 +63,6 @@ fn show_config(config: &Config) -> Result<()> {
     Ok(())
 }
 
-// Function to load the embedded configuration at runtime
-fn load_embedded_config() -> Result<String> {
-    let current_exe = env::current_exe()?;
-    let mut file = File::open(current_exe)?;
-
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-
-    if let Some(start) = find_marker(&buffer, CONFIG_MARKER_START) {
-        if let Some(end) = find_marker(&buffer[start..], CONFIG_MARKER_END) {
-            let config_data = &buffer[start + CONFIG_MARKER_START.len()..start + end];
-            let config_string = String::from_utf8_lossy(config_data);
-            return Ok(config_string.into_owned());
-        }
-    }
-
-    Err(anyhow::anyhow!(
-        "Embedded configuration not found or the config file is not valid"
-    ))
-}
-
 // Function to update the embedded configuration
 fn update_embedded_config(new_config_path: &str, output_exe_path: &str) -> std::io::Result<()> {
     let new_config_data = fs::read(new_config_path)?;
@@ -105,39 +81,15 @@ fn update_embedded_config(new_config_path: &str, output_exe_path: &str) -> std::
 
     // Append the config marker and new config data at the end of the file
     new_exe_file.seek(SeekFrom::End(0))?;
-    new_exe_file.write_all(CONFIG_MARKER_START)?;
+    new_exe_file.write_all(config::CONFIG_MARKER_START)?;
     new_exe_file.write_all(&new_config_data)?;
-    new_exe_file.write_all(CONFIG_MARKER_END)?;
+    new_exe_file.write_all(config::CONFIG_MARKER_END)?;
 
     println!(
         "New executable with updated config created at: {}",
         output_exe_path
     );
 
-    Ok(())
-}
-
-// Helper function to find the marker in the binary data
-fn find_marker(data: &[u8], marker: &[u8]) -> Option<usize> {
-    data.windows(marker.len())
-        .rposition(|window| window == marker) // rposition finds the last occurrence
-}
-
-fn save_config_to_file(config: &Config, output_dir: &str) -> std::io::Result<()> {
-    let yaml_string = serde_yaml::to_string(&config).expect("Failed to serialize config to YAML");
-
-    // Ensure the root_output folder exists
-    let path = Path::new(output_dir);
-    if !path.exists() {
-        fs::create_dir_all(path)?;
-    }
-
-    // Define the output file path
-    let config_file_path = path.join("config.yaml");
-
-    // Write the YAML string to the file
-    let mut file = fs::File::create(config_file_path)?;
-    file.write_all(yaml_string.as_bytes())?;
     Ok(())
 }
 
@@ -200,12 +152,8 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Load configuration: Try to load the embedded configuration first, then fallback to default
-    let config_data = load_embedded_config()?;
-    let config: Config = match serde_yaml::from_str(&config_data) {
-        Ok(config) => config,
-        Err(_e) => Config::load_from_embedded()?,
-    };
+    
+    let config = Config::load()?;
 
     // Handle show_config flag
     if matches.get_flag("show_config") {
@@ -220,7 +168,7 @@ fn main() -> Result<()> {
 
     let root_output = &config.get_output_filename();
     
-    save_config_to_file(&config, root_output)?;
+    config.save(root_output)?;
 
     dprintln!("Aralez version: {}", env!("CARGO_PKG_VERSION"));
 

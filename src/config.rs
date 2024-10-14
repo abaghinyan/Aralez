@@ -13,7 +13,13 @@ use hostname::get;
 use indexmap::IndexMap;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
+use std::{fmt, env};
+use std::fs::{File, create_dir_all};
+use std::path::Path;
+use std::io::{Read, Write};
+
+pub const CONFIG_MARKER_START: &[u8] = b"# CONFIG_START";
+pub const CONFIG_MARKER_END: &[u8] = b"# CONFIG_END";
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
@@ -200,6 +206,62 @@ impl Config {
         let yaml_data = include_str!("../config/.config.yml");
         let config: Config = serde_yaml::from_str(yaml_data)?;
         Ok(config)
+    }
+
+    pub fn load() -> Result<Self> {
+        // Load configuration: Try to load the embedded configuration first, then fallback to default
+        let config_data = Config::load_embedded_config()?;
+        let config: Config = match serde_yaml::from_str(&config_data) {
+            Ok(config) => config,
+            Err(_e) => Config::load_from_embedded()?,
+        };
+
+        Ok(config)
+    }
+
+    // Function to load the embedded configuration at runtime
+    fn load_embedded_config() -> Result<String> {
+        let current_exe = env::current_exe()?;
+        let mut file = File::open(current_exe)?;
+
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+
+        if let Some(start) = Config::find_marker(&buffer, CONFIG_MARKER_START) {
+            if let Some(end) = Config::find_marker(&buffer[start..], CONFIG_MARKER_END) {
+                let config_data = &buffer[start + CONFIG_MARKER_START.len()..start + end];
+                let config_string = String::from_utf8_lossy(config_data);
+                return Ok(config_string.into_owned());
+            }
+        }
+
+        Err(anyhow::anyhow!(
+            "Embedded configuration not found or the config file is not valid"
+        ))
+    }
+
+    // Helper function to find the marker in the binary data
+    fn find_marker(data: &[u8], marker: &[u8]) -> Option<usize> {
+        data.windows(marker.len())
+            .rposition(|window| window == marker) // rposition finds the last occurrence
+    }
+
+    pub fn save(&self, output_dir: &str) -> std::io::Result<()> {
+        let yaml_string = serde_yaml::to_string(&self).expect("Failed to serialize config to YAML");
+    
+        // Ensure the root_output folder exists
+        let path = Path::new(output_dir);
+        if !path.exists() {
+            create_dir_all(path)?;
+        }
+    
+        // Define the output file path
+        let config_file_path = path.join("config.yml");
+    
+        // Write the YAML string to the file
+        let mut file = File::create(config_file_path)?;
+        file.write_all(yaml_string.as_bytes())?;
+        Ok(())
     }
 
     pub fn get_output_filename(&self) -> String {

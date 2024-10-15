@@ -79,11 +79,13 @@ pub fn initialize_command_info<'n, T: Read + Seek>(
 pub fn find_files_in_dir<T>(
     info: &mut CommandInfo<T>,
     element: &mut SearchConfig,
-    out_dir: &str,
+    root_output: &str,
+    drive: &str,
 ) -> Result<()>
 where
     T: Read + Seek,
 {
+    let root_path = format!("{}\\{}", root_output.to_string(), drive);
     // Navigate to the Logs directory
     let dir_path = &element.get_expanded_dir_path();
     match navigate_to_directory(info, &dir_path) {
@@ -91,6 +93,7 @@ where
             // List all files in the Logs directory
             let mut visited_files: HashSet<String> = HashSet::new();
             let mut visited_dirs = HashSet::new();
+            let out_dir = &format!("{}\\{}", root_path, &element.get_expanded_dir_path());
             return match &element.r#type {
                 Some(el_type) => match el_type {
                     TypeConfig::Glob => list_files_in_current_dir_glob(
@@ -100,6 +103,7 @@ where
                         String::new(),
                         &mut visited_files,
                         &mut visited_dirs,
+                        drive,
                     )
                 },
                 None => list_files_in_current_dir_glob(
@@ -109,6 +113,7 @@ where
                     String::new(),
                     &mut visited_files,
                     &mut visited_dirs,
+                    drive,
                 ),
             };
         }
@@ -164,7 +169,8 @@ pub fn list_files_in_current_dir_glob<T>(
     out_dir: &str,
     relative_path: String,
     visited_files: &mut HashSet<String>,
-    visited_dirs: &mut HashSet<String>, // Keep track of visited directories
+    visited_dirs: &mut HashSet<String>, 
+    drive: &str
 ) -> Result<()>
 where
     T: Read + Seek,
@@ -215,9 +221,7 @@ where
             }
         };
 
-        let file_size = file.data(&mut info.fs, "").map_or(0, |data_item| {
-            data_item.map_or(0, |d| d.to_attribute().map_or(0, |a| a.value_length()))
-        });
+        let file_size = file.allocated_size();
 
         match get_object_name(&file, &mut info.fs) {
             Ok(object_name) => {
@@ -246,7 +250,8 @@ where
                                 &folder_output_path,
                                 reg_data.clone(),
                                 visited_files,
-                                visited_dirs, // Pass visited dirs to prevent loops
+                                visited_dirs,
+                                drive
                             )?;
                         } else {
                             let level = get_subfolder_level(&reg_data);
@@ -265,7 +270,8 @@ where
                                         &folder_output_path,
                                         reg_data.clone(),
                                         visited_files,
-                                        visited_dirs, // Pass visited dirs to prevent loops
+                                        visited_dirs, 
+                                        drive
                                     )?;
                                 }
                             }
@@ -311,7 +317,7 @@ where
                                         .map_or(true, |max| u64::from(file_size) <= max)
                                     {
                                         dprintln!("[INFO] Found file: {}", rel_path);
-
+                                        
                                         get(
                                             &file,
                                             &object_name,
@@ -319,6 +325,7 @@ where
                                             &mut info.fs,
                                             config.encrypt.as_ref(),
                                             ads,
+                                            drive
                                         );
 
                                         visited_files.insert(rel_path.clone());
@@ -351,11 +358,12 @@ where
     config
         .sanitize()
         .expect("[ERROR] Config sanitization failed");
-    let drive = format!("{}\\{}", root_output.to_string(), drive);
+    
     find_files_in_dir(
         info,
         config,
-        &format!("{}\\{}", drive, &config.get_expanded_dir_path()),
+        root_output,
+        &drive
     )
 }
 

@@ -21,7 +21,7 @@ tasks:
     entries: 
       mft:
         - dir_path: "."
-          objects: ["$MFT"]
+          objects: ["$MFT", "$Boot"]
       extend:
         - dir_path: "$Extend"
           objects: ["**"]

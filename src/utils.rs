@@ -6,7 +6,7 @@
 // Author(s): Areg Baghinyan
 //
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use ntfs::{NtfsFile, NtfsReadSeek, NtfsError, structured_values::NtfsFileNamespace};
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::{Read, Seek, Write};
@@ -19,8 +19,10 @@ use sha2::{Sha256, Digest};
 use regex::Regex;
 use std::env;
 use std::io;
+use std::io::SeekFrom;
+use std::fs::File;
 
-pub fn get<T>(file: &NtfsFile, filename: &str, out_dir: &str, fs: &mut T, encrypt: Option<&String>, ads: &str)
+pub fn get<T>(file: &NtfsFile, filename: &str, out_dir: &str, fs: &mut T, encrypt: Option<&String>, ads: &str, drive: &str)
 where
     T: Read + Seek,
 {
@@ -107,7 +109,7 @@ where
     );
 
     // Buffer for reading chunks of the file
-    let mut read_buf = [0u8; 4096];
+    let mut read_buf = [0u8; 512];
     let mut leading_zeros_skipped = false;
 
     // Stream data based on encryption
@@ -187,32 +189,59 @@ where
         }
     } else {
         // No encryption, write the file normally in chunks
-        while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
-            if bytes_read == 0 {
-                break;
-            }
+        if file_name == "$Boot" {
+            output_file.write_all(&get_boot(&drive).unwrap()).unwrap();
 
-            let chunk = if !leading_zeros_skipped {
-                if let Some(non_zero_pos) = read_buf.iter().position(|&b| b != 0) {
-                    leading_zeros_skipped = true;
-                    &read_buf[non_zero_pos..bytes_read]
-                } else {
-                    continue;
+        } else {
+            while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
+            
+                if bytes_read == 0 {
+                    break;
                 }
-            } else {
-                &read_buf[..bytes_read]
-            };
-
-            if output_file.write_all(chunk).is_err() {
-                return;
+    
+                let chunk = if !leading_zeros_skipped {
+                    if let Some(non_zero_pos) = read_buf.iter().position(|&b| b != 0) {
+                        leading_zeros_skipped = true;
+                        &read_buf[non_zero_pos..bytes_read]
+                    } else {
+                        continue;
+                    }
+                } else {
+                    &read_buf[..bytes_read]
+                };
+    
+    
+                if output_file.write_all(chunk).is_err() {
+                    return;
+                }
             }
         }
     }
 
-    dprintln!("[INFO] Data successfully saved to `{}`", output_file_name);
+    match output_file.flush() {
+        Ok(_) => dprintln!("[INFO] Data successfully saved to `{}`", output_file_name),
+        Err(e) => dprintln!("[ERROR] Problem to save `{}` file: {:?}", output_file_name, e),
+    };
 }
 
+fn get_boot (drive_letter: &str) -> Result<Vec<u8>, Error> {
+    let drive_path = format!("\\\\.\\{}:", drive_letter);  // Raw access to the drive
 
+    // Check if the drive exists before attempting to open it
+    if Path::new(&format!("{}:\\", drive_letter)).exists() {
+        // Open the drive and read the first 8192  bytes
+        let mut file = File::open(&drive_path).unwrap();
+        let mut boot_sector = vec![0u8; 8192]; // Buffer for boot sector (8192  bytes)
+
+        // Seek to the start of the partition and read the first 8192  bytes (the boot sector)
+        file.seek(SeekFrom::Start(0))?;
+        file.read_exact(&mut boot_sector)?;
+
+        return Ok(boot_sector);
+    } 
+    
+    Err(anyhow::anyhow!("[ERROR] Drive {} does not exist", drive_letter))
+}
 
 /// Retrieves the name of the file from the NTFS $FILE_NAME attribute.
 pub fn get_object_name<T: Read + Seek>(file: &NtfsFile, fs: &mut T) -> Result<String, NtfsError> {

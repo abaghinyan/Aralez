@@ -148,7 +148,6 @@ dependencies = [
  "indicatif",
  "md5",
  "ntfs",
- "once_cell",
  "rand",
  "regex",
  "reqwest",

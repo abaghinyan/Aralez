@@ -194,7 +194,7 @@ fn main() -> Result<()> {
         spinner.set_message(format!("Processing: {} task", section_name));
         match section_config.r#type {
             config::TypeTasks::Collect => {
-                let drive = section_config.drive.clone().unwrap_or_else(|| "C".to_string());
+                let drive: String = section_config.drive.clone().unwrap_or_else(|| "C".to_string());
                 spinner.set_message(format!("Processing: {} drive", drive));
 
                 if drive == "*" {
@@ -270,10 +270,11 @@ fn main() -> Result<()> {
 
     // Move the logfile into the root folder
     let logfile = &format!("{}.log", config.get_output_filename());
-    if Path::new(logfile).exists() {
+    let tmp_logfile = &format!("{}.log", ".aralez");
+    if Path::new(tmp_logfile).exists() {
         if Path::new(root_output).exists() {
             let destination_file = format!("{}/{}", root_output, logfile);
-            fs::rename(logfile, &destination_file)?;
+            fs::rename(tmp_logfile, &destination_file)?;
         } else {
             dprintln!("[WARN] Root file not found");
         }

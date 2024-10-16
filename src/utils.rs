@@ -22,7 +22,7 @@ use std::io;
 use std::io::SeekFrom;
 use std::fs::File;
 
-pub fn get<T>(file: &NtfsFile, filename: &str, out_dir: &str, fs: &mut T, encrypt: Option<&String>, ads: &str, drive: &str)
+pub fn get<T>(file: &NtfsFile, filename: &str, out_dir: &str, fs: &mut T, encrypt: Option<&String>, ads: &str, drive: &str) -> Result<(), Error>
 where
     T: Read + Seek,
 {
@@ -34,10 +34,8 @@ where
 
     // Try to create the directory, log error if it fails
     if let Err(e) = create_dir_all(out_dir) {
-        dprintln!("[ERROR] Failed to create directory `{}`: {}", out_dir, e);
-        return;
+        return Err(anyhow::anyhow!("[ERROR] Failed to create directory `{}`: {}", out_dir, e));
     }
-
     // Check if encryption is required and construct the output file name
     let mut output_file_name = if let Some(ref password) = encrypt {
         if !password.is_empty() {
@@ -68,8 +66,7 @@ where
     {
         Ok(f) => f,
         Err(e) => {
-            dprintln!("[ERROR] Failed to open file `{}` for writing: {}", output_file_name, e);
-            return;
+            return Err(anyhow::anyhow!("[ERROR] Failed to open file `{}` for writing: {}", output_file_name, e));
         }
     };
 
@@ -77,12 +74,11 @@ where
     let data_item = match file.data(fs, ads) {
         Some(Ok(item)) => item,
         Some(Err(e)) => {
-            dprintln!("[ERROR] Failed to retrieve data for `{}`: {}", file_name, e);
-            return;
+            return Err(anyhow::anyhow!("[ERROR] Failed to retrieve data for `{}`: {}", file_name, e));
         }
         None => {
             // dprintln!("[WARN] The file does not have a `{}` $DATA attribute.", data_stream_name);
-            return;
+            return Err(anyhow::anyhow!(""));
         }
     };
 
@@ -90,15 +86,14 @@ where
         Ok(attr) => attr,
         Err(e) => {
             dprintln!("[ERROR] Failed to retrieve attribute for `{}`: {}", file_name, e);
-            return;
+            return Err(anyhow::anyhow!("[ERROR] Failed to retrieve attribute for `{}`: {}", file_name, e));
         }
     };
 
     let mut data_value = match data_attribute.value(fs) {
         Ok(val) => val,
         Err(e) => {
-            dprintln!("[ERROR] Failed to retrieve data value for `{}`: {}", file_name, e);
-            return;
+            return Err(anyhow::anyhow!("[ERROR] Failed to retrieve data value for `{}`: {}", file_name, e));
         }
     };
 
@@ -129,8 +124,7 @@ where
 
             // Write the nonce to the file before writing encrypted data
             if output_file.write_all(nonce).is_err() {
-                dprintln!("[ERROR] Failed to write nonce to `{}`", output_file_name);
-                return;
+                return Err(anyhow::anyhow!("[ERROR] Failed to write nonce to `{}`", output_file_name));
             }
 
             // Stream data, encrypt each chunk, and write it to the file
@@ -153,15 +147,13 @@ where
                 let encrypted_chunk = match cipher.encrypt(nonce, chunk) {
                     Ok(ct) => ct,
                     Err(e) => {
-                        dprintln!("[ERROR] Encryption failed: {}", e);
-                        return;
+                        return Err(anyhow::anyhow!("[ERROR] Encryption failed: {}", e));
                     }
                 };
 
                 // Write the encrypted chunk to the output file
                 if output_file.write_all(&encrypted_chunk).is_err() {
-                    dprintln!("[ERROR] Failed to write encrypted chunk to `{}`", output_file_name);
-                    return;
+                    return Err(anyhow::anyhow!("[ERROR] Failed to write encrypted chunk to `{}`", output_file_name));
                 }
             }
         } else {
@@ -183,7 +175,7 @@ where
                 };
 
                 if output_file.write_all(chunk).is_err() {
-                    return;
+                    return Err(anyhow::anyhow!("[ERROR] Failed to write chunk to `{}`", output_file_name));
                 }
             }
         }
@@ -212,15 +204,18 @@ where
     
     
                 if output_file.write_all(chunk).is_err() {
-                    return;
+                    return Err(anyhow::anyhow!("[ERROR] Failed to write chunk to `{}`", output_file_name));
                 }
             }
         }
     }
 
     match output_file.flush() {
-        Ok(_) => dprintln!("[INFO] Data successfully saved to `{}`", output_file_name),
-        Err(e) => dprintln!("[ERROR] Problem to save `{}` file: {:?}", output_file_name, e),
+        Ok(_) => {
+            dprintln!("[INFO] Data successfully saved to `{}`", output_file_name);
+            return Ok(());
+        },
+        Err(e) => return Err(anyhow::anyhow!("[ERROR] Problem to save `{}` file: {:?}", output_file_name, e)),
     };
 }
 

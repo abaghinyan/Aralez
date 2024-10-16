@@ -10,8 +10,7 @@ use crate::command_info::CommandInfo;
 use crate::config::{SearchConfig, SectionConfig, TypeConfig};
 use crate::sector_reader::SectorReader;
 use crate::utils::{
-    ensure_directory_exists, get, get_level_path_pattern, get_object_name,
-    get_subfolder_level, 
+    ensure_directory_exists, get, get_level_path_pattern, get_object_name, get_subfolder_level,
 };
 use anyhow::Result;
 use glob::Pattern;
@@ -88,15 +87,34 @@ where
     let root_path = format!("{}\\{}", root_output.to_string(), drive);
     // Navigate to the Logs directory
     let dir_path = &element.get_expanded_dir_path();
+    let mut success_files_count: u32 = 0;
+
     match navigate_to_directory(info, &dir_path) {
         Ok(_) => {
             // List all files in the Logs directory
             let mut visited_files: HashSet<String> = HashSet::new();
             let mut visited_dirs = HashSet::new();
             let out_dir = &format!("{}\\{}", root_path, &element.get_expanded_dir_path());
-            return match &element.r#type {
+
+            match &element.r#type {
                 Some(el_type) => match el_type {
-                    TypeConfig::Glob => list_files_in_current_dir_glob(
+                    TypeConfig::Glob => {
+                        match list_files_in_current_dir_glob(
+                            info,
+                            element,
+                            out_dir,
+                            String::new(),
+                            &mut visited_files,
+                            &mut visited_dirs,
+                            drive,
+                        ) {
+                            Ok(count) => success_files_count += count,
+                            Err(e) => dprintln!("{:?}", e),
+                        };
+                    }
+                },
+                None => {
+                    match list_files_in_current_dir_glob(
                         info,
                         element,
                         out_dir,
@@ -104,21 +122,21 @@ where
                         &mut visited_files,
                         &mut visited_dirs,
                         drive,
-                    )
-                },
-                None => list_files_in_current_dir_glob(
-                    info,
-                    element,
-                    out_dir,
-                    String::new(),
-                    &mut visited_files,
-                    &mut visited_dirs,
-                    drive,
-                ),
+                    ) {
+                        Ok(count) => success_files_count += count,
+                        Err(e) => dprintln!("{:?}", e),
+                    };
+                }
             };
         }
         Err(e) => dprintln!("{}", e),
     }
+
+    dprintln!(
+        "[INFO] Collection completed for {} with {} collected files",
+        dir_path,
+        success_files_count
+    );
 
     Ok(())
 }
@@ -169,12 +187,14 @@ pub fn list_files_in_current_dir_glob<T>(
     out_dir: &str,
     relative_path: String,
     visited_files: &mut HashSet<String>,
-    visited_dirs: &mut HashSet<String>, 
-    drive: &str
-) -> Result<()>
+    visited_dirs: &mut HashSet<String>,
+    drive: &str,
+) -> Result<u32>
 where
     T: Read + Seek,
 {
+    let mut success_files_count: u32 = 0;
+
     let current_directory: &NtfsFile<'_> = &info.current_directory.last().unwrap().clone();
     let index = current_directory.directory_index(&mut info.fs)?;
     let mut entries = index.entries();
@@ -244,15 +264,18 @@ where
                         if folder_pattern.starts_with("**/") {
                             let folder_output_path = format!("{}/{}", out_dir, object_name);
                             info.current_directory.push(file.clone());
-                            list_files_in_current_dir_glob(
+                            match list_files_in_current_dir_glob(
                                 info,
                                 config,
                                 &folder_output_path,
                                 reg_data.clone(),
                                 visited_files,
                                 visited_dirs,
-                                drive
-                            )?;
+                                drive,
+                            ) {
+                                Ok(count) => success_files_count += count,
+                                Err(e) => dprintln!("{:?}", e),
+                            };
                         } else {
                             let level = get_subfolder_level(&reg_data);
 
@@ -264,15 +287,18 @@ where
                                 {
                                     let folder_output_path = format!("{}/{}", out_dir, object_name);
                                     info.current_directory.push(file.clone());
-                                    list_files_in_current_dir_glob(
+                                    match list_files_in_current_dir_glob(
                                         info,
                                         config,
                                         &folder_output_path,
                                         reg_data.clone(),
                                         visited_files,
-                                        visited_dirs, 
-                                        drive
-                                    )?;
+                                        visited_dirs,
+                                        drive,
+                                    ) {
+                                        Ok(count) => success_files_count += count,
+                                        Err(e) => dprintln!("{:?}", e),
+                                    };
                                 }
                             }
                         }
@@ -317,17 +343,19 @@ where
                                         .map_or(true, |max| u64::from(file_size) <= max)
                                     {
                                         dprintln!("[INFO] Found file: {}", rel_path);
-                                        
-                                        get(
+
+                                        match get(
                                             &file,
                                             &object_name,
                                             out_dir,
                                             &mut info.fs,
                                             config.encrypt.as_ref(),
                                             ads,
-                                            drive
-                                        );
-
+                                            drive,
+                                        ) {
+                                            Ok(_) => success_files_count += 1,
+                                            Err(e) => dprintln!("{}", e.to_string()),
+                                        }
                                         visited_files.insert(rel_path.clone());
                                     }
                                 }
@@ -343,7 +371,7 @@ where
         }
     }
 
-    Ok(())
+    Ok(success_files_count)
 }
 
 fn search_in_config<T>(
@@ -358,13 +386,8 @@ where
     config
         .sanitize()
         .expect("[ERROR] Config sanitization failed");
-    
-    find_files_in_dir(
-        info,
-        config,
-        root_output,
-        &drive
-    )
+
+    find_files_in_dir(info, config, root_output, &drive)
 }
 
 pub fn process_drive_artifacts(
@@ -393,7 +416,7 @@ pub fn process_drive_artifacts(
                 artifact.objects.clone().unwrap_or_default()
             );
             if !processed_paths.contains(&path_key) {
-                dprintln!("[INFO] Running {}", path_key); // Replaced the progress bar message with dprintln!
+                dprintln!("[INFO] Collecting {}", path_key);
                 search_in_config(
                     &mut info,
                     &mut artifact,

@@ -313,14 +313,18 @@ where
                                 object_name.clone()
                             };
                             let (file_pattern, ads) = match file_pattern.split_once(':') {
-                                Some((left, right)) => (&left.to_string(), right),
-                                None => (file_pattern, ""),
+                                Some((left, right)) => {
+                                    let left_string = left.to_string(); // Create a variable for the `String`
+                                    (left_string, right) // Return the `String` itself, not a reference to it
+                                },
+                                None => (file_pattern.to_string(), ""), // Ensure consistency with String type
                             };
+                            
                             let full_pattern = if folder_pattern.is_empty() {
-                                file_pattern.to_string()
+                                file_pattern.clone() // Clone the file_pattern to prevent the move
                             } else {
-                                format!("{}/{}", folder_pattern, file_pattern)
-                            };
+                                format!("{}/{}", folder_pattern, file_pattern.clone()) // Clone here as well
+                            };                        
 
                             if folder_pattern.ends_with("**") && file_pattern != "**" {
                                 let level_rel_path = get_subfolder_level(&rel_path);

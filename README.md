@@ -50,6 +50,12 @@ Aralez is a triage collector tool designed for gathering critical system informa
    cd aralez
    ```
 
+> [!WARNING] 
+> If you want to be compatible with `Windows 7` and `Windows Server 2008`, you should use the Rust version `1.77.0`.
+   ```bash
+   rustup default 1.77.0
+   ```
+
 3. **Build the project**:
    ```bash
    cargo build --release
@@ -78,6 +84,7 @@ Add `i686-pc-windows-gnu` and `x86_64-pc-windows-gnu`
    git clone https://github.com/abaghinyan/aralez.git
    cd aralez
    ```
+
 4. **Build the project**:
 Compile the project for the Windows GNU targets:
    ```bash

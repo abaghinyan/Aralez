@@ -152,7 +152,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    
+
     let config = Config::load()?;
 
     // Handle show_config flag
@@ -212,12 +212,10 @@ fn main() -> Result<()> {
                                 ensure_directory_exists(&output_path)
                                     .expect("Failed to create or access output directory");
 
-                                let args: &[&str] = match executor.args {
-                                    Some(ref args_array) => {
-                                        &args_array.iter().map(String::as_str).collect::<Vec<_>>()[..]
-                                    }
-                                    None => &[],
-                                };
+                                    let args: Vec<&str> = match executor.args {
+                                        Some(ref args_array) => args_array.iter().map(String::as_str).collect(), // Collect into Vec
+                                        None => Vec::new(), // Empty Vec if no args
+                                    };
 
                                 match exec_type {
                                     config::TypeExec::External => {

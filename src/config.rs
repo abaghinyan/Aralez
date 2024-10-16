@@ -17,6 +17,7 @@ use std::{fmt, env};
 use std::fs::{File, create_dir_all};
 use std::path::Path;
 use std::io::{Read, Write};
+use once_cell::sync::Lazy;
 
 pub const CONFIG_MARKER_START: &[u8] = b"# CONFIG_START";
 pub const CONFIG_MARKER_END: &[u8] = b"# CONFIG_END";
@@ -41,6 +42,10 @@ pub struct SectionConfig {
 pub enum TypeConfig {
     Glob,
 }
+
+pub static GLOBAL_CONFIG: Lazy<Config> = Lazy::new(|| {
+    Config::load().expect("[ERROR] Failed to load configuration")
+});
 
 impl Serialize for TypeConfig {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

@@ -167,7 +167,7 @@ fn main() -> Result<()> {
     }
 
     let root_output = &config.get_output_filename();
-    
+
     config.save(root_output)?;
 
     dprintln!("Aralez version: {}", env!("CARGO_PKG_VERSION"));
@@ -269,7 +269,7 @@ fn main() -> Result<()> {
 
 
     // Move the logfile into the root folder
-    let logfile = "aralez.log";
+    let logfile = &format!("{}.log", config.get_output_filename());
     if Path::new(logfile).exists() {
         if Path::new(root_output).exists() {
             let destination_file = format!("{}/{}", root_output, logfile);

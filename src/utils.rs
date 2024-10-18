@@ -104,7 +104,7 @@ where
     );
 
     // Buffer for reading chunks of the file
-    let mut read_buf = [0u8; 512];
+    let mut read_buf = [0u8; 65536];
     let mut leading_zeros_skipped = false;
 
     // Stream data based on encryption
@@ -224,11 +224,9 @@ fn get_boot (drive_letter: &str) -> Result<Vec<u8>, Error> {
 
     // Check if the drive exists before attempting to open it
     if Path::new(&format!("{}:\\", drive_letter)).exists() {
-        // Open the drive and read the first 8192  bytes
         let mut file = File::open(&drive_path).unwrap();
-        let mut boot_sector = vec![0u8; 8192]; // Buffer for boot sector (8192  bytes)
+        let mut boot_sector = vec![0u8; 65536]; 
 
-        // Seek to the start of the partition and read the first 8192  bytes (the boot sector)
         file.seek(SeekFrom::Start(0))?;
         file.read_exact(&mut boot_sector)?;
 

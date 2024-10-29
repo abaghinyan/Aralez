@@ -18,18 +18,19 @@ use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
 use config::Config;
-use execute::{get_bin, run_internal};
 use execute::run_external;
 use execute::run_system;
+use execute::{get_bin, run_internal};
 use indicatif::{ProgressBar, ProgressStyle};
 use ntfs_reader::{process_all_drives, process_drive_artifacts};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::io::{Seek, SeekFrom};
 use std::path::Path;
 use utils::{ensure_directory_exists, remove_dir_all};
-use zip::{write::FileOptions, ZipWriter, CompressionMethod};
+use zip::{write::FileOptions, CompressionMethod, ZipWriter};
 
 #[derive(Parser)]
 struct Cli {
@@ -151,7 +152,6 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-
     let config = Config::load()?;
 
     // Handle show_config flag
@@ -193,7 +193,10 @@ fn main() -> Result<()> {
         spinner.set_message(format!("Processing: {} task", section_name));
         match section_config.r#type {
             config::TypeTasks::Collect => {
-                let drive: String = section_config.drive.clone().unwrap_or_else(|| "C".to_string());
+                let drive: String = section_config
+                    .drive
+                    .clone()
+                    .unwrap_or_else(|| "C".to_string());
                 spinner.set_message(format!("Processing: {} drive", drive));
 
                 if drive == "*" {
@@ -203,63 +206,83 @@ fn main() -> Result<()> {
                 }
             }
             config::TypeTasks::Execute => {
-                for (_, executors) in &section_config.entries {
-                    for executor in executors.clone() {
-                        match executor.exec_type {
-                            Some(exec_type) => {
-                                let output_path = format!("{}\\{}", root_output, "tools"); // Adjust the path as necessary
-                                ensure_directory_exists(&output_path)
-                                    .expect("Failed to create or access output directory");
+                let _ = &section_config
+                    .entries
+                    .par_iter()
+                    .for_each(|(_, executors)| {
+                        executors.par_iter().for_each(|executor_iter| {
+                            let executor = executor_iter.clone();
+                            match executor.exec_type {
+                                Some(exec_type) => {
+                                    let output_path = format!("{}\\{}", root_output, "tools"); // Adjust the path as necessary
+                                    ensure_directory_exists(&output_path)
+                                        .expect("Failed to create or access output directory");
 
                                     let args: Vec<&str> = match executor.args {
-                                        Some(ref args_array) => args_array.iter().map(String::as_str).collect(), // Collect into Vec
+                                        Some(ref args_array) => {
+                                            args_array.iter().map(String::as_str).collect()
+                                        } // Collect into Vec
                                         None => Vec::new(), // Empty Vec if no args
                                     };
 
-                                match exec_type {
-                                    config::TypeExec::External => {
-                                        let executor_name = executor.name.clone().expect(MSG_ERROR_CONFIG);
-                                        spinner.set_message(format!("Processing: {} tool", executor_name));
-                                        match get_bin(executor_name) {
-                                            Ok(bin) => {
-                                                run_external(
-                                                    bin,
-                                                    &executor
-                                                        .name
-                                                        .clone()
-                                                        .expect(MSG_ERROR_CONFIG)
-                                                        .as_str(),
-                                                    &output_path,
-                                                    &executor.output_file.expect(MSG_ERROR_CONFIG).as_str(),
-                                                    &args,
-                                                );
-                                            },
-                                            Err(e) => dprintln!("{}", e),
+                                    match exec_type {
+                                        config::TypeExec::External => {
+                                            let executor_name =
+                                                executor.name.clone().expect(MSG_ERROR_CONFIG);
+                                            spinner.set_message(format!(
+                                                "Processing: {} tool",
+                                                executor_name
+                                            ));
+                                            match get_bin(executor_name) {
+                                                Ok(bin) => {
+                                                    run_external(
+                                                        bin,
+                                                        &executor
+                                                            .name
+                                                            .clone()
+                                                            .expect(MSG_ERROR_CONFIG)
+                                                            .as_str(),
+                                                        &output_path,
+                                                        &executor
+                                                            .output_file
+                                                            .expect(MSG_ERROR_CONFIG)
+                                                            .as_str(),
+                                                        &args,
+                                                    );
+                                                }
+                                                Err(e) => dprintln!("{}", e),
+                                            }
                                         }
-
-                                    }
-                                    config::TypeExec::Internal => {
-                                        let filename = executor.output_file.expect(MSG_ERROR_CONFIG);
-                                        let tool_name = executor.name.expect(MSG_ERROR_CONFIG);
-                                        spinner.set_message(format!("Processing: {} tool", tool_name));
-                                        run_internal(&tool_name, &filename, &output_path);
-                                    }
-                                    config::TypeExec::System => {
-                                        let executor_name = executor.name.expect(MSG_ERROR_CONFIG);
-                                        spinner.set_message(format!("Processing: {} tool", executor_name));
-                                        run_system(
-                                            &executor_name,
-                                            &args,
-                                            &executor.output_file.expect(MSG_ERROR_CONFIG),
-                                            &output_path,
-                                        );
+                                        config::TypeExec::Internal => {
+                                            let filename =
+                                                executor.output_file.expect(MSG_ERROR_CONFIG);
+                                            let tool_name = executor.name.expect(MSG_ERROR_CONFIG);
+                                            spinner.set_message(format!(
+                                                "Processing: {} tool",
+                                                tool_name
+                                            ));
+                                            run_internal(&tool_name, &filename, &output_path);
+                                        }
+                                        config::TypeExec::System => {
+                                            let executor_name =
+                                                executor.name.expect(MSG_ERROR_CONFIG);
+                                            spinner.set_message(format!(
+                                                "Processing: {} tool",
+                                                executor_name
+                                            ));
+                                            run_system(
+                                                &executor_name,
+                                                &args,
+                                                &executor.output_file.expect(MSG_ERROR_CONFIG),
+                                                &output_path,
+                                            );
+                                        }
                                     }
                                 }
+                                None => dprintln!("{}", MSG_ERROR_CONFIG),
                             }
-                            None => dprintln!("{}", MSG_ERROR_CONFIG),
-                        }
-                    }
-                }
+                        });
+                    });
             }
         }
     }
@@ -302,10 +325,10 @@ fn zip_dir(dir_name: &str) -> io::Result<()> {
 
     // Initialize ZipWriter with ZIP64 enabled
     let mut zip = ZipWriter::new(zip_file);
-    
+
     let options = FileOptions::<()>::default()
         .compression_method(CompressionMethod::Deflated)
-        .large_file(true); 
+        .large_file(true);
 
     // Add the directory to the ZIP file
     add_directory_to_zip(&mut zip, dir_path, "", &options)?;

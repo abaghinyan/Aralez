@@ -166,7 +166,7 @@ fn process_directory(
         if let Ok(sub_file) = ntfs.file(fs, entry.file_record_number) {
             for (obj_name, obj_node) in &mut first_elements {
                 if obj_node.all {
-                    if !visited_files.contains(&obj_name.to_string()) {
+                    if !visited_files.contains(&current_path.to_string()) {
                         if let Ok(parent_obj) = ntfs.file(fs, parent.file_record_number) {
                             match process_all_directory (
                                 fs,
@@ -180,7 +180,7 @@ fn process_directory(
                             ) {
                                 Ok(nb) => {
                                     success_files_count += nb;
-                                    visited_files.insert(obj_name.to_string());
+                                    visited_files.insert(current_path.to_string());
                                 },
                                 Err(e) => dprintln!("[ERROR] {}", e.to_string()),
                             }

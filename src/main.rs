@@ -266,7 +266,7 @@ fn main() -> Result<()> {
 
 
     // Move the logfile into the root folder
-    let logfile = &format!("{}.log", config.get_output_filename());
+    let logfile = &format!("{}.log", root_output);
     let tmp_logfile = &format!("{}.log", ".aralez");
     if Path::new(tmp_logfile).exists() {
         if Path::new(root_output).exists() {

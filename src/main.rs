@@ -264,6 +264,7 @@ fn main() -> Result<()> {
         }
     }
 
+    dprintln!("[INFO] All tasks completed");
 
     // Move the logfile into the root folder
     let logfile = &format!("{}.log", root_output);
@@ -303,7 +304,7 @@ fn zip_dir(dir_name: &str) -> io::Result<()> {
     let mut zip = ZipWriter::new(zip_file);
     
     let options = FileOptions::<()>::default()
-        .compression_method(CompressionMethod::Stored)
+        .compression_method(CompressionMethod::Deflated)
         .large_file(true); 
 
     // Add the directory to the ZIP file

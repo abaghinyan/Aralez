@@ -13,6 +13,7 @@ use hostname::get;
 use indexmap::IndexMap;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::HashMap;
 use std::{fmt, env};
 use std::fs::{File, create_dir_all};
 use std::path::Path;
@@ -33,7 +34,7 @@ pub struct SectionConfig {
     pub r#type: TypeTasks,
     pub drive: Option<String>,
     pub exclude_drives: Option<Vec<String>>,
-    pub entries: IndexMap<String, Vec<SearchConfig>>,
+    pub entries: HashMap<String, Vec<SearchConfig>>,
     pub disabled: Option<bool>,
 }
 

@@ -63,7 +63,6 @@ where
             return Ok(()); // File already exists. Returning early.
         },
         Err(e) => {
-            println!("[ERROR] Failed to open file `{}` for writing: {}", output_file_name, e);
             return Err(anyhow::anyhow!("[ERROR] Failed to open file `{}` for writing: {}", output_file_name, e));
         }
     };

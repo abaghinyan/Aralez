@@ -112,7 +112,7 @@ fn process_all_directory(
                 {
                     match get(&sub_file, &new_path, destination_folder, fs, encrypt.as_ref(), ads, drive) {
                         Ok(_) => {success_files_count += 1}
-                        Err(e) => dprintln!("{}", e.to_string()),
+                        Err(e) => dprintln!("[ERROR] {}", e.to_string()),
                     }
                 }
             }
@@ -182,7 +182,7 @@ fn process_directory(
                                     success_files_count += nb;
                                     visited_files.insert(obj_name.to_string());
                                 },
-                                Err(e) => dprintln!("{}", e.to_string()),
+                                Err(e) => dprintln!("[ERROR] {}", e.to_string()),
                             }
                         }
                     }
@@ -220,7 +220,7 @@ fn process_directory(
                                 drive
                             ){
                                 Ok(count) => success_files_count += count,
-                                Err(e) => dprintln!("{:?}", e),
+                                Err(e) => dprintln!("[ERROR] {:?}", e),
                             }
                         }
                         if obj_node.children.is_empty() && !sub_file.is_directory() {
@@ -237,7 +237,7 @@ fn process_directory(
                                     success_files_count += 1;
                                     visited_files.insert(path_check);
                                 }
-                                Err(e) => dprintln!("{}", e.to_string()),
+                                Err(e) => dprintln!("[ERROR] {}", e.to_string()),
                             }
                         }
                     }
@@ -291,7 +291,7 @@ fn explorer(ntfs_path: &str, config_tree: &mut Node, destination_folder: &str, d
                 count
             );
         },
-        Err(e) => dprintln!("{:?}", e),
+        Err(e) => dprintln!("[ERROR] {:?}", e),
     }
 
     Ok(())

@@ -77,7 +77,6 @@ fn process_all_directory(
             Err(e) => return Err(e.into()),
         }
     }
-
     for entry in entries {
         let new_path = format!("{}/{}", current_path, entry.name);
         if let Ok(sub_file) = ntfs.file(fs, entry.file_record_number) {
@@ -130,6 +129,7 @@ fn process_directory(
     file: &NtfsFile<'_>,
     config_tree: &mut Node,
     current_path: &str,
+    parent: &Entry,
     destination_folder: &str,
     visited_files: &mut HashSet<String>,
     drive: &str
@@ -161,29 +161,30 @@ fn process_directory(
             Err(e) => return Err(e.into()),
         }
     }
-    for entry in entries {
+    for entry in &entries {
         let new_path = format!("{}/{}", current_path, entry.name);
         if let Ok(sub_file) = ntfs.file(fs, entry.file_record_number) {
             for (obj_name, obj_node) in &mut first_elements {
                 if obj_node.all {
                     if !visited_files.contains(&obj_name.to_string()) {
-                        match process_all_directory (
-                            fs,
-                            ntfs,
-                            &sub_file,
-                            obj_name.to_string(),
-                            &new_path,
-                            destination_folder,
-                            drive,
-                            obj_node.encrypt.clone()
-                        ) {
-                            Ok(nb) => {
-                                success_files_count += nb;
-                                visited_files.insert(obj_name.to_string());
-                            },
-                            Err(e) => dprintln!("{}", e.to_string()),
+                        if let Ok(parent_obj) = ntfs.file(fs, parent.file_record_number) {
+                            match process_all_directory (
+                                fs,
+                                ntfs,
+                                &parent_obj,
+                                obj_name.to_string(),
+                                &current_path,
+                                destination_folder,
+                                drive,
+                                obj_node.encrypt.clone()
+                            ) {
+                                Ok(nb) => {
+                                    success_files_count += nb;
+                                    visited_files.insert(obj_name.to_string());
+                                },
+                                Err(e) => dprintln!("{}", e.to_string()),
+                            }
                         }
-                        
                     }
                 } else {
                     let (obj_name_san, ads) = match obj_name.split_once(':') {
@@ -213,6 +214,7 @@ fn process_directory(
                                 &sub_file,
                                 obj_node,
                                 &new_path,
+                                entry,
                                 destination_folder,
                                 visited_files,
                                 drive
@@ -266,12 +268,19 @@ fn explorer(ntfs_path: &str, config_tree: &mut Node, destination_folder: &str, d
 
     // Start processing directories from root
     let mut visited_files: HashSet<String> = HashSet::new();
+
+    let file_record_number = root_dir.file_record_number();
+    let parent = Entry {
+        name: "\\".to_string(),
+        file_record_number,
+    };
     match process_directory(
         &mut fs,
         &ntfs,
         &root_dir,
         config_tree,
         "",
+        &parent,
         destination_folder,
         &mut visited_files,
         drive

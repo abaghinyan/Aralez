@@ -7,7 +7,7 @@
 //
 
 use anyhow::{Error, Result};
-use ntfs::{NtfsFile, NtfsReadSeek, NtfsError, structured_values::NtfsFileNamespace};
+use ntfs::{NtfsFile, NtfsReadSeek};
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::{Read, Seek, Write};
 use std::fs;
@@ -21,21 +21,13 @@ use std::env;
 use std::io;
 use std::io::SeekFrom;
 use std::fs::File;
+use std::io::ErrorKind;
 
-pub fn get<T>(file: &NtfsFile, filename: &str, out_dir: &str, fs: &mut T, encrypt: Option<&String>, ads: &str, drive: &str) -> Result<(), Error>
+pub fn get<T>(file: &NtfsFile, file_name: &str, out_dir: &str, fs: &mut T, encrypt: Option<&String>, ads: &str, drive: &str) -> Result<(), Error>
 where
     T: Read + Seek,
 {
-    // Get the file name or use the provided filename, log errors if they occur
-    let (file_name, _) = match get_object_name(file, fs) {
-        Ok(name) => (name, out_dir),
-        Err(_) => (filename.to_string(), out_dir),
-    };
 
-    // Try to create the directory, log error if it fails
-    if let Err(e) = create_dir_all(out_dir) {
-        return Err(anyhow::anyhow!("[ERROR] Failed to create directory `{}`: {}", out_dir, e));
-    }
     // Check if encryption is required and construct the output file name
     let mut output_file_name = if let Some(ref password) = encrypt {
         if !password.is_empty() {
@@ -45,19 +37,21 @@ where
             } else {
                 format!("{}.enc", path.to_string_lossy())
             };
-            format!("{}/{}", out_dir, new_file_name)
+            format!("{}{}", out_dir, new_file_name)
         } else {
-            format!("{}/{}", out_dir, file_name)
+            format!("{}{}", out_dir, file_name)
         }
     } else {
-        format!("{}/{}", out_dir, file_name)
+        format!("{}{}", out_dir, file_name)
     };
 
-    // Append the Alternate Data Stream (ADS) name if it's not empty
-    if !(ads.is_empty() || ads == "") {
-        output_file_name.push_str(&format!("%3A{}", ads));
+    // Try to create the directory, log error if it fails
+    if let Err(e) = create_dir_all(output_file_name.rfind('/').map(|pos| &output_file_name[..pos]).unwrap_or("")) {
+        return Err(anyhow::anyhow!("[ERROR] Failed to create directory `{}`: {}", out_dir, e));
     }
 
+    // Append the Alternate Data Stream (ADS) name if it's not empty
+    output_file_name = output_file_name.replace(":","%3A");
     // Try to open the file for writing, log error if it fails
     let mut output_file = match OpenOptions::new()
         .write(true)
@@ -65,11 +59,14 @@ where
         .open(&output_file_name)
     {
         Ok(f) => f,
+        Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+            return Ok(()); // File already exists. Returning early.
+        },
         Err(e) => {
+            println!("[ERROR] Failed to open file `{}` for writing: {}", output_file_name, e);
             return Err(anyhow::anyhow!("[ERROR] Failed to open file `{}` for writing: {}", output_file_name, e));
         }
     };
-
     // Try to get the data item, log warning if it does not exist
     let data_item = match file.data(fs, ads) {
         Some(Ok(item)) => item,
@@ -81,7 +78,6 @@ where
             return Err(anyhow::anyhow!(""));
         }
     };
-
     let data_attribute = match data_item.to_attribute() {
         Ok(attr) => attr,
         Err(e) => {
@@ -104,7 +100,7 @@ where
     );
 
     // Buffer for reading chunks of the file
-    let mut read_buf = [0u8; 65536];
+    let mut read_buf = [0u8; 4096];
     let mut leading_zeros_skipped = false;
 
     // Stream data based on encryption
@@ -181,7 +177,7 @@ where
         }
     } else {
         // No encryption, write the file normally in chunks
-        if file_name == "$Boot" {
+        if file_name == "/$Boot" {
             output_file.write_all(&get_boot(&drive).unwrap()).unwrap();
 
         } else {
@@ -225,7 +221,7 @@ fn get_boot (drive_letter: &str) -> Result<Vec<u8>, Error> {
     // Check if the drive exists before attempting to open it
     if Path::new(&format!("{}:\\", drive_letter)).exists() {
         let mut file = File::open(&drive_path).unwrap();
-        let mut boot_sector = vec![0u8; 65536]; 
+        let mut boot_sector = vec![0u8; 4096]; 
 
         file.seek(SeekFrom::Start(0))?;
         file.read_exact(&mut boot_sector)?;
@@ -234,36 +230,6 @@ fn get_boot (drive_letter: &str) -> Result<Vec<u8>, Error> {
     } 
     
     Err(anyhow::anyhow!("[ERROR] Drive {} does not exist", drive_letter))
-}
-
-/// Retrieves the name of the file from the NTFS $FILE_NAME attribute.
-pub fn get_object_name<T: Read + Seek>(file: &NtfsFile, fs: &mut T) -> Result<String, NtfsError> {
-    if let Some(result) = file.name(fs, Some(NtfsFileNamespace::Win32), None) {
-        match result {
-            Ok(name) => Ok(name.name().to_string_lossy().to_string()),
-            Err(err) => Err(err),
-        }
-    } else {
-        if let Some(result) = file.name(fs, Some(NtfsFileNamespace::Posix), None) {
-            match result {
-                Ok(name) => Ok(name.name().to_string_lossy().to_string()),
-                Err(err) => Err(err),
-            }
-        } else {
-            if let Some(result) = file.name(fs, Some(NtfsFileNamespace::Win32AndDos), None) {
-                match result {
-                    Ok(name) => Ok(name.name().to_string_lossy().to_string()),
-                    Err(err) => Err(err),
-                }
-            } else {
-                Err(NtfsError::AttributeNotFound {
-                    position: file.position(),
-                    ty: ntfs::NtfsAttributeType::FileName,
-                })
-            }
-        }
-
-    }
 }
 
 pub fn ensure_directory_exists(path: &str) -> std::io::Result<()> {
@@ -285,13 +251,11 @@ pub fn replace_env_vars(input: &str) -> String {
         env::var(var_name).unwrap_or_else(|_| format!("%{}%", var_name))
     });
 
-    let mut replaced_str = result.into_owned(); // Convert to owned String
+    let replaced_str = result.into_owned(); // Convert to owned String
+    let regex = Regex::new(r"^[A-Za-z]:\\").unwrap(); // Match a single letter at the start followed by :\
+    let replaced_str = regex.replace(&replaced_str, r"\");
 
-    // Remove the "C:\" from the beginning if it exists
-    if replaced_str.starts_with("C:\\") {
-        replaced_str = replaced_str.strip_prefix("C:\\").unwrap().to_string();
-    }
-    replaced_str
+    replaced_str.to_string()
 }
 
 pub fn remove_dir_all(path: &str) -> io::Result<()> {
@@ -324,29 +288,14 @@ pub fn remove_dir_all(path: &str) -> io::Result<()> {
     Ok(())
 }
 
-pub fn get_subfolder_level(path: &str) -> usize {
-    // Count the number of '/' characters in the path
-    path.matches('/').count() 
+pub fn remove_trailing_slash(input: String) -> String {
+    input.strip_suffix('/').unwrap_or(&input).to_string()
 }
 
-pub fn get_level_path_pattern(path: &str, level: usize) -> Option<String> {
-    let parts: Vec<&str> = path.split('/').collect();
-    
-    if level < parts.len() {
-        // Join the parts up to the requested level (inclusive)
-        Some(parts[..=level].join("/"))
+pub fn split_path(input: &str) -> (String, String) {
+    if let Some((path, last_segment)) = input.rsplit_once('/') {
+        (path.to_string(), last_segment.to_string())
     } else {
-        if path.ends_with("**") {
-            return Some(path.to_string())
-        }
-        None // Return None if the level doesn't exist
-    }
-}
-
-pub fn remove_trailing_backslashes(input: &str) -> String {
-    if input.ends_with("\\") {
-        input.strip_suffix("\\").unwrap_or(input).to_string()
-    } else {
-        input.to_string()
+        (String::new(),input.to_string()) // Return input as path if no `/` is found
     }
 }

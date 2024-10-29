@@ -8,7 +8,6 @@
 #[macro_use]
 mod macros;
 
-mod command_info;
 mod config;
 mod execute;
 mod ntfs_reader;

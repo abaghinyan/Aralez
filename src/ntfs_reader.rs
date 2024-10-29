@@ -6,17 +6,16 @@
 // Author(s): Areg Baghinyan
 //
 
-use crate::command_info::CommandInfo;
-use crate::config::{SearchConfig, SectionConfig, TypeConfig};
+use crate::config::SectionConfig;
 use crate::sector_reader::SectorReader;
 use crate::utils::{
-    ensure_directory_exists, get, get_level_path_pattern, get_object_name, get_subfolder_level,
+    ensure_directory_exists, get, split_path,
 };
 use anyhow::Result;
 use glob::Pattern;
-use ntfs::indexes::NtfsFileNameIndex;
 use ntfs::Ntfs;
 use ntfs::NtfsFile;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io;
@@ -25,6 +24,431 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
+
+#[derive(Debug)]
+struct Entry {
+    name: String,
+    file_record_number: u64,
+}
+
+fn has_wildcard_in_last_segment(obj_name: &str) -> bool {
+    // Split by `/` and get the last segment
+    if let Some(last_part) = obj_name.rsplit('/').next() {
+        // Check if the last segment contains a `*`
+        last_part.contains('*')
+    } else {
+        false
+    }
+}
+
+fn process_all_directory(
+    fs: &mut BufReader<SectorReader<File>>,
+    ntfs: &Ntfs,
+    file: &NtfsFile<'_>,
+    obj_name: String,
+    current_path: &str,
+    destination_folder: &str,
+    drive: &str,
+    encrypt: Option<String>
+) -> Result<u32> {
+    let index = file.directory_index(fs)?;
+    let mut iter = index.entries();
+    let mut entries = Vec::new();
+    let mut success_files_count: u32 = 0;
+    // Collect all entries into a vector
+    while let Some(entry_result) = iter.next(fs) {
+        match entry_result {
+            Ok(entry) => {
+                let name = entry
+                    .key()
+                    .unwrap()
+                    .unwrap()
+                    .name()
+                    .to_string_lossy()
+                    .to_string();
+                let file_record_number = entry.file_reference().file_record_number();
+                if name != "." {
+                    entries.push(Entry {
+                        name,
+                        file_record_number,
+                    });
+                }
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    for entry in entries {
+        let new_path = format!("{}/{}", current_path, entry.name);
+        if let Ok(sub_file) = ntfs.file(fs, entry.file_record_number) {
+            if sub_file.is_directory() {
+                if let Err(e) = process_all_directory(
+                    fs,
+                    ntfs,
+                    &sub_file,
+                    obj_name.clone(),
+                    &new_path,
+                    destination_folder,
+                    drive,
+                    encrypt.clone()
+                ) {
+                    dprintln!("Error processing subdirectory: {:?}", e);
+                }
+            } else {
+                let obj_name_parts = obj_name.split_once(':');
+                let (obj_name_san, ads) = match obj_name_parts {
+                    Some((left, right)) => {
+                        let left_string = left.to_string(); // Create a variable for the `String`
+                        (left_string, right) // Return the `String` itself, not a reference to it
+                    }
+                    None => (obj_name.to_string(), ""), // Ensure consistency with String type
+                };
+                let mut path_check = new_path.clone();
+                if !(ads.is_empty() || ads == "") {
+                    path_check = format!("{}:{}", path_check, ads);
+                }
+                if Pattern::new(&obj_name_san.as_str().to_lowercase())
+                    .unwrap()
+                    .matches(&path_check.as_str().to_lowercase())
+                {
+                    match get(&sub_file, &new_path, destination_folder, fs, encrypt.as_ref(), ads, drive) {
+                        Ok(_) => {success_files_count += 1}
+                        Err(e) => dprintln!("{}", e.to_string()),
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(success_files_count)
+}
+
+/// Recursively process NTFS directories and files and apply glob matching
+fn process_directory(
+    fs: &mut BufReader<SectorReader<File>>,
+    ntfs: &Ntfs,
+    file: &NtfsFile<'_>,
+    config_tree: &mut Node,
+    current_path: &str,
+    destination_folder: &str,
+    visited_files: &mut HashSet<String>,
+    drive: &str
+) -> Result<u32> {
+    let index = file.directory_index(fs)?;
+    let mut iter = index.entries();
+    let mut entries = Vec::new();
+    let mut first_elements = config_tree.get_first_level_items();
+    let mut success_files_count: u32 = 0;
+    // Collect all entries into a vector
+    while let Some(entry_result) = iter.next(fs) {
+        match entry_result {
+            Ok(entry) => {
+                let name = entry
+                    .key()
+                    .unwrap()
+                    .unwrap()
+                    .name()
+                    .to_string_lossy()
+                    .to_string();
+                let file_record_number = entry.file_reference().file_record_number();
+                if name != "." {
+                    entries.push(Entry {
+                        name,
+                        file_record_number,
+                    });
+                }
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+    for entry in entries {
+        let new_path = format!("{}/{}", current_path, entry.name);
+        if let Ok(sub_file) = ntfs.file(fs, entry.file_record_number) {
+            for (obj_name, obj_node) in &mut first_elements {
+                if obj_node.all {
+                    if !visited_files.contains(&obj_name.to_string()) {
+                        match process_all_directory (
+                            fs,
+                            ntfs,
+                            &sub_file,
+                            obj_name.to_string(),
+                            &new_path,
+                            destination_folder,
+                            drive,
+                            obj_node.encrypt.clone()
+                        ) {
+                            Ok(nb) => {
+                                success_files_count += nb;
+                                visited_files.insert(obj_name.to_string());
+                            },
+                            Err(e) => dprintln!("{}", e.to_string()),
+                        }
+                        
+                    }
+                } else {
+                    let (obj_name_san, ads) = match obj_name.split_once(':') {
+                        Some((left, right)) => {
+                            let left_string = left.to_string(); // Create a variable for the `String`
+                            (left_string, right) // Return the `String` itself, not a reference to it
+                        }
+                        None => (obj_name.to_string(), ""), // Ensure consistency with String type
+                    };
+                    let mut path_check = new_path.clone();
+                    if !(ads.is_empty() || ads == "") {
+                        path_check = format!("{}:{}", path_check, ads);
+                    }
+                    if !visited_files.contains(&path_check)
+                        && Pattern::new(&obj_name_san.as_str().to_lowercase())
+                            .unwrap()
+                            .matches(&new_path.as_str().to_lowercase())
+                    {
+                        if !has_wildcard_in_last_segment(&obj_name) && !obj_node.all {
+                            obj_node.checked = true;
+                        }
+    
+                        if sub_file.is_directory() {
+                            match process_directory(
+                                fs,
+                                ntfs,
+                                &sub_file,
+                                obj_node,
+                                &new_path,
+                                destination_folder,
+                                visited_files,
+                                drive
+                            ){
+                                Ok(count) => success_files_count += count,
+                                Err(e) => dprintln!("{:?}", e),
+                            }
+                        }
+                        if obj_node.children.is_empty() && !sub_file.is_directory() {
+                            match get(
+                                &sub_file,
+                                &path_check,
+                                destination_folder,
+                                fs,
+                                obj_node.encrypt.as_ref(),
+                                ads,
+                                drive,
+                            ) {
+                                Ok(_) => {
+                                    success_files_count += 1;
+                                    visited_files.insert(path_check);
+                                }
+                                Err(e) => dprintln!("{}", e.to_string()),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if first_elements.iter().all(|(_, node)| node.checked) {
+            break;
+        }
+    }
+
+    Ok(success_files_count)
+}
+
+/// Entry point for parsing the NTFS partition and applying glob matching
+fn explorer(ntfs_path: &str, config_tree: &mut Node, destination_folder: &str, drive: &str) -> Result<()> {
+    // Open the NTFS partition for reading
+    let file = File::open(ntfs_path)?;
+    let sr = SectorReader::new(file, 4096)?;
+    let mut fs = BufReader::new(sr);
+
+    // Initialize NTFS parser
+    let ntfs = initialize_ntfs(&mut fs)?;
+
+    // Process the root directory
+    let root_dir = ntfs.root_directory(&mut fs)?;
+
+    // Start processing directories from root
+    let mut visited_files: HashSet<String> = HashSet::new();
+    match process_directory(
+        &mut fs,
+        &ntfs,
+        &root_dir,
+        config_tree,
+        "",
+        destination_folder,
+        &mut visited_files,
+        drive
+    ) {
+        Ok(count) => {
+            dprintln!(
+                "[INFO] Collection completed with {} collected files",
+                count
+            );
+        },
+        Err(e) => dprintln!("{:?}", e),
+    }
+
+    Ok(())
+}
+
+// Define the structure for the file tree
+#[derive(Debug)]
+struct Node {
+    children: HashMap<String, Node>,
+    checked: bool,
+    all: bool, // if there is an **
+    encrypt: Option<String>
+}
+
+impl Node {
+    fn new_directory(all: bool, encrypt: Option<String>) -> Self {
+        Node {
+            children: HashMap::new(),
+            checked: false,
+            all,
+            encrypt
+        }
+    }
+
+    fn insert(&mut self, path: &str, files: Vec<String>, encrypt: Option<String>) {
+        let parts: Vec<&str> = path
+            .trim_matches('/')
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if parts.is_empty() {
+            for file in files {
+                let file_path = format!("/{}", file);
+                self.children.insert(
+                    file_path.clone(),
+                    Node {
+                        children: HashMap::new(),
+                        checked: false,
+                        all: false,
+                        encrypt: encrypt.clone()
+                    },
+                );
+            }
+            return;
+        }
+
+        let mut current = self;
+        let mut current_path = String::new();
+        let mut all = false;
+        for (i, part) in parts.iter().enumerate() {
+            if *part == "**" {
+                all = true;
+                // Get the rest of the parts from the current index onward
+                let remaining_parts: Vec<_> = parts[i..].iter().cloned().collect();
+                for file in &files {
+                    let file_path =
+                        format!("{}/{}/{}", current_path, remaining_parts.join("/"), file);
+                    current.children.insert(
+                        file_path.clone(),
+                        Node {
+                            children: HashMap::new(),
+                            checked: false,
+                            all: true,
+                            encrypt: encrypt.clone()
+                        },
+                    );
+                }
+            } else {
+                current_path.push('/');
+                current_path.push_str(part);
+                current = current
+                    .children
+                    .entry(current_path.clone())
+                    .or_insert_with(|| {
+                        Node::new_directory( *part == "**" || current.all, encrypt.clone())
+                    });
+            }
+        }
+        if !all {
+            for file in files {
+                let file_path = format!("{}/{}", current_path, file);
+                current.children.insert(
+                    file_path.clone(),
+                    Node {
+                        children: HashMap::new(),
+                        checked: false,
+                        all: current.all || file == "**",
+                        encrypt: encrypt.clone(),
+                    },
+                );
+            }
+        }
+    }
+
+    fn get_first_level_items(&mut self) -> Vec<(&String, &mut Node)> {
+        self.children
+            .iter_mut()
+            .map(|(name, node)| (name, node))
+            .collect()
+    }
+}
+
+pub fn process_drive_artifacts(
+    drive: &str,
+    section_config: &mut SectionConfig,
+    root_output: &str,
+) -> Result<()> {
+    let drive_letter = drive.chars().next().unwrap();
+    let output_path = format!("{}\\{}", root_output, drive_letter);
+
+    ensure_directory_exists(&output_path)?;
+
+    let ntfs_path: &str = &format!("\\\\.\\{}:", drive_letter);
+
+    let mut config_entries: HashMap<String, (Vec<String>, Option<String>)> = HashMap::new();
+
+    section_config
+        .entries
+        .iter_mut()
+        .for_each(|(_, search_config_vec)| {
+            search_config_vec.iter_mut().for_each(|search_config| {
+                search_config
+                    .sanitize()
+                    .expect("[ERROR] Config sanitization failed");
+                let encrypt_option = search_config.encrypt.clone();
+                search_config.objects.iter().flatten().for_each(|object| {
+                    let c_obj = split_path(&object.replace("\\", "/"));
+                    let d_p: String = if c_obj.0.is_empty() {
+                        let d = search_config.dir_path.clone().unwrap_or("/".to_string());
+                        if d.is_empty() {
+                            "/".to_string()
+                        } else {
+                            format!(
+                                "{}",
+                                search_config.dir_path.clone().unwrap_or("/".to_string())
+                            )
+                        }
+                    } else {
+                        format!(
+                            "{}/{}",
+                            search_config.dir_path.clone().unwrap_or("/".to_string()),
+                            c_obj.0
+                        )
+                    };
+                    let f_p = c_obj.1;
+                    config_entries
+                    .entry(d_p)
+                    .or_insert_with(|| (Vec::new(), encrypt_option.clone()))
+                    .0
+                    .push(f_p);
+                });
+            });
+        });
+
+    let mut tree = Node::new_directory(false, None);
+
+    // Populate the tree with the updated config_entries
+    for (path, (files, encrypt)) in config_entries {
+        tree.insert(&path, files, encrypt);
+    }
+
+    explorer(ntfs_path, &mut tree, &output_path.replace("\\", "/"), drive)?;
+
+    Ok(())
+}
 
 pub fn list_ntfs_drives() -> io::Result<Vec<String>> {
     let mut ntfs_drives = Vec::new();
@@ -65,374 +489,6 @@ pub fn initialize_ntfs<T: Read + Seek>(fs: &mut T) -> Result<Ntfs> {
     let mut ntfs = Ntfs::new(fs)?;
     ntfs.read_upcase_table(fs)?;
     Ok(ntfs)
-}
-
-pub fn initialize_command_info<'n, T: Read + Seek>(
-    fs: T,
-    ntfs: &'n Ntfs,
-) -> Result<CommandInfo<'n, T>> {
-    Ok(CommandInfo::new(fs, ntfs)?)
-}
-
-/// Navigate to the Logs directory and find all files.
-pub fn find_files_in_dir<T>(
-    info: &mut CommandInfo<T>,
-    element: &mut SearchConfig,
-    root_output: &str,
-    drive: &str,
-) -> Result<()>
-where
-    T: Read + Seek,
-{
-    let root_path = format!("{}\\{}", root_output.to_string(), drive);
-    // Navigate to the Logs directory
-    let dir_path = &element.get_expanded_dir_path();
-    let mut success_files_count: u32 = 0;
-
-    match navigate_to_directory(info, &dir_path) {
-        Ok(_) => {
-            // List all files in the Logs directory
-            let mut visited_files: HashSet<String> = HashSet::new();
-            let mut visited_dirs = HashSet::new();
-            let out_dir = &format!("{}\\{}", root_path, &element.get_expanded_dir_path());
-
-            match &element.r#type {
-                Some(el_type) => match el_type {
-                    TypeConfig::Glob => {
-                        match list_files_in_current_dir_glob(
-                            info,
-                            element,
-                            out_dir,
-                            String::new(),
-                            &mut visited_files,
-                            &mut visited_dirs,
-                            drive,
-                        ) {
-                            Ok(count) => success_files_count += count,
-                            Err(e) => dprintln!("{:?}", e),
-                        };
-                    }
-                },
-                None => {
-                    match list_files_in_current_dir_glob(
-                        info,
-                        element,
-                        out_dir,
-                        String::new(),
-                        &mut visited_files,
-                        &mut visited_dirs,
-                        drive,
-                    ) {
-                        Ok(count) => success_files_count += count,
-                        Err(e) => dprintln!("{:?}", e),
-                    };
-                }
-            };
-        }
-        Err(e) => dprintln!("{}", e),
-    }
-
-    dprintln!(
-        "[INFO] Collection completed for {} with {} collected files",
-        dir_path,
-        success_files_count
-    );
-
-    Ok(())
-}
-
-/// Navigate to a directory based on a path of components.
-fn navigate_to_directory<T>(info: &mut CommandInfo<T>, dir_path: &str) -> Result<(), anyhow::Error>
-where
-    T: Read + Seek,
-{
-    let path_components: Vec<&str> = dir_path.split("\\").collect();
-
-    // Reset the current dir to root
-    info.current_directory = vec![info.ntfs.root_directory(&mut info.fs)?];
-    for component in &path_components {
-        let current_directory = info.current_directory.last().unwrap();
-        let index = current_directory.directory_index(&mut info.fs)?;
-        let mut finder = index.finder();
-        if let Some(entry) =
-            NtfsFileNameIndex::find(&mut finder, info.ntfs, &mut info.fs, component)
-        {
-            let entry = entry?;
-            let file = entry.to_file(info.ntfs, &mut info.fs)?;
-
-            if file.is_directory() {
-                info.current_directory.push(file);
-            } else {
-                return Err(anyhow::anyhow!(format!(
-                    "[ERROR] Expected {} to be a directory in {:?}",
-                    component, &dir_path
-                )));
-            }
-        } else {
-            return Err(anyhow::anyhow!(format!(
-                "[WARN] Directory {} not found in {:?}",
-                component, dir_path
-            )));
-        }
-    }
-    Ok(())
-}
-
-/// **      : files of current folder and subfolders
-/// **\\*   : files of subfolders
-/// *       : files of current folder   
-pub fn list_files_in_current_dir_glob<T>(
-    info: &mut CommandInfo<T>,
-    config: &SearchConfig,
-    out_dir: &str,
-    relative_path: String,
-    visited_files: &mut HashSet<String>,
-    visited_dirs: &mut HashSet<String>,
-    drive: &str,
-) -> Result<u32>
-where
-    T: Read + Seek,
-{
-    let mut success_files_count: u32 = 0;
-
-    let current_directory: &NtfsFile<'_> = &info.current_directory.last().unwrap().clone();
-    let index = current_directory.directory_index(&mut info.fs)?;
-    let mut entries = index.entries();
-
-    // Extract folder and file pattern pairs from the configuration
-    let folder_file_pairs = config
-        .objects
-        .as_ref()
-        .map(|patterns| {
-            let mut folder_file_pairs = Vec::new();
-            for pattern in patterns {
-                if pattern.ends_with("**") {
-                    let folder_part = pattern;
-                    let file_part = "**";
-                    folder_file_pairs.push((folder_part.to_string(), file_part.to_string()));
-                } else {
-                    let sanitized_pattern = pattern.replace("\\", "/");
-                    if let Some(last_sep) = sanitized_pattern.rfind("/") {
-                        let folder_part = &sanitized_pattern[..last_sep];
-                        let file_part = &sanitized_pattern[last_sep + 1..];
-                        folder_file_pairs.push((folder_part.to_string(), file_part.to_string()));
-                    } else {
-                        folder_file_pairs.push((String::new(), sanitized_pattern.clone()));
-                    }
-                }
-            }
-            folder_file_pairs
-        })
-        .unwrap_or_default(); // In case there are no patterns, return an empty Vec
-    while let Some(entry_result) = entries.next(&mut info.fs) {
-        let entry = match entry_result {
-            Ok(entry) => entry,
-            Err(e) => {
-                dprintln!("[ERROR] Error reading entry: {:?}", e);
-                continue;
-            }
-        };
-
-        let file = match entry.to_file(info.ntfs, &mut info.fs) {
-            Ok(file) => file,
-            Err(e) => {
-                dprintln!("[ERROR] Error converting entry to file: {:?}", e);
-                continue;
-            }
-        };
-
-        let file_size = file.allocated_size();
-
-        match get_object_name(&file, &mut info.fs) {
-            Ok(object_name) => {
-                let full_path = format!("{}/{}", relative_path, object_name);
-
-                // Prevent directory loop by checking if this directory has been visited before
-                if file.is_directory() {
-                    if visited_dirs.contains(&full_path) {
-                        continue;
-                    }
-                    visited_dirs.insert(full_path.clone()); // Mark directory as visited
-
-                    // Proceed with directory traversal logic
-                    let reg_data = if !relative_path.is_empty() {
-                        format!("{}/{}", relative_path, object_name)
-                    } else {
-                        object_name.clone()
-                    };
-                    for (folder_pattern, _) in &folder_file_pairs {
-                        if folder_pattern.starts_with("**/") {
-                            let folder_output_path = format!("{}/{}", out_dir, object_name);
-                            info.current_directory.push(file.clone());
-                            match list_files_in_current_dir_glob(
-                                info,
-                                config,
-                                &folder_output_path,
-                                reg_data.clone(),
-                                visited_files,
-                                visited_dirs,
-                                drive,
-                            ) {
-                                Ok(count) => success_files_count += count,
-                                Err(e) => dprintln!("{:?}", e),
-                            };
-                        } else {
-                            let level = get_subfolder_level(&reg_data);
-
-                            if let Some(subpath) = get_level_path_pattern(folder_pattern, level) {
-                                if Pattern::new(&subpath.to_lowercase())
-                                    .expect("Failed to read glob pattern")
-                                    .matches(&reg_data.to_lowercase())
-                                    || subpath.ends_with("**")
-                                {
-                                    let folder_output_path = format!("{}/{}", out_dir, object_name);
-                                    info.current_directory.push(file.clone());
-                                    match list_files_in_current_dir_glob(
-                                        info,
-                                        config,
-                                        &folder_output_path,
-                                        reg_data.clone(),
-                                        visited_files,
-                                        visited_dirs,
-                                        drive,
-                                    ) {
-                                        Ok(count) => success_files_count += count,
-                                        Err(e) => dprintln!("{:?}", e),
-                                    };
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // Process files
-                    for (folder_pattern, file_pattern) in &folder_file_pairs {
-                        if !file_pattern.is_empty() {
-                            let mut rel_path = if !relative_path.is_empty() {
-                                format!("{}/{}", relative_path, object_name)
-                            } else {
-                                object_name.clone()
-                            };
-                            let (file_pattern, ads) = match file_pattern.split_once(':') {
-                                Some((left, right)) => {
-                                    let left_string = left.to_string(); // Create a variable for the `String`
-                                    (left_string, right) // Return the `String` itself, not a reference to it
-                                },
-                                None => (file_pattern.to_string(), ""), // Ensure consistency with String type
-                            };
-                            
-                            let full_pattern = if folder_pattern.is_empty() {
-                                file_pattern.clone() // Clone the file_pattern to prevent the move
-                            } else {
-                                format!("{}/{}", folder_pattern, file_pattern.clone()) // Clone here as well
-                            };                        
-
-                            if folder_pattern.ends_with("**") && file_pattern != "**" {
-                                let level_rel_path = get_subfolder_level(&rel_path);
-                                let level_folder_pattern = get_subfolder_level(&folder_pattern);
-                                if level_rel_path <= level_folder_pattern {
-                                    break;
-                                }
-                            }
-
-                            if Pattern::new(&full_pattern.replace("\\", "/").to_lowercase())
-                                .expect("Failed to read glob pattern")
-                                .matches(&rel_path.to_lowercase())
-                            {
-                                if ads != "" {
-                                    rel_path.push_str(&format!(":{}", ads));
-                                }
-                                if !visited_files.contains(&rel_path) {
-                                    if config
-                                        .max_size
-                                        .map_or(true, |max| u64::from(file_size) <= max)
-                                    {
-                                        dprintln!("[INFO] Found file: {}", rel_path);
-
-                                        match get(
-                                            &file,
-                                            &object_name,
-                                            out_dir,
-                                            &mut info.fs,
-                                            config.encrypt.as_ref(),
-                                            ads,
-                                            drive,
-                                        ) {
-                                            Ok(_) => success_files_count += 1,
-                                            Err(e) => dprintln!("{}", e.to_string()),
-                                        }
-                                        visited_files.insert(rel_path.clone());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                dprintln!("[ERROR] Error getting file name: {:?}", e);
-                continue;
-            }
-        }
-    }
-
-    Ok(success_files_count)
-}
-
-fn search_in_config<T>(
-    info: &mut CommandInfo<T>,
-    config: &mut SearchConfig,
-    root_output: &str,
-    drive: String,
-) -> Result<()>
-where
-    T: Read + Seek,
-{
-    config
-        .sanitize()
-        .expect("[ERROR] Config sanitization failed");
-
-    find_files_in_dir(info, config, root_output, &drive)
-}
-
-pub fn process_drive_artifacts(
-    drive: &str,
-    section_config: &mut SectionConfig,
-    root_output: &str,
-) -> Result<()> {
-    let drive_letter = drive.chars().next().unwrap();
-    let output_path = format!("{}\\{}", root_output, drive_letter);
-
-    ensure_directory_exists(&output_path)?;
-
-    let f = File::open(format!("\\\\.\\{}:", drive_letter))?;
-    let sr = SectorReader::new(f, 4096)?;
-    let mut fs = BufReader::new(sr);
-    let ntfs = initialize_ntfs(&mut fs)?;
-
-    let mut info = initialize_command_info(fs, &ntfs)?;
-    let mut processed_paths = HashSet::new();
-
-    for (_, artifacts) in &mut section_config.entries {
-        for mut artifact in artifacts {
-            let path_key = format!(
-                "{}\\{:?}",
-                artifact.get_expanded_dir_path(),
-                artifact.objects.clone().unwrap_or_default()
-            );
-            if !processed_paths.contains(&path_key) {
-                dprintln!("[INFO] Collecting {}", path_key);
-                search_in_config(
-                    &mut info,
-                    &mut artifact,
-                    root_output,
-                    drive_letter.to_string(),
-                )?;
-                processed_paths.insert(path_key);
-            }
-        }
-    }
-
-    Ok(())
 }
 
 /// Process all NTFS drives except the C drive

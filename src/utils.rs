@@ -186,7 +186,9 @@ where
                     break;
                 }
     
-                let chunk = if !leading_zeros_skipped {
+                let chunk = if ads.is_empty() || ads == "" {
+                    &read_buf[..bytes_read]
+                } else if !leading_zeros_skipped {
                     if let Some(non_zero_pos) = read_buf.iter().position(|&b| b != 0) {
                         leading_zeros_skipped = true;
                         &read_buf[non_zero_pos..bytes_read]
@@ -196,8 +198,8 @@ where
                 } else {
                     &read_buf[..bytes_read]
                 };
-    
-    
+                
+
                 if output_file.write_all(chunk).is_err() {
                     return Err(anyhow::anyhow!("[ERROR] Failed to write chunk to `{}`", output_file_name));
                 }

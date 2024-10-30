@@ -55,7 +55,7 @@ fn process_all_directory(
     let mut iter = index.entries();
     let mut entries = Vec::new();
     let mut success_files_count: u32 = 0;
-    let mut visited_files: HashSet<String> = HashSet::new();
+    let mut local_visited_files: HashSet<String> = HashSet::new();
     // Collect all entries into a vector
     while let Some(entry_result) = iter.next(fs) {
         match entry_result {
@@ -113,7 +113,7 @@ fn process_all_directory(
                 {
                     match get(&sub_file, &new_path, destination_folder, fs, encrypt.as_ref(), ads, drive) {
                         Ok(_) => {
-                            visited_files.insert(new_path);
+                            local_visited_files.insert(path_check);
                             success_files_count += 1
                         }
                         Err(e) => dprintln!("[ERROR] {}", e.to_string()),
@@ -123,7 +123,7 @@ fn process_all_directory(
         }
     }
 
-    Ok((visited_files, success_files_count))
+    Ok((local_visited_files, success_files_count))
 }
 
 /// Recursively process NTFS directories and files and apply glob matching

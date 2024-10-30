@@ -31,6 +31,12 @@ use std::io::{Seek, SeekFrom};
 use std::path::Path;
 use utils::{ensure_directory_exists, remove_dir_all};
 use zip::{write::FileOptions, CompressionMethod, ZipWriter};
+use std::time::UNIX_EPOCH;
+use chrono::DateTime;
+use chrono::Utc;
+use zip::DateTime as ZipDateTime;
+use chrono::Datelike;
+use chrono::Timelike;
 
 #[derive(Parser)]
 struct Cli {
@@ -315,27 +321,20 @@ fn main() -> Result<()> {
 }
 
 fn zip_dir(dir_name: &str) -> io::Result<()> {
-    // Create a directory with the given name (if it doesn't exist)
     let dir_path = Path::new(dir_name);
     fs::create_dir_all(&dir_path)?;
 
-    // Create a ZIP file with the same name as the directory
     let zip_file_name = format!("{}.zip", dir_name);
     let zip_file = File::create(&zip_file_name)?;
 
-    // Initialize ZipWriter with ZIP64 enabled
     let mut zip = ZipWriter::new(zip_file);
-
-    let options = FileOptions::<()>::default()
+    let options = FileOptions::default()
         .compression_method(CompressionMethod::Deflated)
         .large_file(true);
 
-    // Add the directory to the ZIP file
     add_directory_to_zip(&mut zip, dir_path, "", &options)?;
 
-    // Finish the zip process
     zip.finish()?;
-
     Ok(())
 }
 
@@ -343,7 +342,7 @@ fn add_directory_to_zip<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
     dir_path: &Path,
     parent_dir: &str,
-    options: &FileOptions<()>, // Specify the correct generic parameter
+    options: &FileOptions<()>,
 ) -> io::Result<()> {
     for entry in fs::read_dir(dir_path)? {
         let entry = entry?;
@@ -351,13 +350,31 @@ fn add_directory_to_zip<W: Write + Seek>(
         let name = format!("{}{}", parent_dir, entry.file_name().to_string_lossy());
 
         if path.is_dir() {
-            // If the entry is a directory, add it to the ZIP and recurse into it
             zip.add_directory(&format!("{}/", name), *options)?;
             add_directory_to_zip(zip, &path, &format!("{}/", name), options)?;
         } else {
-            // If the entry is a file, add it to the ZIP
             let mut file = File::open(&path)?;
-            zip.start_file(name, *options)?;
+
+            // Retrieve last modified time and convert to DateTime components
+            let metadata = file.metadata()?;
+            let modified_time = metadata.modified()?.duration_since(UNIX_EPOCH).unwrap_or_default();
+            let datetime = DateTime::<Utc>::from(UNIX_EPOCH + modified_time);
+            let naive_datetime = datetime.naive_utc();
+
+            // Convert to ZipDateTime using date and time components
+            let zip_datetime = ZipDateTime::from_date_and_time(
+                naive_datetime.year() as u16,
+                naive_datetime.month() as u8,
+                naive_datetime.day() as u8,
+                naive_datetime.hour() as u8,
+                naive_datetime.minute() as u8,
+                naive_datetime.second() as u8,
+            ).unwrap_or_else(|_| ZipDateTime::default_for_write());
+
+            // Set options with the zip DateTime
+            let file_options = options.clone().last_modified_time(zip_datetime);
+
+            zip.start_file(name, file_options)?;
             io::copy(&mut file, zip)?;
         }
     }

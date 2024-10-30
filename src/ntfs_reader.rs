@@ -50,11 +50,12 @@ fn process_all_directory(
     destination_folder: &str,
     drive: &str,
     encrypt: Option<String>
-) -> Result<u32> {
+) -> Result<(HashSet<String>, u32)> {
     let index = file.directory_index(fs)?;
     let mut iter = index.entries();
     let mut entries = Vec::new();
     let mut success_files_count: u32 = 0;
+    let mut visited_files: HashSet<String> = HashSet::new();
     // Collect all entries into a vector
     while let Some(entry_result) = iter.next(fs) {
         match entry_result {
@@ -111,7 +112,10 @@ fn process_all_directory(
                     .matches(&path_check.as_str().to_lowercase())
                 {
                     match get(&sub_file, &new_path, destination_folder, fs, encrypt.as_ref(), ads, drive) {
-                        Ok(_) => {success_files_count += 1}
+                        Ok(_) => {
+                            visited_files.insert(new_path);
+                            success_files_count += 1
+                        }
                         Err(e) => dprintln!("[ERROR] {}", e.to_string()),
                     }
                 }
@@ -119,7 +123,7 @@ fn process_all_directory(
         }
     }
 
-    Ok(success_files_count)
+    Ok((visited_files, success_files_count))
 }
 
 /// Recursively process NTFS directories and files and apply glob matching
@@ -178,9 +182,9 @@ fn process_directory(
                                 drive,
                                 obj_node.encrypt.clone()
                             ) {
-                                Ok(nb) => {
-                                    success_files_count += nb;
-                                    visited_files.insert(current_path.to_string());
+                                Ok((current_visited_files, count)) => {
+                                    success_files_count += count;
+                                    visited_files.extend(current_visited_files);
                                 },
                                 Err(e) => dprintln!("[ERROR] {}", e.to_string()),
                             }

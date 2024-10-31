@@ -80,7 +80,7 @@ where
     {
         Ok(f) => f,
         Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-            return Ok(()); // File already exists. Returning early.
+            return Ok(()); 
         }
         Err(e) => {
             return Err(anyhow::anyhow!(
@@ -299,7 +299,7 @@ fn get_boot(drive_letter: &str) -> Result<Vec<u8>, Error> {
     // Check if the drive exists before attempting to open it
     if Path::new(&format!("{}:\\", drive_letter)).exists() {
         let mut file = File::open(&drive_path).unwrap();
-        let mut boot_sector = vec![0u8; 4096];
+        let mut boot_sector = vec![0u8; 8192];
 
         file.seek(SeekFrom::Start(0))?;
         file.read_exact(&mut boot_sector)?;

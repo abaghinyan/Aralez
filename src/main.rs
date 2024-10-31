@@ -227,8 +227,8 @@ fn main() -> Result<()> {
                                     let args: Vec<&str> = match executor.args {
                                         Some(ref args_array) => {
                                             args_array.iter().map(String::as_str).collect()
-                                        } // Collect into Vec
-                                        None => Vec::new(), // Empty Vec if no args
+                                        }
+                                        None => Vec::new(),
                                     };
 
                                     match exec_type {

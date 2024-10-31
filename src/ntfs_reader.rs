@@ -22,6 +22,7 @@ use std::io;
 use std::io::BufReader;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::u64;
 
 const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
 
@@ -39,7 +40,8 @@ fn process_all_directory(
     current_path: &str,
     destination_folder: &str,
     drive: &str,
-    encrypt: Option<String>
+    encrypt: Option<String>,
+    max_size: Option<u64>,
 ) -> Result<(HashSet<String>, u32)> {
     let index = file.directory_index(fs)?;
     let mut iter = index.entries();
@@ -80,7 +82,8 @@ fn process_all_directory(
                     &new_path,
                     destination_folder,
                     drive,
-                    encrypt.clone()
+                    encrypt.clone(),
+                    max_size
                 ) {
                     dprintln!("Error processing subdirectory: {:?}", e);
                 }
@@ -101,12 +104,21 @@ fn process_all_directory(
                     .unwrap()
                     .matches(&path_check.as_str().to_lowercase())
                 {
-                    match get(&sub_file, &new_path, destination_folder, fs, encrypt.as_ref(), ads, drive) {
-                        Ok(_) => {
-                            local_visited_files.insert(path_check);
-                            success_files_count += 1
+                    // check size
+                    let mut size_ok = true;
+                    if let Some(msize) = max_size {
+                        if get_file_size(&sub_file, fs) as u64 > msize {
+                            size_ok = false;
                         }
-                        Err(e) => dprintln!("[ERROR] {}", e.to_string()),
+                    }
+                    if size_ok {
+                        match get(&sub_file, &new_path, destination_folder, fs, encrypt.as_ref(), ads, drive) {
+                            Ok(_) => {
+                                local_visited_files.insert(path_check);
+                                success_files_count += 1
+                            }
+                            Err(e) => dprintln!("[ERROR] {}", e.to_string()),
+                        }
                     }
                 }
             }
@@ -170,7 +182,9 @@ fn process_directory(
                                 &current_path,
                                 destination_folder,
                                 drive,
-                                obj_node.encrypt.clone()
+                                obj_node.encrypt.clone(),
+                                obj_node.max_size
+                                
                             ) {
                                 Ok((current_visited_files, count)) => {
                                     success_files_count += count;
@@ -183,10 +197,10 @@ fn process_directory(
                 } else {
                     let (obj_name_san, ads) = match obj_name.split_once(':') {
                         Some((left, right)) => {
-                            let left_string = left.to_string(); // Create a variable for the `String`
-                            (left_string, right) // Return the `String` itself, not a reference to it
+                            let left_string = left.to_string(); 
+                            (left_string, right) 
                         }
-                        None => (obj_name.to_string(), ""), // Ensure consistency with String type
+                        None => (obj_name.to_string(), ""), 
                     };
                     let mut path_check = new_path.clone();
                     if !(ads.is_empty() || ads == "") {
@@ -217,7 +231,15 @@ fn process_directory(
                                 Err(e) => dprintln!("[ERROR] {:?}", e),
                             }
                         }
-                        if obj_node.children.is_empty() && !sub_file.is_directory() {
+                        let mut size_ok = true;
+                        // check size
+                        if let Some(msize) = obj_node.max_size {
+                            if get_file_size(&sub_file, fs) as u64 > msize {
+                                size_ok = false;
+                            }
+                        }
+
+                        if size_ok && obj_node.children.is_empty() && !sub_file.is_directory() {
                             match get(
                                 &sub_file,
                                 &path_check,
@@ -245,6 +267,13 @@ fn process_directory(
     }
 
     Ok(success_files_count)
+}
+
+fn get_file_size(file: &NtfsFile, mut fs:  &mut BufReader<SectorReader<File>>) -> u64 {
+    let file_size = file.data(&mut fs, "").map_or(0, |data_item| {
+        data_item.map_or(0, |d| d.to_attribute().map_or(0, |a| a.value_length()))
+    });
+    file_size 
 }
 
 /// Entry point for parsing the NTFS partition and applying glob matching
@@ -297,20 +326,22 @@ struct Node {
     children: HashMap<String, Node>,
     checked: bool,
     all: bool, // if there is an **
-    encrypt: Option<String>
+    encrypt: Option<String>,
+    max_size: Option<u64>,
 }
 
 impl Node {
-    fn new_directory(all: bool, encrypt: Option<String>) -> Self {
+    fn new_directory(all: bool, encrypt: Option<String>, max_size: Option<u64>) -> Self {
         Node {
             children: HashMap::new(),
             checked: false,
             all,
-            encrypt
+            encrypt,
+            max_size
         }
     }
 
-    fn insert(&mut self, path: &str, files: Vec<String>, encrypt: Option<String>) {
+    fn insert(&mut self, path: &str, files: Vec<String>, encrypt: Option<String>, max_size: Option<u64>) {
         let parts: Vec<&str> = path
             .trim_matches('/')
             .split('/')
@@ -326,7 +357,8 @@ impl Node {
                         children: HashMap::new(),
                         checked: false,
                         all: false,
-                        encrypt: encrypt.clone()
+                        encrypt: encrypt.clone(),
+                        max_size
                     },
                 );
             }
@@ -350,7 +382,8 @@ impl Node {
                             children: HashMap::new(),
                             checked: false,
                             all: true,
-                            encrypt: encrypt.clone()
+                            encrypt: encrypt.clone(),
+                            max_size
                         },
                     );
                 }
@@ -361,7 +394,7 @@ impl Node {
                     .children
                     .entry(current_path.clone())
                     .or_insert_with(|| {
-                        Node::new_directory( *part == "**" || current.all, encrypt.clone())
+                        Node::new_directory( *part == "**" || current.all, encrypt.clone(), max_size)
                     });
             }
         }
@@ -375,6 +408,7 @@ impl Node {
                         checked: false,
                         all: current.all || file == "**",
                         encrypt: encrypt.clone(),
+                        max_size
                     },
                 );
             }
@@ -401,7 +435,7 @@ pub fn process_drive_artifacts(
 
     let ntfs_path: &str = &format!("\\\\.\\{}:", drive_letter);
 
-    let mut config_entries: HashMap<String, (Vec<String>, Option<String>)> = HashMap::new();
+    let mut config_entries: HashMap<String, (Vec<String>, Option<String>, Option<u64>)> = HashMap::new();
 
     section_config
         .entries
@@ -412,6 +446,7 @@ pub fn process_drive_artifacts(
                     .sanitize()
                     .expect("[ERROR] Config sanitization failed");
                 let encrypt_option = search_config.encrypt.clone();
+                let max_size = search_config.max_size;
                 search_config.objects.iter().flatten().for_each(|object| {
                     let c_obj = split_path(&object.replace("\\", "/"));
                     let d_p: String = if c_obj.0.is_empty() {
@@ -434,18 +469,18 @@ pub fn process_drive_artifacts(
                     let f_p = c_obj.1;
                     config_entries
                     .entry(d_p)
-                    .or_insert_with(|| (Vec::new(), encrypt_option.clone()))
+                    .or_insert_with(|| (Vec::new(), encrypt_option.clone(), max_size))
                     .0
                     .push(f_p);
                 });
             });
         });
 
-    let mut tree = Node::new_directory(false, None);
+    let mut tree = Node::new_directory(false, None, None);
 
     // Populate the tree with the updated config_entries
-    for (path, (files, encrypt)) in config_entries {
-        tree.insert(&path, files, encrypt);
+    for (path, (files, encrypt, max_size)) in config_entries {
+        tree.insert(&path, files, encrypt, max_size);
     }
 
     explorer(ntfs_path, &mut tree, &output_path.replace("\\", "/"), drive)?;

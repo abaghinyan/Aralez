@@ -31,16 +31,6 @@ struct Entry {
     file_record_number: u64,
 }
 
-fn has_wildcard_in_last_segment(obj_name: &str) -> bool {
-    // Split by `/` and get the last segment
-    if let Some(last_part) = obj_name.rsplit('/').next() {
-        // Check if the last segment contains a `*`
-        last_part.contains('*')
-    } else {
-        false
-    }
-}
-
 fn process_all_directory(
     fs: &mut BufReader<SectorReader<File>>,
     ntfs: &Ntfs,
@@ -207,7 +197,7 @@ fn process_directory(
                             .unwrap()
                             .matches(&new_path.as_str().to_lowercase())
                     {
-                        if !has_wildcard_in_last_segment(&obj_name) && !obj_node.all {
+                        if !&obj_name.contains("*") && !obj_node.all {
                             obj_node.checked = true;
                         }
     

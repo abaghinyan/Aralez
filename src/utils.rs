@@ -100,7 +100,7 @@ where
                         get_attr(&attr, fs, out_dir)?;
                     }
                 },
-                Err(e) => println!("[ERROR] {}", e.to_string()),
+                Err(e) => dprintln!("[ERROR] Can't getting attriputes"),
             } 
         }
     }
@@ -116,18 +116,12 @@ where
             ));
         }
         None => {
-            // dprintln!("[WARN] The file does not have a `{}` $DATA attribute.", data_stream_name);
-            return Err(anyhow::anyhow!(""));
+            return Err(anyhow::anyhow!("[WARN] The file {} does not have a $DATA attribute.", output_file_name));
         }
     };
     let data_attribute = match data_item.to_attribute() {
         Ok(attr) => attr,
         Err(e) => {
-            dprintln!(
-                "[ERROR] Failed to retrieve attribute for `{}`: {}",
-                file_name,
-                e
-            );
             return Err(anyhow::anyhow!(
                 "[ERROR] Failed to retrieve attribute for `{}`: {}",
                 file_name,

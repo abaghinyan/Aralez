@@ -85,7 +85,7 @@ fn process_all_directory(
                     encrypt.clone(),
                     max_size
                 ) {
-                    dprintln!("Error processing subdirectory: {:?}", e);
+                    dprintln!("[ERROR] Processing subdirectory: {:?}", e);
                 }
             } else {
                 let obj_name_parts = obj_name.split_once(':');
@@ -117,7 +117,7 @@ fn process_all_directory(
                                 local_visited_files.insert(path_check);
                                 success_files_count += 1
                             }
-                            Err(e) => dprintln!("[ERROR] {}", e.to_string()),
+                            Err(e) => dprintln!("{}", e.to_string()),
                         }
                     }
                 }
@@ -190,7 +190,7 @@ fn process_directory(
                                     success_files_count += count;
                                     visited_files.extend(current_visited_files);
                                 },
-                                Err(e) => dprintln!("[ERROR] {}", e.to_string()),
+                                Err(e) => dprintln!("[ERROR] Problem to process the entire folder: {}", e.to_string()),
                             }
                         }
                     }
@@ -228,7 +228,7 @@ fn process_directory(
                                 drive
                             ){
                                 Ok(count) => success_files_count += count,
-                                Err(e) => dprintln!("[ERROR] {:?}", e),
+                                Err(e) => dprintln!("[ERROR] Problem to process the folder {:?}", &sub_file),
                             }
                         }
                         let mut size_ok = true;
@@ -253,7 +253,7 @@ fn process_directory(
                                     success_files_count += 1;
                                     visited_files.insert(path_check);
                                 }
-                                Err(e) => dprintln!("[ERROR] {}", e.to_string()),
+                                Err(e) => dprintln!("{}", e.to_string()),
                             }
                         }
                     }
@@ -314,7 +314,7 @@ fn explorer(ntfs_path: &str, config_tree: &mut Node, destination_folder: &str, d
                 count
             );
         },
-        Err(e) => dprintln!("[ERROR] {:?}", e),
+        Err(e) => dprintln!("[ERROR] Problem to process the folder: {:?}", e),
     }
 
     Ok(())

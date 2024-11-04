@@ -10,7 +10,7 @@ use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce}; // AES-GCM cipher
 use anyhow::{Error, Result};
 use filetime::{set_file_times, FileTime};
-use ntfs::{NtfsFile, NtfsReadSeek};
+use ntfs::{NtfsAttribute, NtfsAttributeType, NtfsFile, NtfsReadSeek};
 use rand::RngCore;
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -90,6 +90,20 @@ where
             ));
         }
     };
+    if ads.is_empty() || ads == "" { 
+        // Iterate over attributes to find $INDEX_ALLOCATION
+        let attributes: Vec<_> = file.attributes().attach(fs).collect::<Result<Vec<_>, _>>()?;
+        for attribute in attributes {
+            match  attribute.to_attribute() {
+                Ok(attr) => {
+                    if attr.ty().unwrap() == NtfsAttributeType::IndexAllocation {
+                        get_attr(&attr, fs, out_dir)?;
+                    }
+                },
+                Err(e) => println!("[ERROR] {}", e.to_string()),
+            } 
+        }
+    }
 
     // Try to get the data item, log warning if it does not exist
     let data_item = match file.data(fs, ads) {
@@ -283,6 +297,58 @@ where
             ))
         }
     };
+}
+
+fn get_attr <T>(attr: &NtfsAttribute, fs: &mut T, out_dir: &str) -> Result<(), Error> 
+where
+T: Read + Seek,
+{
+    let attr_name = attr.name()?.to_string_lossy().to_string();
+    dprintln!("[INFO] Found $INDEX_ALLOCATION attribute : `{}`", &attr_name);
+
+    let attr_path = format!("{}/{}", out_dir, &attr_name);
+    let mut attr_value = attr.value(fs)?;
+
+    let mut output_file = match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&attr_path)
+    {
+        Ok(f) => f,
+        Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+            return Ok(()); 
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "[ERROR] Failed to open file `{}` for writing: {}",
+                &attr_path,
+                e
+            ));
+        }
+    };
+    dprintln!(
+        "[INFO] Saving {} bytes of index attribute data in `{}`",
+        attr_value.len(),
+        &attr_path
+    );
+    let mut read_buf = [0u8; 4096];
+
+    while let Ok(bytes_read) = attr_value.read(fs, &mut read_buf) {
+        if bytes_read == 0 {
+            // End of file reached
+            break;
+        }
+        if output_file.write_all(&read_buf[..bytes_read]).is_err() {
+            return Err(anyhow::anyhow!(
+                "[ERROR] Failed to write chunk to `{}`",
+                attr_path
+            ));
+        }
+    }
+
+
+
+    Ok(())
 }
 
 // Function to convert NT timestamp (u64) to SystemTime

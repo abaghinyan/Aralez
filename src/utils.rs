@@ -10,6 +10,7 @@ use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce}; // AES-GCM cipher
 use anyhow::{Error, Result};
 use filetime::{set_file_times, FileTime};
+use ntfs::attribute_value::NtfsDataRuns;
 use ntfs::{NtfsAttribute, NtfsAttributeType, NtfsFile, NtfsReadSeek};
 use rand::RngCore;
 use regex::Regex;
@@ -100,7 +101,7 @@ where
                         get_attr(&attr, fs, out_dir)?;
                     }
                 },
-                Err(e) => dprintln!("[ERROR] Can't getting attriputes"),
+                Err(_) => dprintln!("[ERROR] Can't getting attriputes"),
             } 
         }
     }
@@ -149,7 +150,6 @@ where
 
     // Buffer for reading chunks of the file
     let mut read_buf = [0u8; 4096];
-    let mut leading_zeros_skipped = false;
 
     // Stream data based on encryption
     if let Some(ref password) = encrypt {
@@ -180,13 +180,8 @@ where
                     break;
                 }
 
-                let chunk = if !leading_zeros_skipped {
-                    if let Some(non_zero_pos) = read_buf.iter().position(|&b| b != 0) {
-                        leading_zeros_skipped = true;
-                        &read_buf[non_zero_pos..bytes_read]
-                    } else {
-                        continue;
-                    }
+                let chunk = if !(ads.is_empty() || ads == "") && read_buf.iter().all(|&b| b == 0) {
+                    continue;
                 } else {
                     &read_buf[..bytes_read]
                 };
@@ -213,17 +208,11 @@ where
                     break;
                 }
 
-                let chunk = if !leading_zeros_skipped {
-                    if let Some(non_zero_pos) = read_buf.iter().position(|&b| b != 0) {
-                        leading_zeros_skipped = true;
-                        &read_buf[non_zero_pos..bytes_read]
-                    } else {
-                        continue;
-                    }
+                let chunk = if !(ads.is_empty() || ads == "") && read_buf.iter().all(|&b| b == 0) {
+                    continue;
                 } else {
                     &read_buf[..bytes_read]
                 };
-
                 if output_file.write_all(chunk).is_err() {
                     return Err(anyhow::anyhow!(
                         "[ERROR] Failed to write chunk to `{}`",
@@ -241,20 +230,11 @@ where
                 if bytes_read == 0 {
                     break;
                 }
-
-                let chunk = if ads.is_empty() || ads == "" {
-                    &read_buf[..bytes_read]
-                } else if !leading_zeros_skipped {
-                    if let Some(non_zero_pos) = read_buf.iter().position(|&b| b != 0) {
-                        leading_zeros_skipped = true;
-                        &read_buf[non_zero_pos..bytes_read]
-                    } else {
+                let chunk = if !(ads.is_empty() || ads == "") && read_buf.iter().all(|&b| b == 0) {
                         continue;
-                    }
-                } else {
-                    &read_buf[..bytes_read]
-                };
-
+                    } else {
+                        &read_buf[..bytes_read]
+                    };
                 if output_file.write_all(chunk).is_err() {
                     return Err(anyhow::anyhow!(
                         "[ERROR] Failed to write chunk to `{}`",

@@ -228,7 +228,7 @@ fn process_directory(
                                 drive
                             ){
                                 Ok(count) => success_files_count += count,
-                                Err(e) => dprintln!("[ERROR] Problem to process the folder {:?}", &sub_file),
+                                Err(e) => dprintln!("[ERROR] Problem to process the folder {:?} {}", &sub_file, e.to_string()),
                             }
                         }
                         let mut size_ok = true;

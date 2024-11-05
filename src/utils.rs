@@ -97,7 +97,7 @@ where
             match  attribute.to_attribute() {
                 Ok(attr) => {
                     if attr.ty().unwrap() == NtfsAttributeType::IndexAllocation {
-                        get_attr(&attr, fs, out_dir)?;
+                        get_attr(&attr, fs, &output_file_name)?;
                     }
                 },
                 Err(_) => dprintln!("[ERROR] Can't getting attriputes"),
@@ -272,14 +272,14 @@ where
     };
 }
 
-fn get_attr <T>(attr: &NtfsAttribute, fs: &mut T, out_dir: &str) -> Result<(), Error> 
+fn get_attr <T>(attr: &NtfsAttribute, fs: &mut T, output_file_name: &str) -> Result<(), Error> 
 where
 T: Read + Seek,
 {
     let attr_name = attr.name()?.to_string_lossy().to_string();
     dprintln!("[INFO] Found $INDEX_ALLOCATION attribute : `{}`", &attr_name);
 
-    let attr_path = format!("{}/{}", out_dir, &attr_name);
+    let attr_path = format!("{}%3A{}.idx", output_file_name, &attr_name);
     let mut attr_value = attr.value(fs)?;
 
     let mut output_file = match OpenOptions::new()

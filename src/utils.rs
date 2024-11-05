@@ -10,7 +10,6 @@ use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce}; // AES-GCM cipher
 use anyhow::{Error, Result};
 use filetime::{set_file_times, FileTime};
-use ntfs::attribute_value::NtfsDataRuns;
 use ntfs::{NtfsAttribute, NtfsAttributeType, NtfsFile, NtfsReadSeek};
 use rand::RngCore;
 use regex::Regex;

@@ -11,13 +11,15 @@ use anyhow::Result;
 use chrono::prelude::*;
 use hostname::get;
 use indexmap::IndexMap;
-use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::{fmt, env};
 use std::fs::{File, create_dir_all};
 use std::path::Path;
 use std::io::{Read, Write};
+use std::collections::HashSet;
+use serde::de::{self, MapAccess, Visitor};
+use std::ops::{Deref, DerefMut};
 
 pub const CONFIG_MARKER_START: &[u8] = b"# CONFIG_START";
 pub const CONFIG_MARKER_END: &[u8] = b"# CONFIG_END";
@@ -28,19 +30,126 @@ pub struct Config {
     pub output_filename: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct Entries(HashMap<String, Vec<SearchConfig>>);
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SectionConfig {
     pub priority: u8,
     pub r#type: TypeTasks,
     pub drive: Option<String>,
     pub exclude_drives: Option<Vec<String>>,
-    pub entries: HashMap<String, Vec<SearchConfig>>,
+    pub entries: Entries,
     pub disabled: Option<bool>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeConfig {
     Glob,
+}
+
+// Implement IntoIterator for `&Entries`
+impl<'a> IntoIterator for &'a Entries {
+    type Item = (&'a String, &'a Vec<SearchConfig>);
+    type IntoIter = std::collections::hash_map::Iter<'a, String, Vec<SearchConfig>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+// Implement IntoIterator for consuming `Entries`
+impl IntoIterator for Entries {
+    type Item = (String, Vec<SearchConfig>);
+    type IntoIter = std::collections::hash_map::IntoIter<String, Vec<SearchConfig>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl Deref for Entries {
+    type Target = HashMap<String, Vec<SearchConfig>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Entries {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for Entries {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct EntriesVisitor;
+
+        impl<'de> Visitor<'de> for EntriesVisitor {
+            type Value = Entries;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a map of entries with validation checks")
+            }
+
+            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut map = HashMap::new();
+                let mut entry_names = HashSet::new(); // Track duplicate keys
+
+                while let Some((key, configs)) = access.next_entry::<String, Vec<SearchConfig>>()? {
+                    // Check for duplicate keys
+                    if !entry_names.insert(key.clone()) {
+                        return Err(de::Error::custom(format!("[ERROR] Config: Duplicate entry name '{}' found", key)));
+                    }
+
+                    // Iterate over each config in the entry to validate fields
+                    for config in &configs {
+                        // 1. Validate `dir_path` if it's present
+                        if let Some(dir_path) = &config.dir_path {
+                            if !dir_path.starts_with("\\") && !dir_path.starts_with('%') {
+                                return Err(de::Error::custom(format!(
+                                    "[ERROR] Config: dir_path '{}' in entry '{}' should start with '\\\\' or '%'", 
+                                    dir_path, key
+                                )));
+                            }
+                        }
+
+                        // 2. If entry type is "collect", ensure `dir_path` and `objects` are present
+                        if let Some(type_config) = &config.r#type {
+                            if *type_config == TypeConfig::Glob {
+                                if config.dir_path.is_none() || config.objects.is_none() {
+                                    return Err(de::Error::custom(format!(
+                                        "[ERROR] Config: Entry '{}' with type 'collect' must have `dir_path` and `objects`", 
+                                        key
+                                    )));
+                                }
+                            }
+                        }
+
+                        // Additional validations for other fields, e.g., `max_size`, `encrypt`
+                        if let Some(max_size) = config.max_size {
+                            if max_size <= 0 {
+                                return Err(de::Error::custom("[ERROR] Config: `max_size` should be greater than zero"));
+                            }
+                        }
+                    }
+
+                    map.insert(key, configs);
+                }
+
+                Ok(Entries(map))
+            }
+        }
+
+        deserializer.deserialize_map(EntriesVisitor)
+    }
 }
 
 impl Serialize for TypeConfig {
@@ -86,7 +195,7 @@ impl<'de> Deserialize<'de> for TypeConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeTasks {
     Execute,
     Collect,
@@ -202,10 +311,12 @@ pub struct SearchConfig {
 }
 
 impl Config {
+
     pub fn load_from_embedded() -> Result<Self> {
         // Embed the YAML content directly into the binary
         let yaml_data = include_str!("../config/.config.yml");
         let config: Config = serde_yaml::from_str(yaml_data)?;
+
         Ok(config)
     }
 

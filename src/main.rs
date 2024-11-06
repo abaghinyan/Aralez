@@ -69,6 +69,12 @@ fn show_config(config: &Config) -> Result<()> {
     Ok(())
 }
 
+// Helper function to check the configuration
+fn check_config(config: &Config) -> Result<()> {
+    serde_yaml::to_string(config)?;
+    Ok(())
+}
+
 // Function to update the embedded configuration
 fn update_embedded_config(new_config_path: &str, output_exe_path: &str) -> std::io::Result<()> {
     let new_config_data = fs::read(new_config_path)?;
@@ -127,6 +133,12 @@ fn main() -> Result<()> {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("check_config")
+                .long("check_config")
+                .help("Check the configuration file")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("change_config")
                 .long("change_config")
                 .help("Change the embedded configuration file")
@@ -158,6 +170,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+
     let config = Config::load()?;
 
     // Handle show_config flag
@@ -172,6 +185,20 @@ fn main() -> Result<()> {
     }
 
     let root_output = &config.get_output_filename();
+
+    // Handle check_config flag
+    if matches.get_flag("show_config") {
+        return show_config(&config);
+    }
+
+    // Handle check_config flag
+    if matches.get_flag("check_config") {
+        match check_config(&config) {
+            Ok(_) => println!("The configuration is valid"),
+            Err(e) => println!("{}", e.to_string()),
+        }
+        return Ok(());
+    }
 
     config.save(root_output)?;
 

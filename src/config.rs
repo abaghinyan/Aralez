@@ -139,6 +139,13 @@ impl<'de> Deserialize<'de> for Entries {
                                 return Err(de::Error::custom("[ERROR] Config: `max_size` should be greater than zero"));
                             }
                         }
+
+                        // encryp shouldn't be empty 
+                        if let Some(password) = &config.encrypt {
+                            if password.is_empty() || *password == "".to_string() {
+                                return Err(de::Error::custom("[ERROR] Config: `encrypt` should be empty"));
+                            }
+                        }
                     }
 
                     map.insert(key, configs);

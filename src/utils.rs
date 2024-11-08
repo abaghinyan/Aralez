@@ -5,7 +5,6 @@
 //
 // Author(s): Areg Baghinyan
 //
-
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce}; // AES-GCM cipher
 use anyhow::{Error, Result};
@@ -69,9 +68,11 @@ where
             e
         ));
     }
+    let is_ads = !(ads.is_empty() || ads == "");
 
     // Append the Alternate Data Stream (ADS) name if it's not empty
     output_file_name = output_file_name.replace(":", "%3A");
+
     // Try to open the file for writing, log error if it fails
     let mut output_file = match OpenOptions::new()
         .write(true)
@@ -80,7 +81,7 @@ where
     {
         Ok(f) => f,
         Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-            return Ok(()); 
+            return Ok(());
         }
         Err(e) => {
             return Err(anyhow::anyhow!(
@@ -90,18 +91,22 @@ where
             ));
         }
     };
-    if ads.is_empty() || ads == "" { 
+    if !is_ads {
         // Iterate over attributes to find $INDEX_ALLOCATION
-        let attributes: Vec<_> = file.attributes().attach(fs).collect::<Result<Vec<_>, _>>()?;
+        let attributes: Vec<_> = file
+            .attributes()
+            .attach(fs)
+            .collect::<Result<Vec<_>, _>>()?;
         for attribute in attributes {
-            match  attribute.to_attribute() {
+
+            match attribute.to_attribute() {
                 Ok(attr) => {
-                    if attr.ty().unwrap() == NtfsAttributeType::IndexAllocation {
+                    if attr.ty()? == NtfsAttributeType::IndexAllocation {
                         get_attr(&attr, fs, &output_file_name)?;
                     }
-                },
-                Err(_) => dprintln!("[ERROR] Can't getting attriputes"),
-            } 
+                }
+                Err(_) => dprintln!("[ERROR] Can't getting attributes"),
+            }
         }
     }
 
@@ -116,7 +121,10 @@ where
             ));
         }
         None => {
-            return Err(anyhow::anyhow!("[WARN] The file {} does not have a $DATA attribute.", output_file_name));
+            return Err(anyhow::anyhow!(
+                "[WARN] The file {} does not have a $DATA attribute.",
+                output_file_name
+            ));
         }
     };
     let data_attribute = match data_item.to_attribute() {
@@ -141,9 +149,12 @@ where
         }
     };
 
+    // Get the valid data length
+    let valid_data_length = get_valid_data_length(fs, &data_attribute)?;
+
     dprintln!(
         "[INFO] Saving {} bytes of data in `{}`",
-        data_value.len(),
+        &valid_data_length,
         output_file_name
     );
 
@@ -172,14 +183,51 @@ where
                     output_file_name
                 ));
             }
-
+            let mut current_file_size: u64 = 0;
             // Stream data, encrypt each chunk, and write it to the file
             while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
                 if bytes_read == 0 {
                     break;
                 }
+                current_file_size += bytes_read as u64;
+                if current_file_size > valid_data_length {
+                    if !is_ads {
+                        // Write remaining data (including current read buffer) to a "slack" file
+                        let mut slack_file = match OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&format!("{}.FileSlack", output_file_name))
+                        {
+                            Ok(f) => f,
+                            Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                return Err(anyhow::anyhow!(
+                                    "[ERROR] Failed to open file `{}` for writing: {}",
+                                    format!("{}.FileSlack", output_file_name),
+                                    e
+                                ));
+                            }
+                        };
 
-                let chunk = if !(ads.is_empty() || ads == "") && read_buf.iter().all(|&b| b == 0) {
+                        // Write the remaining part of the current buffer to the slack file
+                        let start_slack =
+                            (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
+                        slack_file.write_all(&read_buf[start_slack..bytes_read])?;
+
+                        // Continue reading and writing all remaining data to the slack file
+                        while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
+                            if slack_bytes_read == 0 {
+                                break;
+                            }
+                            slack_file.write_all(&read_buf[..slack_bytes_read])?;
+                        }
+                    }
+
+                    break;
+                }
+                let chunk = if is_ads && read_buf.iter().all(|&b| b == 0) {
                     continue;
                 } else {
                     &read_buf[..bytes_read]
@@ -200,40 +248,61 @@ where
                     ));
                 }
             }
-        } else {
-            // No encryption, stream and write data in chunks
-            while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
-                if bytes_read == 0 {
-                    break;
-                }
-
-                let chunk = if !(ads.is_empty() || ads == "") && read_buf.iter().all(|&b| b == 0) {
-                    continue;
-                } else {
-                    &read_buf[..bytes_read]
-                };
-                if output_file.write_all(chunk).is_err() {
-                    return Err(anyhow::anyhow!(
-                        "[ERROR] Failed to write chunk to `{}`",
-                        output_file_name
-                    ));
-                }
-            }
-        }
+        } 
     } else {
         // No encryption, write the file normally in chunks
         if file_name == "/$Boot" {
             output_file.write_all(&get_boot(&drive).unwrap()).unwrap();
         } else {
+            let mut current_file_size: u64 = 0;
             while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
                 if bytes_read == 0 {
                     break;
                 }
-                let chunk = if !(ads.is_empty() || ads == "") && read_buf.iter().all(|&b| b == 0) {
-                        continue;
-                    } else {
-                        &read_buf[..bytes_read]
-                    };
+                current_file_size += bytes_read as u64;
+                // Check if the Valid data is reached 
+                if current_file_size > valid_data_length {
+                    if !is_ads {
+                        // Write remaining data (including current read buffer) to a "slack" file
+                        let mut slack_file = match OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&format!("{}.FileSlack", output_file_name))
+                        {
+                            Ok(f) => f,
+                            Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                return Err(anyhow::anyhow!(
+                                    "[ERROR] Failed to open file `{}` for writing: {}",
+                                    format!("{}.FileSlack", output_file_name),
+                                    e
+                                ));
+                            }
+                        };
+
+                        // Write the remaining part of the current buffer to the slack file
+                        let start_slack =
+                            (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
+                        slack_file.write_all(&read_buf[start_slack..bytes_read])?;
+
+                        // Continue reading and writing all remaining data to the slack file
+                        while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
+                            if slack_bytes_read == 0 {
+                                break;
+                            }
+                            slack_file.write_all(&read_buf[..slack_bytes_read])?;
+                        }
+                    }
+
+                    break;
+                } 
+                let chunk = if !is_ads && read_buf.iter().all(|&b| b == 0) {
+                    continue;
+                } else {
+                    &read_buf[..bytes_read]
+                };
                 if output_file.write_all(chunk).is_err() {
                     return Err(anyhow::anyhow!(
                         "[ERROR] Failed to write chunk to `{}`",
@@ -272,12 +341,41 @@ where
     };
 }
 
-fn get_attr <T>(attr: &NtfsAttribute, fs: &mut T, output_file_name: &str) -> Result<(), Error> 
+fn get_valid_data_length<T>(fs: &mut T, attribut: &NtfsAttribute) -> Result<u64, Error>
 where
-T: Read + Seek,
+    T: Read + Seek,
+{
+    return match &attribut.ty()? {
+        NtfsAttributeType::Data => match attribut.position().value() {
+            Some(data_attr_position) => {
+                let mut buff = vec![0u8; 64];
+                fs.seek(SeekFrom::Start(data_attr_position.get()))?;
+                fs.read_exact(&mut buff)?;
+                let byte_57 = buff[56];
+                let byte_58 = buff[57];
+                let byte_59 = buff[58];
+                let byte_60 = buff[59];
+                let vdl = ((byte_60 as u64) << 24)
+                | ((byte_59 as u64) << 16)
+                | ((byte_58 as u64) << 8)
+                | (byte_57 as u64);
+                Ok(vdl)
+            }
+            None => Err(anyhow::anyhow!("[ERROR] $DATA position not found")),
+        },
+        _ => Err(anyhow::anyhow!("[ERROR] Wrong attribut type")),
+    };
+}
+
+fn get_attr<T>(attr: &NtfsAttribute, fs: &mut T, output_file_name: &str) -> Result<(), Error>
+where
+    T: Read + Seek,
 {
     let attr_name = attr.name()?.to_string_lossy().to_string();
-    dprintln!("[INFO] Found $INDEX_ALLOCATION attribute : `{}`", &attr_name);
+    dprintln!(
+        "[INFO] Found $INDEX_ALLOCATION attribute : `{}`",
+        &attr_name
+    );
 
     let attr_path = format!("{}%3A{}.idx", output_file_name, &attr_name);
     let mut attr_value = attr.value(fs)?;
@@ -289,7 +387,7 @@ T: Read + Seek,
     {
         Ok(f) => f,
         Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-            return Ok(()); 
+            return Ok(());
         }
         Err(e) => {
             return Err(anyhow::anyhow!(
@@ -318,8 +416,6 @@ T: Read + Seek,
             ));
         }
     }
-
-
 
     Ok(())
 }
@@ -416,6 +512,6 @@ pub fn split_path(input: &str) -> (String, String) {
     if let Some((path, last_segment)) = input.rsplit_once('/') {
         (path.to_string(), last_segment.to_string())
     } else {
-        (String::new(), input.to_string()) 
+        (String::new(), input.to_string())
     }
 }

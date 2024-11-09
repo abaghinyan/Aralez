@@ -63,16 +63,15 @@ USAGE:
 ";
 
 // Helper function to pretty-print the configuration
-fn show_config(config: &Config) -> Result<()> {
-    let serialized = serde_yaml::to_string(config)?;
-    println!("{}", serialized);
+fn show_config() -> Result<()> {
+    let data = Config::get_raw_data()?;
+    println!("{}", data);
     Ok(())
 }
 
 // Helper function to check the configuration
-fn check_config(config: &Config) -> Result<()> {
-    serde_yaml::to_string(config)?;
-    Ok(())
+fn check_config() -> Result<Config, anyhow::Error> {
+    Config::load()
 }
 
 // Function to update the embedded configuration
@@ -105,7 +104,7 @@ fn update_embedded_config(new_config_path: &str, output_exe_path: &str) -> std::
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<(), anyhow::Error> {
     // Print the welcome message
     println!(
         "Welcome to {} version {}",
@@ -160,23 +159,39 @@ fn main() -> Result<()> {
 
     // Handle changing the embedded configuration
     if let Some(config_path) = matches.get_one::<String>("change_config") {
-        if let Some(output_path) = matches.get_one::<String>("output") {
-            update_embedded_config(config_path, output_path)?;
-        } else {
-            return Err(anyhow::anyhow!(
-                "Output file name is required when changing configuration"
-            ));
+        match Config::check_config_file(&config_path) {
+            Ok(_) => {
+                if let Some(output_path) = matches.get_one::<String>("output") {
+                    update_embedded_config(config_path, output_path)?;
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "[ERROR] Output file name is required when changing configuration"
+                    ));
+                }
+                return Ok(());
+            },
+            Err(e) => return Err(anyhow::anyhow!(e.to_string())),
         }
-        return Ok(());
+        
     }
-
-
-    let config = Config::load()?;
 
     // Handle show_config flag
     if matches.get_flag("show_config") {
-        return show_config(&config);
+        return show_config();
     }
+
+    // Handle check_config flag
+    if matches.get_flag("check_config") {
+        return match check_config() {
+            Ok(_) => {
+                println!("The configuration file is valid");
+                Ok(())
+            },
+            Err(e) => Err(e),
+        };
+    }
+
+    let config = Config::load()?;
 
     // Check if the --debug flag was provided
     if matches.get_flag("debug") {
@@ -185,20 +200,6 @@ fn main() -> Result<()> {
     }
 
     let root_output = &config.get_output_filename();
-
-    // Handle check_config flag
-    if matches.get_flag("show_config") {
-        return show_config(&config);
-    }
-
-    // Handle check_config flag
-    if matches.get_flag("check_config") {
-        match check_config(&config) {
-            Ok(_) => println!("The configuration is valid"),
-            Err(e) => println!("{}", e.to_string()),
-        }
-        return Ok(());
-    }
 
     config.save(root_output)?;
 

@@ -11,15 +11,15 @@ use anyhow::Result;
 use chrono::prelude::*;
 use hostname::get;
 use indexmap::IndexMap;
+use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
-use std::{fmt, env};
-use std::fs::{File, create_dir_all};
-use std::path::Path;
-use std::io::{Read, Write};
 use std::collections::HashSet;
-use serde::de::{self, MapAccess, Visitor};
+use std::fs::{create_dir_all, File};
+use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
+use std::path::Path;
+use std::{env, fmt};
 
 pub const CONFIG_MARKER_START: &[u8] = b"# CONFIG_START";
 pub const CONFIG_MARKER_END: &[u8] = b"# CONFIG_END";
@@ -106,7 +106,10 @@ impl<'de> Deserialize<'de> for Entries {
                 while let Some((key, configs)) = access.next_entry::<String, Vec<SearchConfig>>()? {
                     // Check for duplicate keys
                     if !entry_names.insert(key.clone()) {
-                        return Err(de::Error::custom(format!("[ERROR] Config: Duplicate entry name '{}' found", key)));
+                        return Err(de::Error::custom(format!(
+                            "[ERROR] Config: Duplicate entry name '{}' found",
+                            key
+                        )));
                     }
 
                     // Iterate over each config in the entry to validate fields
@@ -136,14 +139,18 @@ impl<'de> Deserialize<'de> for Entries {
                         // Additional validations for other fields, e.g., `max_size`, `encrypt`
                         if let Some(max_size) = config.max_size {
                             if max_size <= 0 {
-                                return Err(de::Error::custom("[ERROR] Config: `max_size` should be greater than zero"));
+                                return Err(de::Error::custom(
+                                    "[ERROR] Config: `max_size` should be greater than zero",
+                                ));
                             }
                         }
 
-                        // encryp shouldn't be empty 
+                        // encryp shouldn't be empty
                         if let Some(password) = &config.encrypt {
                             if password.is_empty() || *password == "".to_string() {
-                                return Err(de::Error::custom("[ERROR] Config: `encrypt` should be empty"));
+                                return Err(de::Error::custom(
+                                    "[ERROR] Config: `encrypt` should be empty",
+                                ));
                             }
                         }
                     }
@@ -190,10 +197,7 @@ impl<'de> Deserialize<'de> for TypeConfig {
             {
                 match value {
                     "glob" => Ok(TypeConfig::Glob),
-                    _ => Err(de::Error::unknown_variant(
-                        value,
-                        &["glob"],
-                    )),
+                    _ => Err(de::Error::unknown_variant(value, &["glob"])),
                 }
             }
         }
@@ -318,8 +322,7 @@ pub struct SearchConfig {
 }
 
 impl Config {
-
-    pub fn load_from_embedded() -> Result<Self> {
+    pub fn load_default() -> Result<Self, anyhow::Error> {
         // Embed the YAML content directly into the binary
         let yaml_data = include_str!("../config/.config.yml");
         let config: Config = serde_yaml::from_str(yaml_data)?;
@@ -327,19 +330,35 @@ impl Config {
         Ok(config)
     }
 
-    pub fn load() -> Result<Self> {
+    pub fn load() -> Result<Self, anyhow::Error> {
         // Load configuration: Try to load the embedded configuration first, then fallback to default
         let config_data = Config::load_embedded_config()?;
-        let config: Config = match serde_yaml::from_str(&config_data) {
-            Ok(config) => config,
-            Err(_e) => Config::load_from_embedded()?,
+        if config_data.is_empty() {
+            return match Config::load_default() {
+                Ok(conf) => Ok(conf),
+                Err(e) => Err(e),
+            }
+        }
+        return match serde_yaml::from_str(&config_data) {
+            Ok(config) => Ok(config),
+            Err(e) => Err(anyhow::anyhow!(e.to_string()) ),
         };
-
-        Ok(config)
     }
 
+    pub fn check_config_file(filepath: &String) -> Result<Self, anyhow::Error> {
+        let mut file = File::open(filepath)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        let config_string = String::from_utf8_lossy(&buffer);
+
+        return match serde_yaml::from_str(&config_string) {
+            Ok(config) => Ok(config),
+            Err(e) => Err(anyhow::anyhow!(e.to_string()) ),
+        };
+    }
+    
     // Function to load the embedded configuration at runtime
-    fn load_embedded_config() -> Result<String> {
+    pub fn load_embedded_config() -> Result<String, anyhow::Error> {
         let current_exe = env::current_exe()?;
         let mut file = File::open(current_exe)?;
 
@@ -358,6 +377,19 @@ impl Config {
             "Embedded configuration not found or the config file is not valid"
         ))
     }
+    /// Load the raw configuration as a plain string, choosing between embedded or default.
+    pub fn get_raw_data() -> Result<String> {
+        // Attempt to load the embedded configuration
+        if let Ok(embedded_config) = Config::load_embedded_config() {
+            if !embedded_config.is_empty() {
+                return Ok(embedded_config);
+            }
+        }
+
+        // If embedded config is not found, fall back to loading the default config file
+        let yaml_data = include_str!("../config/.config.yml");
+        Ok(yaml_data.to_string())
+    }
 
     // Helper function to find the marker in the binary data
     fn find_marker(data: &[u8], marker: &[u8]) -> Option<usize> {
@@ -367,16 +399,16 @@ impl Config {
 
     pub fn save(&self, output_dir: &str) -> std::io::Result<()> {
         let yaml_string = serde_yaml::to_string(&self).expect("Failed to serialize config to YAML");
-    
+
         // Ensure the root_output folder exists
         let path = Path::new(output_dir);
         if !path.exists() {
             create_dir_all(path)?;
         }
-    
+
         // Define the output file path
         let config_file_path = path.join("config.yml");
-    
+
         // Write the YAML string to the file
         let mut file = File::create(config_file_path)?;
         file.write_all(yaml_string.as_bytes())?;

@@ -298,7 +298,8 @@ where
 
                     break;
                 } 
-                let chunk = if !is_ads && read_buf.iter().all(|&b| b == 0) {
+
+                let chunk = if is_ads && read_buf.iter().all(|&b| b == 0) {
                     continue;
                 } else {
                     &read_buf[..bytes_read]

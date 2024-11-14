@@ -25,6 +25,7 @@ use std::path::Path;
 use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
+use chrono::{DateTime, Local};
 
 pub fn get<T>(
     file: &NtfsFile,
@@ -315,15 +316,13 @@ where
     }
     // Retrieve timestamps from NtfsFile (replace these method calls with the actual methods from NtfsFile)
     if let Ok(file_std_info) = file.info() {
-        let modified_time =
-            nt_timestamp_to_system_time(file_std_info.modification_time().nt_timestamp());
-        let accessed_time = nt_timestamp_to_system_time(file_std_info.access_time().nt_timestamp());
+        let modified_time: DateTime<Local> =
+        nt_timestamp_to_datetime(file_std_info.modification_time().nt_timestamp());
+        let accessed_time: DateTime<Local> = nt_timestamp_to_datetime(file_std_info.access_time().nt_timestamp());
 
-        // Convert SystemTime to FileTime
-        let modified_file_time = FileTime::from_system_time(modified_time);
-        let accessed_file_time = FileTime::from_system_time(accessed_time);
+        let modified_file_time = FileTime::from_system_time(add_timezone_offset_to_system_time(modified_time.into(), modified_time.offset().local_minus_utc().into()));
+        let accessed_file_time = FileTime::from_system_time(add_timezone_offset_to_system_time(accessed_time.into(), accessed_time.offset().local_minus_utc().into()));
 
-        // Apply these timestamps to output_file
         set_file_times(&output_file_name, accessed_file_time, modified_file_time)
             .map_err(|e| anyhow::anyhow!("[ERROR] Failed to set file timestamps: {}", e))?;
     }
@@ -427,6 +426,19 @@ fn nt_timestamp_to_system_time(nt_timestamp: u64) -> SystemTime {
     let nt_epoch_to_unix_epoch = Duration::from_secs(11644473600); // 369 years in seconds
     let timestamp_duration = Duration::from_nanos(nt_timestamp * 100); // Convert to nanoseconds
     UNIX_EPOCH + timestamp_duration - nt_epoch_to_unix_epoch
+}
+
+fn nt_timestamp_to_datetime(nt_timestamp: u64) -> DateTime<Local> {
+    let system_time = nt_timestamp_to_system_time(nt_timestamp);
+    DateTime::<Local>::from(system_time)
+}
+
+fn add_timezone_offset_to_system_time(system_time: SystemTime, offset_seconds: i64) -> SystemTime {
+    if offset_seconds >= 0 {
+        system_time + Duration::from_secs(offset_seconds as u64)
+    } else {
+        system_time - Duration::from_secs((-offset_seconds) as u64)
+    }
 }
 
 fn get_boot(drive_letter: &str) -> Result<Vec<u8>, Error> {

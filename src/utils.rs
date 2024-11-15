@@ -8,6 +8,7 @@
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce}; // AES-GCM cipher
 use anyhow::{Error, Result};
+use chrono::{DateTime, Local};
 use filetime::{set_file_times, FileTime};
 use ntfs::{NtfsAttribute, NtfsAttributeType, NtfsFile, NtfsReadSeek};
 use rand::RngCore;
@@ -25,7 +26,6 @@ use std::path::Path;
 use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-use chrono::{DateTime, Local};
 
 pub fn get<T>(
     file: &NtfsFile,
@@ -99,7 +99,6 @@ where
             .attach(fs)
             .collect::<Result<Vec<_>, _>>()?;
         for attribute in attributes {
-
             match attribute.to_attribute() {
                 Ok(attr) => {
                     if attr.ty()? == NtfsAttributeType::IndexAllocation {
@@ -190,47 +189,44 @@ where
                 if bytes_read == 0 {
                     break;
                 }
-                if !data_attribute.is_resident() {
+                if !data_attribute.is_resident() && !is_ads {
                     current_file_size += bytes_read as u64;
                     if current_file_size > valid_data_length {
-                        if !is_ads {
-                            // Write remaining data (including current read buffer) to a "slack" file
-                            let mut slack_file = match OpenOptions::new()
-                                .write(true)
-                                .create_new(true)
-                                .open(&format!("{}.FileSlack", output_file_name))
-                            {
-                                Ok(f) => f,
-                                Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                                    return Ok(());
-                                }
-                                Err(e) => {
-                                    return Err(anyhow::anyhow!(
-                                        "[ERROR] Failed to open file `{}` for writing: {}",
-                                        format!("{}.FileSlack", output_file_name),
-                                        e
-                                    ));
-                                }
-                            };
-    
-                            // Write the remaining part of the current buffer to the slack file
-                            let start_slack =
-                                (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
-                            slack_file.write_all(&read_buf[start_slack..bytes_read])?;
-    
-                            // Continue reading and writing all remaining data to the slack file
-                            while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
-                                if slack_bytes_read == 0 {
-                                    break;
-                                }
-                                slack_file.write_all(&read_buf[..slack_bytes_read])?;
+                        // Write remaining data (including current read buffer) to a "slack" file
+                        let mut slack_file = match OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&format!("{}.FileSlack", output_file_name))
+                        {
+                            Ok(f) => f,
+                            Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+                                return Ok(());
                             }
+                            Err(e) => {
+                                return Err(anyhow::anyhow!(
+                                    "[ERROR] Failed to open file `{}` for writing: {}",
+                                    format!("{}.FileSlack", output_file_name),
+                                    e
+                                ));
+                            }
+                        };
+
+                        // Write the remaining part of the current buffer to the slack file
+                        let start_slack =
+                            (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
+                        slack_file.write_all(&read_buf[start_slack..bytes_read])?;
+
+                        // Continue reading and writing all remaining data to the slack file
+                        while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
+                            if slack_bytes_read == 0 {
+                                break;
+                            }
+                            slack_file.write_all(&read_buf[..slack_bytes_read])?;
                         }
-    
                         break;
                     }
                 }
-                
+
                 let chunk = if is_ads && read_buf.iter().all(|&b| b == 0) {
                     continue;
                 } else {
@@ -252,7 +248,7 @@ where
                     ));
                 }
             }
-        } 
+        }
     } else {
         // No encryption, write the file normally in chunks
         if file_name == "/$Boot" {
@@ -263,46 +259,43 @@ where
                 if bytes_read == 0 {
                     break;
                 }
-                if !data_attribute.is_resident() {
+                if !data_attribute.is_resident() && !is_ads {
                     current_file_size += bytes_read as u64;
-                    // Check if the Valid data is reached 
+                    // Check if the Valid data is reached
                     if current_file_size > valid_data_length {
-                        if !is_ads {
-                            // Write remaining data (including current read buffer) to a "slack" file
-                            let mut slack_file = match OpenOptions::new()
-                                .write(true)
-                                .create_new(true)
-                                .open(&format!("{}.FileSlack", output_file_name))
-                            {
-                                Ok(f) => f,
-                                Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                                    return Ok(());
-                                }
-                                Err(e) => {
-                                    return Err(anyhow::anyhow!(
-                                        "[ERROR] Failed to open file `{}` for writing: {}",
-                                        format!("{}.FileSlack", output_file_name),
-                                        e
-                                    ));
-                                }
-                            };
-    
-                            // Write the remaining part of the current buffer to the slack file
-                            let start_slack =
-                                (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
-                            slack_file.write_all(&read_buf[start_slack..bytes_read])?;
-    
-                            // Continue reading and writing all remaining data to the slack file
-                            while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
-                                if slack_bytes_read == 0 {
-                                    break;
-                                }
-                                slack_file.write_all(&read_buf[..slack_bytes_read])?;
+                        // Write remaining data (including current read buffer) to a "slack" file
+                        let mut slack_file = match OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&format!("{}.FileSlack", output_file_name))
+                        {
+                            Ok(f) => f,
+                            Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+                                return Ok(());
                             }
+                            Err(e) => {
+                                return Err(anyhow::anyhow!(
+                                    "[ERROR] Failed to open file `{}` for writing: {}",
+                                    format!("{}.FileSlack", output_file_name),
+                                    e
+                                ));
+                            }
+                        };
+
+                        // Write the remaining part of the current buffer to the slack file
+                        let start_slack =
+                            (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
+                        slack_file.write_all(&read_buf[start_slack..bytes_read])?;
+
+                        // Continue reading and writing all remaining data to the slack file
+                        while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
+                            if slack_bytes_read == 0 {
+                                break;
+                            }
+                            slack_file.write_all(&read_buf[..slack_bytes_read])?;
                         }
-    
                         break;
-                    } 
+                    }
                 }
                 let chunk = if is_ads && read_buf.iter().all(|&b| b == 0) {
                     continue;
@@ -321,11 +314,18 @@ where
     // Retrieve timestamps from NtfsFile (replace these method calls with the actual methods from NtfsFile)
     if let Ok(file_std_info) = file.info() {
         let modified_time: DateTime<Local> =
-        nt_timestamp_to_datetime(file_std_info.modification_time().nt_timestamp());
-        let accessed_time: DateTime<Local> = nt_timestamp_to_datetime(file_std_info.access_time().nt_timestamp());
+            nt_timestamp_to_datetime(file_std_info.modification_time().nt_timestamp());
+        let accessed_time: DateTime<Local> =
+            nt_timestamp_to_datetime(file_std_info.access_time().nt_timestamp());
 
-        let modified_file_time = FileTime::from_system_time(add_timezone_offset_to_system_time(modified_time.into(), modified_time.offset().local_minus_utc().into()));
-        let accessed_file_time = FileTime::from_system_time(add_timezone_offset_to_system_time(accessed_time.into(), accessed_time.offset().local_minus_utc().into()));
+        let modified_file_time = FileTime::from_system_time(add_timezone_offset_to_system_time(
+            modified_time.into(),
+            modified_time.offset().local_minus_utc().into(),
+        ));
+        let accessed_file_time = FileTime::from_system_time(add_timezone_offset_to_system_time(
+            accessed_time.into(),
+            accessed_time.offset().local_minus_utc().into(),
+        ));
 
         set_file_times(&output_file_name, accessed_file_time, modified_file_time)
             .map_err(|e| anyhow::anyhow!("[ERROR] Failed to set file timestamps: {}", e))?;
@@ -360,9 +360,9 @@ where
                 let byte_59 = buff[58];
                 let byte_60 = buff[59];
                 let vdl = ((byte_60 as u64) << 24)
-                | ((byte_59 as u64) << 16)
-                | ((byte_58 as u64) << 8)
-                | (byte_57 as u64);
+                    | ((byte_59 as u64) << 16)
+                    | ((byte_58 as u64) << 8)
+                    | (byte_57 as u64);
                 Ok(vdl)
             }
             None => Err(anyhow::anyhow!("[ERROR] $DATA position not found")),

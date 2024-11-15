@@ -190,44 +190,47 @@ where
                 if bytes_read == 0 {
                     break;
                 }
-                current_file_size += bytes_read as u64;
-                if current_file_size > valid_data_length {
-                    if !is_ads {
-                        // Write remaining data (including current read buffer) to a "slack" file
-                        let mut slack_file = match OpenOptions::new()
-                            .write(true)
-                            .create_new(true)
-                            .open(&format!("{}.FileSlack", output_file_name))
-                        {
-                            Ok(f) => f,
-                            Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                                return Ok(());
+                if !data_attribute.is_resident() {
+                    current_file_size += bytes_read as u64;
+                    if current_file_size > valid_data_length {
+                        if !is_ads {
+                            // Write remaining data (including current read buffer) to a "slack" file
+                            let mut slack_file = match OpenOptions::new()
+                                .write(true)
+                                .create_new(true)
+                                .open(&format!("{}.FileSlack", output_file_name))
+                            {
+                                Ok(f) => f,
+                                Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+                                    return Ok(());
+                                }
+                                Err(e) => {
+                                    return Err(anyhow::anyhow!(
+                                        "[ERROR] Failed to open file `{}` for writing: {}",
+                                        format!("{}.FileSlack", output_file_name),
+                                        e
+                                    ));
+                                }
+                            };
+    
+                            // Write the remaining part of the current buffer to the slack file
+                            let start_slack =
+                                (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
+                            slack_file.write_all(&read_buf[start_slack..bytes_read])?;
+    
+                            // Continue reading and writing all remaining data to the slack file
+                            while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
+                                if slack_bytes_read == 0 {
+                                    break;
+                                }
+                                slack_file.write_all(&read_buf[..slack_bytes_read])?;
                             }
-                            Err(e) => {
-                                return Err(anyhow::anyhow!(
-                                    "[ERROR] Failed to open file `{}` for writing: {}",
-                                    format!("{}.FileSlack", output_file_name),
-                                    e
-                                ));
-                            }
-                        };
-
-                        // Write the remaining part of the current buffer to the slack file
-                        let start_slack =
-                            (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
-                        slack_file.write_all(&read_buf[start_slack..bytes_read])?;
-
-                        // Continue reading and writing all remaining data to the slack file
-                        while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
-                            if slack_bytes_read == 0 {
-                                break;
-                            }
-                            slack_file.write_all(&read_buf[..slack_bytes_read])?;
                         }
+    
+                        break;
                     }
-
-                    break;
                 }
+                
                 let chunk = if is_ads && read_buf.iter().all(|&b| b == 0) {
                     continue;
                 } else {
@@ -260,46 +263,47 @@ where
                 if bytes_read == 0 {
                     break;
                 }
-                current_file_size += bytes_read as u64;
-                // Check if the Valid data is reached 
-                if current_file_size > valid_data_length {
-                    if !is_ads {
-                        // Write remaining data (including current read buffer) to a "slack" file
-                        let mut slack_file = match OpenOptions::new()
-                            .write(true)
-                            .create_new(true)
-                            .open(&format!("{}.FileSlack", output_file_name))
-                        {
-                            Ok(f) => f,
-                            Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                                return Ok(());
+                if !data_attribute.is_resident() {
+                    current_file_size += bytes_read as u64;
+                    // Check if the Valid data is reached 
+                    if current_file_size > valid_data_length {
+                        if !is_ads {
+                            // Write remaining data (including current read buffer) to a "slack" file
+                            let mut slack_file = match OpenOptions::new()
+                                .write(true)
+                                .create_new(true)
+                                .open(&format!("{}.FileSlack", output_file_name))
+                            {
+                                Ok(f) => f,
+                                Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+                                    return Ok(());
+                                }
+                                Err(e) => {
+                                    return Err(anyhow::anyhow!(
+                                        "[ERROR] Failed to open file `{}` for writing: {}",
+                                        format!("{}.FileSlack", output_file_name),
+                                        e
+                                    ));
+                                }
+                            };
+    
+                            // Write the remaining part of the current buffer to the slack file
+                            let start_slack =
+                                (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
+                            slack_file.write_all(&read_buf[start_slack..bytes_read])?;
+    
+                            // Continue reading and writing all remaining data to the slack file
+                            while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
+                                if slack_bytes_read == 0 {
+                                    break;
+                                }
+                                slack_file.write_all(&read_buf[..slack_bytes_read])?;
                             }
-                            Err(e) => {
-                                return Err(anyhow::anyhow!(
-                                    "[ERROR] Failed to open file `{}` for writing: {}",
-                                    format!("{}.FileSlack", output_file_name),
-                                    e
-                                ));
-                            }
-                        };
-
-                        // Write the remaining part of the current buffer to the slack file
-                        let start_slack =
-                            (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
-                        slack_file.write_all(&read_buf[start_slack..bytes_read])?;
-
-                        // Continue reading and writing all remaining data to the slack file
-                        while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
-                            if slack_bytes_read == 0 {
-                                break;
-                            }
-                            slack_file.write_all(&read_buf[..slack_bytes_read])?;
                         }
-                    }
-
-                    break;
-                } 
-
+    
+                        break;
+                    } 
+                }
                 let chunk = if is_ads && read_buf.iter().all(|&b| b == 0) {
                     continue;
                 } else {

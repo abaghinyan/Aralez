@@ -450,19 +450,19 @@ pub fn process_drive_artifacts(
                 search_config.objects.iter().flatten().for_each(|object| {
                     let c_obj = split_path(&object.replace("\\", "/"));
                     let d_p: String = if c_obj.0.is_empty() {
-                        let d = search_config.dir_path.clone().unwrap_or("/".to_string());
+                        let d = search_config.root_path.clone().unwrap_or("/".to_string());
                         if d.is_empty() {
                             "/".to_string()
                         } else {
                             format!(
                                 "{}",
-                                search_config.dir_path.clone().unwrap_or("/".to_string())
+                                search_config.root_path.clone().unwrap_or("/".to_string())
                             )
                         }
                     } else {
                         format!(
                             "{}/{}",
-                            search_config.dir_path.clone().unwrap_or("/".to_string()),
+                            search_config.root_path.clone().unwrap_or("/".to_string()),
                             c_obj.0
                         )
                     };

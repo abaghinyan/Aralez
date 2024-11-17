@@ -114,22 +114,22 @@ impl<'de> Deserialize<'de> for Entries {
 
                     // Iterate over each config in the entry to validate fields
                     for config in &configs {
-                        // 1. Validate `dir_path` if it's present
-                        if let Some(dir_path) = &config.dir_path {
-                            if !dir_path.starts_with("\\") && !dir_path.starts_with('%') {
+                        // 1. Validate `root_path` if it's present
+                        if let Some(root_path) = &config.root_path {
+                            if !root_path.starts_with("\\") && !root_path.starts_with('%') {
                                 return Err(de::Error::custom(format!(
-                                    "[ERROR] Config: dir_path '{}' in entry '{}' should start with '\\\\' or '%'", 
-                                    dir_path, key
+                                    "[ERROR] Config: root_path '{}' in entry '{}' should start with '\\\\' or '%'", 
+                                    root_path, key
                                 )));
                             }
                         }
 
-                        // 2. If entry type is "collect", ensure `dir_path` and `objects` are present
+                        // 2. If entry type is "collect", ensure `root_path` and `objects` are present
                         if let Some(type_config) = &config.r#type {
                             if *type_config == TypeConfig::Glob {
-                                if config.dir_path.is_none() || config.objects.is_none() {
+                                if config.root_path.is_none() || config.objects.is_none() {
                                     return Err(de::Error::custom(format!(
-                                        "[ERROR] Config: Entry '{}' with type 'collect' must have `dir_path` and `objects`", 
+                                        "[ERROR] Config: Entry '{}' with type 'collect' must have `root_path` and `objects`", 
                                         key
                                     )));
                                 }
@@ -310,7 +310,7 @@ impl<'de> Deserialize<'de> for TypeExec {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SearchConfig {
-    pub dir_path: Option<String>,
+    pub root_path: Option<String>,
     pub name: Option<String>,
     pub output_file: Option<String>,
     pub args: Option<Vec<String>>,
@@ -449,26 +449,26 @@ impl Config {
 }
 
 impl SearchConfig {
-    // Method to get dir_path with environment variables replaced
-    pub fn get_expanded_dir_path(&self) -> String {
-        replace_env_vars(&self.dir_path.clone().unwrap_or_default())
+    // Method to get root_path with environment variables replaced
+    pub fn get_expanded_root_path(&self) -> String {
+        replace_env_vars(&self.root_path.clone().unwrap_or_default())
     }
 
-    // Method to sanitize dir_path and objects based on metacharacters
+    // Method to sanitize root_path and objects based on metacharacters
     pub fn sanitize(&mut self) -> Result<(), String> {
-        let dir_path_item = &self.get_expanded_dir_path();
-        let mut dir_path = dir_path_item.replace("\\", "/");
-        dir_path = remove_trailing_slash(dir_path);
-        // Check if the dir_path contains a glob element (*, **, ?, or bracketed expressions)
-        if dir_path.contains("*")
-            || dir_path.contains("?")
-            || dir_path.contains("[")
-            || dir_path.contains("]")
+        let root_path_item = &self.get_expanded_root_path();
+        let mut root_path = root_path_item.replace("\\", "/");
+        root_path = remove_trailing_slash(root_path);
+        // Check if the root_path contains a glob element (*, **, ?, or bracketed expressions)
+        if root_path.contains("*")
+            || root_path.contains("?")
+            || root_path.contains("[")
+            || root_path.contains("]")
         {
-            let parts: Vec<&str> = dir_path.split("/").collect();
+            let parts: Vec<&str> = root_path.split("/").collect();
 
             // Extract the common part (before any glob or metacharacter)
-            let mut new_dir_path = String::new();
+            let mut new_root_path = String::new();
             let mut remaining_path = Vec::new();
 
             for part in parts.iter() {
@@ -483,10 +483,10 @@ impl SearchConfig {
                     if !remaining_path.is_empty() {
                         remaining_path.push(part.to_string());
                     } else {
-                        if !new_dir_path.is_empty() {
-                            new_dir_path.push_str("/");
+                        if !new_root_path.is_empty() {
+                            new_root_path.push_str("/");
                         }
-                        new_dir_path.push_str(part);
+                        new_root_path.push_str(part);
                     }
                 }
             }
@@ -505,10 +505,10 @@ impl SearchConfig {
                 }
             }
 
-            // Update the dir_path with the new common part
-            self.dir_path = Some(new_dir_path);
+            // Update the root_path with the new common part
+            self.root_path = Some(new_root_path);
         } else {
-            self.dir_path = Some(dir_path);
+            self.root_path = Some(root_path);
         }
 
         Ok(())

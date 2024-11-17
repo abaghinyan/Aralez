@@ -11,99 +11,99 @@ tasks:
     priority: 1
     entries: 
       mft:
-        - dir_path: "\\"
+        - root_path: "\\"
           objects: ["$MFT", "$Boot"]
       extend:
-        - dir_path: "\\$Extend"
+        - root_path: "\\$Extend"
           objects: ["**"]
       recycle:
-        - dir_path: "\\$Recycle.Bin"
+        - root_path: "\\$Recycle.Bin"
           objects: ["**"]
           max_size: 10485760
       event_logs:
-        - dir_path: "\\Windows\\System32\\winevt\\Logs"
+        - root_path: "\\Windows\\System32\\winevt\\Logs"
           objects: ["*.evtx"]
       hive_files:
-        - dir_path: "\\Windows\\System32\\config"
+        - root_path: "\\Windows\\System32\\config"
           objects: ["SAM", "SYSTEM", "SOFTWARE", "SECURITY", "DEFAULT"]
       user_hive_files:
-        - dir_path: "\\Users\\*"
+        - root_path: "\\Users\\*"
           objects: ["*.DAT"]
       wer_files:
-        - dir_path: "\\ProgramData\\Microsoft\\Windows\\WER\\ReportArchive"
+        - root_path: "\\ProgramData\\Microsoft\\Windows\\WER\\ReportArchive"
           objects: ["**"]
-        - dir_path: "\\ProgramData\\Microsoft\\Windows\\WER\\ReportQueue"
+        - root_path: "\\ProgramData\\Microsoft\\Windows\\WER\\ReportQueue"
           objects: ["**"]
-        - dir_path: "\\Users\\*\\AppData\\Local\\Microsoft\\Windows\\WER"
+        - root_path: "\\Users\\*\\AppData\\Local\\Microsoft\\Windows\\WER"
           objects: ["**"]
       prefetch:
-        - dir_path: "\\Windows\\Prefetch"
+        - root_path: "\\Windows\\Prefetch"
           objects: ["*.pf"]
       scheduled_tasks:
-        - dir_path: "\\Windows\\System32\\Tasks"
+        - root_path: "\\Windows\\System32\\Tasks"
           objects: [".job", ".xml"]
-        - dir_path: "\\Windows\\Tasks"
+        - root_path: "\\Windows\\Tasks"
           objects: ["*.job", "*.xml"]
       firewall_logs:
-        - dir_path: "\\Windows\\System32\\LogFiles\\Firewall"
+        - root_path: "\\Windows\\System32\\LogFiles\\Firewall"
           objects: ["pfirewall.log"]
       amcache:
-        - dir_path: "\\Windows\\AppCompat\\Programs"
+        - root_path: "\\Windows\\AppCompat\\Programs"
           objects: ["*.hve"]
       startup_files:
-        - dir_path: "\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+        - root_path: "\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
           objects: ["**"]
-        - dir_path: "\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+        - root_path: "\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
           objects: ["**"]
       windows_shortcuts:
-        - dir_path: "\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Recent"
+        - root_path: "\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Recent"
           objects: ["*.lnk"]
       powershell_history:
-        - dir_path: "\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadline"
+        - root_path: "\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadline"
           objects: ["*.txt"]
       wmi:
-        - dir_path: "\\Windows\\System32\\wbem\\Repsystemitory"
+        - root_path: "\\Windows\\System32\\wbem\\Repsystemitory"
           objects: ["OBJECTS.DATA"]
       wmi_trace:
-        - dir_path: "\\Windows\\System32\\LogFiles\\WMI"
+        - root_path: "\\Windows\\System32\\LogFiles\\WMI"
           objects: ["*.etl"]
       bmc:
-        - dir_path: "\\Windows\\System32\\wdi\\LogFiles"
+        - root_path: "\\Windows\\System32\\wdi\\LogFiles"
           objects: ["*.etl"]
       bits:
-        - dir_path: "\\ProgramData\\Microsoft\\Network\\Downloader"
+        - root_path: "\\ProgramData\\Microsoft\\Network\\Downloader"
           objects: ["*.dat"]
       browser_history:
-        - dir_path: "\\Users\\*\\AppData\\Local\\Microsoft\\Windows\\INetCache"
+        - root_path: "\\Users\\*\\AppData\\Local\\Microsoft\\Windows\\INetCache"
           objects: ["*.dat", "*.sqlite", "*.json"]
-        - dir_path: "\\Users\\*\\AppData\\Local\\Microsoft\\Windows\\History"
+        - root_path: "\\Users\\*\\AppData\\Local\\Microsoft\\Windows\\History"
           objects: ["*.dat", "*.sqlite", "*.json"]
-        - dir_path: "\\Users\\*\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default"
+        - root_path: "\\Users\\*\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default"
           objects: ["History"]
-        - dir_path: "\\Users\\*\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History"
+        - root_path: "\\Users\\*\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History"
           objects: ["*.dat", "*.sqlite", "*.json"]
       suspicious_files:
-        - dir_path: "\\Users\\*\\AppData\\Local"
+        - root_path: "\\Users\\*\\AppData\\Local"
           objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
           max_size: 5242880
           encrypt: "infected"
-        - dir_path: "\\Users\\*\\AppData\\Roaming"
+        - root_path: "\\Users\\*\\AppData\\Roaming"
           objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
           max_size: 5242880
           encrypt: "infected"
-        - dir_path: "\\Users\\*\\AppData\\Local\\Temp"
+        - root_path: "\\Users\\*\\AppData\\Local\\Temp"
           objects: [".exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
           max_size: 5242880
           encrypt: "infected"
-        - dir_path: "\\Users\\*\\Downloads"
+        - root_path: "\\Users\\*\\Downloads"
           objects: [".exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
           max_size: 5242880
           encrypt: "infected"
-        - dir_path: "\\Users\\*\\Desktop"
+        - root_path: "\\Users\\*\\Desktop"
           objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
           max_size: 5242880
           encrypt: "infected"
-        - dir_path: "\\Windows\\Temp"
+        - root_path: "\\Windows\\Temp"
           objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
           max_size: 5242880
           encrypt: "infected"
@@ -115,7 +115,7 @@ tasks:
     exclude_drives: ["C"]
     entries: 
       mft:
-        - dir_path: "\\"
+        - root_path: "\\"
           objects: ["$MFT"]
 
   tools:
@@ -197,7 +197,7 @@ tasks:
     disabled: true
     entries:
       not_collect:
-        - dir_path: "\\"
+        - root_path: "\\"
           objects: [""]
 
 output_filename: "Aralez_{{hostname}}_{{datetime}}"

@@ -349,8 +349,8 @@ fn main() -> Result<(), anyhow::Error> {
 }
 
 fn zip_dir(dir_name: &str) -> io::Result<()> {
-    let dir_path = Path::new(dir_name);
-    fs::create_dir_all(&dir_path)?;
+    let root_path = Path::new(dir_name);
+    fs::create_dir_all(&root_path)?;
 
     let zip_file_name = format!("{}.zip", dir_name);
     let zip_file = File::create(&zip_file_name)?;
@@ -360,7 +360,7 @@ fn zip_dir(dir_name: &str) -> io::Result<()> {
         .compression_method(CompressionMethod::Deflated)
         .large_file(true);
 
-    add_directory_to_zip(&mut zip, dir_path, "", &options)?;
+    add_directory_to_zip(&mut zip, root_path, "", &options)?;
 
     zip.finish()?;
     Ok(())
@@ -368,11 +368,11 @@ fn zip_dir(dir_name: &str) -> io::Result<()> {
 
 fn add_directory_to_zip<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
-    dir_path: &Path,
+    root_path: &Path,
     parent_dir: &str,
     options: &FileOptions<()>,
 ) -> io::Result<()> {
-    for entry in fs::read_dir(dir_path)? {
+    for entry in fs::read_dir(root_path)? {
         let entry = entry?;
         let path = entry.path();
         let name = format!("{}{}", parent_dir, entry.file_name().to_string_lossy());

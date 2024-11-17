@@ -133,7 +133,7 @@ Aralez uses an embedded YAML configuration file to define the directories, objec
 
 Each search configuration specifies:
 
-- `dir_path`: The directory to search within.
+- `root_path`: The directory to search within.
 - `objects`: A list of objects to include.
 - `max_size` (optional): The maximum file size to retrieve. If not specified, all files will be retrieved regardless of size.
 - `encrypt` (optional): An optional password for AES-GCM encryption. If provided, the files will be encrypted and saved with an `.enc` extension. If not provided, the files will remain unencrypted.
@@ -146,15 +146,15 @@ Each search configuration specifies:
 > [!IMPORTANT] 
 > The default value for `type` is `glob`
 
-#### Windows Environment Variables for dir_path
+#### Windows Environment Variables for root_path
 
-Aralez supports the inclusion of Windows environment variables within the `dir_path` field, allowing dynamic file retrieval based on system-specific paths. Variables must be wrapped in `%...%` and will automatically expand to the corresponding system values during execution.
+Aralez supports the inclusion of Windows environment variables within the `root_path` field, allowing dynamic file retrieval based on system-specific paths. Variables must be wrapped in `%...%` and will automatically expand to the corresponding system values during execution.
 
-**Example of dir_path with environment variables**:
+**Example of root_path with environment variables**:
 ```yml
 entries:
   files:
-    - dir_path: "%USERPROFILE%\\Documents"
+    - root_path: "%USERPROFILE%\\Documents"
       objects: ["*.docx", "*.pdf"]
       type: "glob"
       max_size: 1048576
@@ -173,15 +173,15 @@ For example:
 ```yaml
 entries:
   files:
-    - dir_path: "Windows\\System32"
+    - root_path: "Windows\\System32"
       objects: ["*.log", "*.txt"] # Default type, using glob pattern to match .log and .txt files
-    - dir_path: "Program Files"
+    - root_path: "Program Files"
       objects: ["setup.exe"]
       type: "string"  # Matching exactly the file setup.exe
-    - dir_path: "Users\\{user}\\Documents"
+    - root_path: "Users\\{user}\\Documents"
       objects: ["**"]
       type: "glob"  # Match only files in the folder and subdirectories
-    - dir_path: "Users\\{user}\\Documents"
+    - root_path: "Users\\{user}\\Documents"
       objects: ["**\\"]
       type: "glob"  # Match both files and subdirectories in the folder and subdirectories
 ```
@@ -192,15 +192,15 @@ The `max_size`, `encrypt`, and `type` values are optional. If not provided:
 - `type`: The default value will be `glob`.
 
 
-#### Windows Environment Variables for dir_path
+#### Windows Environment Variables for root_path
 
-Aralez supports the inclusion of Windows environment variables within the `dir_path` field, allowing dynamic file retrieval based on system-specific paths. Variables must be wrapped in %...% and will automatically expand to the corresponding system values during execution. For example, `%USERPROFILE%` will be replaced by the user's profile directory. This feature provides flexibility when defining file retrieval paths, making it easier to target system-specific locations across different machines and users.
+Aralez supports the inclusion of Windows environment variables within the `root_path` field, allowing dynamic file retrieval based on system-specific paths. Variables must be wrapped in %...% and will automatically expand to the corresponding system values during execution. For example, `%USERPROFILE%` will be replaced by the user's profile directory. This feature provides flexibility when defining file retrieval paths, making it easier to target system-specific locations across different machines and users.
 
-**Example of dir_path with environment variables**
+**Example of root_path with environment variables**
 ```yml
 entries:
   files:
-    - dir_path: "%USERPROFILE%\\Documents"
+    - root_path: "%USERPROFILE%\\Documents"
       objects: [".docx", ".pdf"]
       max_size: 1048576
       encrypt: "infected"
@@ -211,7 +211,7 @@ Collect some files:
 ```yaml
 entries:
   files:
-    - dir_path: "Users/{user}/Documents"
+    - root_path: "Users/{user}/Documents"
       objects: [".docx", ".pdf"]
       max_size: 1048576
       encrypt: "infected"
@@ -231,7 +231,7 @@ The tool uses the `SearchConfig` struct to manage and apply these configurations
 
 ```rust
 let config = SearchConfig {
-    dir_path: "Users/{user}/Documents".to_string(),
+    root_path: "Users/{user}/Documents".to_string(),
     objects: Some(vec![".docx".to_string(), ".pdf".to_string()]),
     max_size: Some(1_048_576), // 1 MB
     encrypt: Some("infected".to_string()), // Encrypt files with the password "infected"

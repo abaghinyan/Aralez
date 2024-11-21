@@ -1,3 +1,11 @@
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright © 2024 Areg Baghinyan. All Rights Reserved.
+//
+// Author(s): Areg Baghinyan
+//
+
 // Copyright 2021 Colin Finck <colin@reactos.org>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
@@ -76,7 +84,7 @@ where
 
         // Perform the sector-sized read and copy the actually requested bytes into the given buffer.
         self.temp_buf.resize(aligned_bytes_to_read, 0);
-        self.inner.read_exact(&mut self.temp_buf)?;
+        self.inner.read(&mut self.temp_buf)?;
         buf.copy_from_slice(&self.temp_buf[start..end]);
 
         // We are done.

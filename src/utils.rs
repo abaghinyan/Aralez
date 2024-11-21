@@ -185,67 +185,75 @@ where
             }
             let mut current_file_size: u64 = 0;
             // Stream data, encrypt each chunk, and write it to the file
-            while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
-                if bytes_read == 0 {
-                    break;
-                }
-                if !data_attribute.is_resident() && !is_ads {
-                    current_file_size += bytes_read as u64;
-                    if current_file_size > valid_data_length {
-                        // Write remaining data (including current read buffer) to a "slack" file
-                        let mut slack_file = match OpenOptions::new()
-                            .write(true)
-                            .create_new(true)
-                            .open(&format!("{}.FileSlack", output_file_name))
-                        {
-                            Ok(f) => f,
-                            Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                                return Ok(());
+            loop {
+                match data_value.read(fs, &mut read_buf) {
+                    Ok(bytes_read) => {
+                        if bytes_read == 0 {
+                            break;
+                        }
+                        if !data_attribute.is_resident() && !is_ads {
+                            current_file_size += bytes_read as u64;
+                            if current_file_size > valid_data_length {
+                                // Write remaining data (including current read buffer) to a "slack" file
+                                let mut slack_file = match OpenOptions::new()
+                                    .write(true)
+                                    .create_new(true)
+                                    .open(&format!("{}.FileSlack", output_file_name))
+                                {
+                                    Ok(f) => f,
+                                    Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+                                        return Ok(());
+                                    }
+                                    Err(e) => {
+                                        return Err(anyhow::anyhow!(
+                                            "[ERROR] Failed to open file `{}` for writing: {}",
+                                            format!("{}.FileSlack", output_file_name),
+                                            e
+                                        ));
+                                    }
+                                };
+
+                                // Write the remaining part of the current buffer to the slack file
+                                let start_slack =
+                                    (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
+                                slack_file.write_all(&read_buf[start_slack..bytes_read])?;
+
+                                // Continue reading and writing all remaining data to the slack file
+                                while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
+                                    if slack_bytes_read == 0 {
+                                        break;
+                                    }
+                                    slack_file.write_all(&read_buf[..slack_bytes_read])?;
+                                }
+                                break;
                             }
+                        }
+
+                        let chunk = if is_ads && read_buf.iter().all(|&b| b == 0) {
+                            continue;
+                        } else {
+                            &read_buf[..bytes_read]
+                        };
+
+                        let encrypted_chunk = match cipher.encrypt(nonce, chunk) {
+                            Ok(ct) => ct,
                             Err(e) => {
-                                return Err(anyhow::anyhow!(
-                                    "[ERROR] Failed to open file `{}` for writing: {}",
-                                    format!("{}.FileSlack", output_file_name),
-                                    e
-                                ));
+                                return Err(anyhow::anyhow!("[ERROR] Encryption failed: {}", e));
                             }
                         };
 
-                        // Write the remaining part of the current buffer to the slack file
-                        let start_slack =
-                            (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
-                        slack_file.write_all(&read_buf[start_slack..bytes_read])?;
-
-                        // Continue reading and writing all remaining data to the slack file
-                        while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
-                            if slack_bytes_read == 0 {
-                                break;
-                            }
-                            slack_file.write_all(&read_buf[..slack_bytes_read])?;
+                        // Write the encrypted chunk to the output file
+                        if output_file.write_all(&encrypted_chunk).is_err() {
+                            return Err(anyhow::anyhow!(
+                                "[ERROR] Failed to write encrypted chunk to `{}`",
+                                output_file_name
+                            ));
                         }
-                        break;
+                    },
+                    Err(err) => {
+                        dprintln!("[ERROR] Reading data: {:?}", err);
+                        break
                     }
-                }
-
-                let chunk = if is_ads && read_buf.iter().all(|&b| b == 0) {
-                    continue;
-                } else {
-                    &read_buf[..bytes_read]
-                };
-
-                let encrypted_chunk = match cipher.encrypt(nonce, chunk) {
-                    Ok(ct) => ct,
-                    Err(e) => {
-                        return Err(anyhow::anyhow!("[ERROR] Encryption failed: {}", e));
-                    }
-                };
-
-                // Write the encrypted chunk to the output file
-                if output_file.write_all(&encrypted_chunk).is_err() {
-                    return Err(anyhow::anyhow!(
-                        "[ERROR] Failed to write encrypted chunk to `{}`",
-                        output_file_name
-                    ));
                 }
             }
         }
@@ -255,58 +263,66 @@ where
             output_file.write_all(&get_boot(&drive).unwrap()).unwrap();
         } else {
             let mut current_file_size: u64 = 0;
-            while let Ok(bytes_read) = data_value.read(fs, &mut read_buf) {
-                if bytes_read == 0 {
-                    break;
-                }
-                if !data_attribute.is_resident() && !is_ads {
-                    current_file_size += bytes_read as u64;
-                    // Check if the Valid data is reached
-                    if current_file_size > valid_data_length {
-                        // Write remaining data (including current read buffer) to a "slack" file
-                        let mut slack_file = match OpenOptions::new()
-                            .write(true)
-                            .create_new(true)
-                            .open(&format!("{}.FileSlack", output_file_name))
-                        {
-                            Ok(f) => f,
-                            Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                                return Ok(());
-                            }
-                            Err(e) => {
-                                return Err(anyhow::anyhow!(
-                                    "[ERROR] Failed to open file `{}` for writing: {}",
-                                    format!("{}.FileSlack", output_file_name),
-                                    e
-                                ));
-                            }
-                        };
+            loop {
+                match data_value.read(fs, &mut read_buf) {
+                    Ok(bytes_read) => {
+                        if bytes_read == 0 {
+                            break;
+                        }
+                        if !data_attribute.is_resident() && !is_ads {
+                            current_file_size += bytes_read as u64;
+                            // Check if the Valid data is reached
+                            if current_file_size > valid_data_length {
+                                // Write remaining data (including current read buffer) to a "slack" file
+                                let mut slack_file = match OpenOptions::new()
+                                    .write(true)
+                                    .create_new(true)
+                                    .open(&format!("{}.FileSlack", output_file_name))
+                                {
+                                    Ok(f) => f,
+                                    Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+                                        return Ok(());
+                                    }
+                                    Err(e) => {
+                                        return Err(anyhow::anyhow!(
+                                            "[ERROR] Failed to open file `{}` for writing: {}",
+                                            format!("{}.FileSlack", output_file_name),
+                                            e
+                                        ));
+                                    }
+                                };
 
-                        // Write the remaining part of the current buffer to the slack file
-                        let start_slack =
-                            (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
-                        slack_file.write_all(&read_buf[start_slack..bytes_read])?;
+                                // Write the remaining part of the current buffer to the slack file
+                                let start_slack =
+                                    (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
+                                slack_file.write_all(&read_buf[start_slack..bytes_read])?;
 
-                        // Continue reading and writing all remaining data to the slack file
-                        while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
-                            if slack_bytes_read == 0 {
+                                // Continue reading and writing all remaining data to the slack file
+                                while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
+                                    if slack_bytes_read == 0 {
+                                        break;
+                                    }
+                                    slack_file.write_all(&read_buf[..slack_bytes_read])?;
+                                }
                                 break;
                             }
-                            slack_file.write_all(&read_buf[..slack_bytes_read])?;
                         }
-                        break;
+                        let chunk = if is_ads && read_buf.iter().all(|&b| b == 0) {
+                            continue;
+                        } else {
+                            &read_buf[..bytes_read]
+                        };
+                        if output_file.write_all(chunk).is_err() {
+                            return Err(anyhow::anyhow!(
+                                "[ERROR] Failed to write chunk to `{}`",
+                                output_file_name
+                            ));
+                        }
+                    },
+                    Err(err) => {
+                        dprintln!("[ERROR] Reading data: {:?}", err);
+                        break
                     }
-                }
-                let chunk = if is_ads && read_buf.iter().all(|&b| b == 0) {
-                    continue;
-                } else {
-                    &read_buf[..bytes_read]
-                };
-                if output_file.write_all(chunk).is_err() {
-                    return Err(anyhow::anyhow!(
-                        "[ERROR] Failed to write chunk to `{}`",
-                        output_file_name
-                    ));
                 }
             }
         }

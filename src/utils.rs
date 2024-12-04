@@ -218,6 +218,10 @@ where
                                     (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
                                 slack_file.write_all(&read_buf[start_slack..bytes_read])?;
 
+                                // padding with 0
+                                let mut padding = vec![0; bytes_read - start_slack];
+                                output_file.write_all(&padding)?;
+
                                 // Continue reading and writing all remaining data to the slack file
                                 while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
                                     if slack_bytes_read == 0 {
@@ -225,8 +229,7 @@ where
                                     }
                                     slack_file.write_all(&read_buf[..slack_bytes_read])?;
 
-                                    // padding with 0
-                                    let padding = vec![0; slack_bytes_read];
+                                    padding = vec![0; slack_bytes_read];
                                     output_file.write_all(&padding)?;
                                 }
                                 break;
@@ -301,6 +304,10 @@ where
                                     (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
                                 slack_file.write_all(&read_buf[start_slack..bytes_read])?;
 
+                                // padding with 0
+                                let mut padding = vec![0; bytes_read - start_slack];
+                                output_file.write_all(&padding)?;
+
                                 // Continue reading and writing all remaining data to the slack file
                                 while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
                                     if slack_bytes_read == 0 {
@@ -308,8 +315,7 @@ where
                                     }
                                     slack_file.write_all(&read_buf[..slack_bytes_read])?;
 
-                                    // padding with 0
-                                    let padding = vec![0; slack_bytes_read];
+                                    padding = vec![0; slack_bytes_read];
                                     output_file.write_all(&padding)?;
                                 }
                                 break;

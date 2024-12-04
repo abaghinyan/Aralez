@@ -224,6 +224,10 @@ where
                                         break;
                                     }
                                     slack_file.write_all(&read_buf[..slack_bytes_read])?;
+
+                                    // padding with 0
+                                    let padding = vec![0; slack_bytes_read];
+                                    output_file.write_all(&padding)?;
                                 }
                                 break;
                             }
@@ -303,6 +307,10 @@ where
                                         break;
                                     }
                                     slack_file.write_all(&read_buf[..slack_bytes_read])?;
+
+                                    // padding with 0
+                                    let padding = vec![0; slack_bytes_read];
+                                    output_file.write_all(&padding)?;
                                 }
                                 break;
                             }

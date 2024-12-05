@@ -9,7 +9,7 @@ use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce}; // AES-GCM cipher
 use anyhow::{Error, Result};
 use chrono::{DateTime, Local};
-use filetime::{set_file_times, FileTime};
+use filetime::{set_file_handle_times, FileTime};
 use ntfs::{NtfsAttribute, NtfsAttributeType, NtfsFile, NtfsReadSeek};
 use rand::RngCore;
 use regex::Regex;
@@ -356,8 +356,7 @@ where
             accessed_time.into(),
             accessed_time.offset().local_minus_utc().into(),
         ));
-
-        set_file_times(&output_file_name, accessed_file_time, modified_file_time)
+        set_file_handle_times(&output_file, Some(accessed_file_time), Some(modified_file_time))
             .map_err(|e| anyhow::anyhow!("[ERROR] Failed to set file timestamps: {}", e))?;
     }
     match output_file.flush() {

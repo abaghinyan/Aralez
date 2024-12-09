@@ -1,11 +1,11 @@
+use reqwest::blocking::get;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::Path;
-use reqwest::blocking::get;
-use zip::ZipArchive;
 use std::process::Command;
 use winres::WindowsResource;
+use zip::ZipArchive;
 
 fn main() -> io::Result<()> {
     // Get the CONFIG_FILE environment variable, or default to default_config
@@ -25,8 +25,7 @@ fn main() -> io::Result<()> {
     }
 
     // Copy the selected config file to `.config.yml`
-    fs::copy(&config_path, &target_config)
-        .expect("Failed to copy config file to .config.yml");
+    fs::copy(&config_path, &target_config).expect("Failed to copy config file to .config.yml");
 
     let target = std::env::var("TARGET").unwrap();
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
@@ -40,27 +39,26 @@ fn main() -> io::Result<()> {
             } else {
                 "i686-w64-mingw32-windres"
             };
-    
+
             // Compile the .rc file into a .res file using the selected windres
             let status = Command::new(windres)
                 .args(&["app.rc", "-O", "coff", "-o", "app.res"])
                 .status()
                 .expect("Failed to run windres");
-    
+
             if !status.success() {
                 eprintln!("Error: windres failed with exit code {}", status);
                 std::process::exit(1);
             }
-    
+
             // Link the .res file into the final binary
             println!("cargo:rustc-link-arg-bin=aralez=app.res");
         } else if host_os == "windows" {
             let mut res = WindowsResource::new();
-        
+
             // Set the manifest directly as a string
             res.set_manifest_file("app.manifest");
-            res.set_icon("assets/aralez.ico")
-            .compile()?;
+            res.set_icon("assets/aralez.ico").compile()?;
 
             if let Err(e) = res.compile() {
                 eprintln!("Failed to compile Windows resources: {}", e);
@@ -68,7 +66,6 @@ fn main() -> io::Result<()> {
             }
         }
     }
-    
 
     let tools_dir = Path::new("tools");
 
@@ -129,9 +126,33 @@ fn main() -> io::Result<()> {
         println!("Removed the ZIP file: {:?}", zip_file_path);
     }
 
+    // Add memory dump tool
+    let url =
+        "https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x64_rc2.exe";
+    let memdump_file_path = tools_dir.join("winpmem_mini_x64_rc2.exe");
+    // Download the ZIP file if it doesn't exist
+    if !memdump_file_path.exists() {
+        println!("Downloading winpmem_mini_x64_rc2.exe...");
+
+        let response = get(url).expect("Failed to send request");
+        if response.status().is_success() {
+            let content = response.bytes().expect("Failed to read response bytes");
+            let mut file = File::create(&memdump_file_path)
+                .expect("Failed to create winpmem_mini_x64_rc2.exe file");
+            file.write_all(&content)
+                .expect("Failed to write winpmem_mini_x64_rc2.exe file");
+            println!("Downloaded winpmem_mini_x64_rc2.exe successfully.");
+        } else {
+            panic!(
+                "Failed to download winpmem_mini_x64_rc2.exe file: {}",
+                response.status()
+            );
+        }
+    }
+
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=CONFIG_FILE");
     println!("cargo:rerun-if-changed=config");
-    
+
     Ok(())
 }

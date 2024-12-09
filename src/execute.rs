@@ -22,9 +22,11 @@ pub fn run_system(tool_name: &str, args: &[&str], output_filename: &str, output_
     // Create the full path for the output file
     let output_file_path = Path::new(output_path).join(output_filename);
 
+    let sanitized_args = sanitize_args(args, output_path);
+
     // Execute the command
     let output = Command::new(tool_name)
-        .args(args)
+        .args(sanitized_args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
@@ -99,9 +101,11 @@ pub fn run_external(
         }
     };
 
+    let sanitized_args = sanitize_args(args, output_path);
+
     // Execute the command and wait for completion
     let output = Command::new(&temp_exe_path)
-        .args(args)
+        .args(sanitized_args)
         .output();
 
     if let Err(e) = output {
@@ -139,6 +143,7 @@ pub fn get_bin(name: String) -> Result<&'static [u8], anyhow::Error> {
         "Listdlls.exe" => include_bytes!("../tools/Listdlls.exe"),
         "PsService.exe" => include_bytes!("../tools/PsService.exe"),
         "pipelist.exe" => include_bytes!("../tools/pipelist.exe"),
+        "winpmem_mini_x64_rc2.exe" => include_bytes!("../tools/winpmem_mini_x64_rc2.exe"),
         _ => return Err(anyhow::anyhow!(format!("[ERROR] {} not found", name))),
     };
 
@@ -181,3 +186,12 @@ fn cleanup_temp_file(temp_exe_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+fn sanitize_args(args: &[&str], output_path: &str) -> Vec<String> {
+    replace_placeholder(args,"{{root_path}}", output_path)
+}
+
+fn replace_placeholder(input: &[&str], placeholder: &str, value: &str) -> Vec<String> {
+    input.iter()
+        .map(|s| s.replace(placeholder, value))
+        .collect()
+}

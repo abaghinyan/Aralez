@@ -6,6 +6,17 @@
 # Author(s): Areg Baghinyan
 #
 tasks: 
+  memory:
+    priority: 0
+    type: "execute"
+    disabled: true
+    entries:
+      dump:
+        - name: "winpmem_mini_x64_rc2.exe"
+          args: ["{{root_path}}\\memdump.raw"]
+          output_file: "memdump_log.txt"
+          exec_type: "external"
+
   artifacts:
     type: "collect"
     priority: 1

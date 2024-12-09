@@ -345,18 +345,13 @@ where
     if let Ok(file_std_info) = file.info() {
         let modified_time: DateTime<Local> =
             nt_timestamp_to_datetime(file_std_info.modification_time().nt_timestamp());
-        let accessed_time: DateTime<Local> =
-            nt_timestamp_to_datetime(file_std_info.access_time().nt_timestamp());
 
         let modified_file_time = FileTime::from_system_time(add_timezone_offset_to_system_time(
             modified_time.into(),
             modified_time.offset().local_minus_utc().into(),
         ));
-        let accessed_file_time = FileTime::from_system_time(add_timezone_offset_to_system_time(
-            accessed_time.into(),
-            accessed_time.offset().local_minus_utc().into(),
-        ));
-        set_file_handle_times(&output_file, Some(accessed_file_time), Some(modified_file_time))
+
+        set_file_handle_times(&output_file, None, Some(modified_file_time))
             .map_err(|e| anyhow::anyhow!("[ERROR] Failed to set file timestamps: {}", e))?;
     }
     match output_file.flush() {

@@ -12,19 +12,16 @@ fn main() -> io::Result<()> {
     let config_filename = env::var("CONFIG_FILE").unwrap_or_else(|_| "config.yml".to_string());
     let config_path = Path::new("config").join(&config_filename);
 
-    // The target file where we will copy the configuration
     let target_config = Path::new("config").join(".config.yml");
 
-    // Check if the selected config file exists
     if !config_path.exists() {
         eprintln!(
             "Error: Configuration file '{}' not found.",
             config_path.display()
         );
-        std::process::exit(1); // Exit with an error code if file not found
+        std::process::exit(1);
     }
 
-    // Copy the selected config file to `.config.yml`
     fs::copy(&config_path, &target_config).expect("Failed to copy config file to .config.yml");
 
     let target = std::env::var("TARGET").unwrap();
@@ -33,14 +30,12 @@ fn main() -> io::Result<()> {
 
     if target_os == "windows" {
         if host_os == "linux" {
-            // Use the appropriate windres for 32-bit or 64-bit Windows targets
             let windres = if target.contains("x86_64") {
                 "x86_64-w64-mingw32-windres"
             } else {
                 "i686-w64-mingw32-windres"
             };
 
-            // Compile the .rc file into a .res file using the selected windres
             let status = Command::new(windres)
                 .args(&["app.rc", "-O", "coff", "-o", "app.res"])
                 .status()
@@ -51,12 +46,9 @@ fn main() -> io::Result<()> {
                 std::process::exit(1);
             }
 
-            // Link the .res file into the final binary
             println!("cargo:rustc-link-arg-bin=aralez=app.res");
         } else if host_os == "windows" {
             let mut res = WindowsResource::new();
-
-            // Set the manifest directly as a string
             res.set_manifest_file("app.manifest");
             res.set_icon("assets/aralez.ico").compile()?;
 
@@ -69,31 +61,68 @@ fn main() -> io::Result<()> {
 
     let tools_dir = Path::new("tools");
 
-    // Ensure the tools directory exists
     if !tools_dir.exists() {
         fs::create_dir_all(tools_dir).expect("Failed to create tools directory");
     }
 
-    // URL of the Sysinternals Suite ZIP file
-    let url = "https://download.sysinternals.com/files/SysinternalsSuite.zip";
-    let zip_file_path = tools_dir.join("SysinternalsSuite.zip");
+    let tools = vec![
+        ("https://download.sysinternals.com/files/SysinternalsSuite.zip", "SysinternalsSuite.zip"),
+        ("https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x64_rc2.exe", "winpmem_mini_x64_rc2.exe"),
+    ];
 
-    // Download the ZIP file if it doesn't exist
-    if !zip_file_path.exists() {
-        println!("Downloading SysinternalsSuite.zip...");
+    for (url, file_name) in tools {
+        let file_path = tools_dir.join(file_name);
 
-        let response = get(url).expect("Failed to send request");
-        if response.status().is_success() {
-            let content = response.bytes().expect("Failed to read response bytes");
-            let mut file = File::create(&zip_file_path).expect("Failed to create ZIP file");
-            file.write_all(&content).expect("Failed to write ZIP file");
-            println!("Downloaded SysinternalsSuite.zip successfully.");
+        if !file_path.exists() {
+            match download_file(url, &file_path) {
+                Ok(_) => println!("Downloaded {} successfully.", file_name),
+                Err(e) => {
+                    eprintln!("Error downloading {}: {}", file_name, e);
+                    println!("Offline mode: Skipping download for {}", file_name);
+                }
+            }
         } else {
-            panic!("Failed to download ZIP file: {}", response.status());
+            println!("File {} already exists, skipping download.", file_name);
         }
     }
 
-    // Extract specific .exe files from the ZIP
+    if let Err(e) = extract_sysinternals(&tools_dir) {
+        eprintln!("Error extracting Sysinternals tools: {}", e);
+    }
+
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=CONFIG_FILE");
+    println!("cargo:rerun-if-changed=config");
+
+    Ok(())
+}
+
+fn download_file(url: &str, destination: &Path) -> Result<(), String> {
+    match get(url) {
+        Ok(response) => {
+            if response.status().is_success() {
+                let content = response.bytes().map_err(|e| e.to_string())?;
+                let mut file = File::create(destination).map_err(|e| e.to_string())?;
+                file.write_all(&content).map_err(|e| e.to_string())?;
+                Ok(())
+            } else {
+                Err(format!("HTTP error: {}", response.status()))
+            }
+        }
+        Err(e) => Err(format!("Failed to connect: {}", e)),
+    }
+}
+
+fn extract_sysinternals(tools_dir: &Path) -> io::Result<()> {
+    let zip_file_path = tools_dir.join("SysinternalsSuite.zip");
+    if !zip_file_path.exists() {
+        println!("SysinternalsSuite.zip not found, skipping extraction.");
+        return Ok(());
+    }
+
+    let zip_file = File::open(&zip_file_path)?;
+    let mut archive = ZipArchive::new(zip_file)?;
+
     let exe_files = vec![
         "autorunsc.exe",
         "handle.exe",
@@ -104,55 +133,21 @@ fn main() -> io::Result<()> {
         "pipelist.exe",
     ];
 
-    let zip_file = File::open(&zip_file_path).expect("Failed to open ZIP file");
-    let mut archive = ZipArchive::new(zip_file).expect("Failed to read ZIP archive");
-
     for file_name in exe_files {
-        let mut file = archive
-            .by_name(file_name)
-            .expect(&format!("File {} not found in the archive", file_name));
+        let mut file = match archive.by_name(file_name) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
 
         let out_path = tools_dir.join(file_name);
         if !out_path.exists() {
-            let mut out_file = File::create(&out_path).expect("Failed to create output file");
-            io::copy(&mut file, &mut out_file).expect("Failed to extract file");
+            let mut out_file = File::create(&out_path)?;
+            io::copy(&mut file, &mut out_file)?;
             println!("Extracted {} to {:?}", file_name, out_path);
         }
     }
 
-    // Remove the ZIP file after extraction
-    if zip_file_path.exists() {
-        fs::remove_file(&zip_file_path).expect("Failed to remove the ZIP file");
-        println!("Removed the ZIP file: {:?}", zip_file_path);
-    }
-
-    // Add memory dump tool
-    let url =
-        "https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x64_rc2.exe";
-    let memdump_file_path = tools_dir.join("winpmem_mini_x64_rc2.exe");
-    // Download the ZIP file if it doesn't exist
-    if !memdump_file_path.exists() {
-        println!("Downloading winpmem_mini_x64_rc2.exe...");
-
-        let response = get(url).expect("Failed to send request");
-        if response.status().is_success() {
-            let content = response.bytes().expect("Failed to read response bytes");
-            let mut file = File::create(&memdump_file_path)
-                .expect("Failed to create winpmem_mini_x64_rc2.exe file");
-            file.write_all(&content)
-                .expect("Failed to write winpmem_mini_x64_rc2.exe file");
-            println!("Downloaded winpmem_mini_x64_rc2.exe successfully.");
-        } else {
-            panic!(
-                "Failed to download winpmem_mini_x64_rc2.exe file: {}",
-                response.status()
-            );
-        }
-    }
-
-    println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-env-changed=CONFIG_FILE");
-    println!("cargo:rerun-if-changed=config");
+    fs::remove_file(&zip_file_path).expect("Failed to remove the ZIP file");
 
     Ok(())
 }

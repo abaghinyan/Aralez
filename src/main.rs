@@ -47,6 +47,10 @@ struct Cli {
     /// Show the configuration file and exit
     #[arg(long)]
     show_config: bool,
+
+    /// Specify the default drive to process
+    #[arg(long, default_value = "C")]
+    default_drive: String,
 }
 
 const MSG_ERROR_CONFIG: &str = "[ERROR] Config error";
@@ -104,6 +108,12 @@ fn update_embedded_config(new_config_path: &str, output_exe_path: &str) -> std::
     Ok(())
 }
 
+/// Helper function to check if the drive exists
+fn is_drive_accessible(drive: &str) -> bool {
+    let drive_path = format!("{}:\\", drive);
+    fs::metadata(&drive_path).is_ok()
+}
+
 fn main() -> Result<(), anyhow::Error> {
     // Print the welcome message
     println!(
@@ -124,6 +134,13 @@ fn main() -> Result<(), anyhow::Error> {
                 .long("debug")
                 .help("Activate debug mode")
                 .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("default_drive")
+                .long("default_drive")
+                .help("Specify the default drive to process (default: C)")
+                .value_name("DRIVE")
+                .default_value("C"),
         )
         .arg(
             Arg::new("show_config")
@@ -216,6 +233,10 @@ fn main() -> Result<(), anyhow::Error> {
 
     spinner.set_message("Starting tasks...");
 
+    // Parse the default drive
+    let c_drive = "C".to_string();
+    let default_drive = matches.get_one::<String>("default_drive").unwrap_or(&c_drive);
+
     let sorted_tasks = config.get_tasks();
     for (section_name, mut section_config) in sorted_tasks {
         if let Some(disabled_task) = section_config.disabled {
@@ -230,13 +251,18 @@ fn main() -> Result<(), anyhow::Error> {
                 let drive: String = section_config
                     .drive
                     .clone()
-                    .unwrap_or_else(|| "C".to_string());
+                    .unwrap_or_else(|| default_drive.to_string());
                 spinner.set_message(format!("Processing: {} drive", drive));
 
                 if drive == "*" {
                     process_all_drives(&mut section_config, root_output)?;
                 } else {
-                    process_drive_artifacts(&drive, &mut section_config, root_output)?;
+                    // Check if the drive exists
+                    if !is_drive_accessible(&drive) {
+                        dprintln!("[ERROR] Drive {} is not accessible or does not exist", drive);
+                    } else {
+                        process_drive_artifacts(&drive, &mut section_config, root_output)?;
+                    }
                 }
             }
             config::TypeTasks::Execute => {

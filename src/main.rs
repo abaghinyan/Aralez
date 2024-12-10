@@ -274,16 +274,62 @@ fn main() -> Result<(), anyhow::Error> {
                             let executor = executor_iter.clone();
                             match executor.exec_type {
                                 Some(exec_type) => {
-                                    let output_path = format!("{}\\{}", root_output, "tools"); // Adjust the path as necessary
+                                    let output_path = root_output; // Adjust the path as necessary
                                     ensure_directory_exists(&output_path)
                                         .expect("Failed to create or access output directory");
 
-                                    let args: Vec<&str> = match executor.args {
+                                    // Sanitize args
+                                    let args_refs: Vec<String> = match executor.args {
                                         Some(ref args_array) => {
-                                            args_array.iter().map(String::as_str).collect()
+                                            args_array
+                                                .iter()
+                                                .map(|arg| {
+                                                    let mut updated_arg = arg.to_string();
+                                                    if  arg.contains("{{root_output_path}}") {
+                                                        updated_arg = arg.replace("{{root_output_path}}", output_path);
+                                                        if let Some(pos) = updated_arg.rfind('\\') {
+                                                            let directory_path = &updated_arg[..pos];
+                                                            match ensure_directory_exists(directory_path) {
+                                                                Ok(_) => dprintln!("[INFO] Directory {} is created", directory_path),
+                                                                Err(e) => dprintln!(
+                                                                    "[ERROR] Directory {} can't be created: {}",
+                                                                    directory_path,
+                                                                    e.to_string()
+                                                                ),
+                                                            }
+                                                        }
+                                                    } 
+                                                    updated_arg
+                                                })
+                                                .collect()
                                         }
                                         None => Vec::new(),
                                     };
+                                    let args: Vec<&str> = args_refs.iter().map(String::as_str).collect();
+                                    
+                                    // Sanitize output_file
+                                    let updated_output_file = match executor.output_file {
+                                        Some(output_file) => {
+                                            let mut updated_output_file: String = output_file.to_string();
+                                            if  output_file.contains("{{root_output_path}}") {
+                                                updated_output_file = output_file.replace("{{root_output_path}}", output_path);
+                                                if let Some(pos) = updated_output_file.rfind('\\') {
+                                                    let directory_path = &updated_output_file[..pos];
+                                                    match ensure_directory_exists(directory_path) {
+                                                        Ok(_) => dprintln!("[INFO] Directory {} is created", directory_path),
+                                                        Err(e) => dprintln!(
+                                                            "[ERROR] Directory {} can't be created: {}",
+                                                            directory_path,
+                                                            e.to_string()
+                                                        ),
+                                                    }
+                                                }
+                                            }
+                                            updated_output_file
+                                        },
+                                        None => "".to_string(),
+                                    };
+                                    let output_file = updated_output_file.as_str();
 
                                     match exec_type {
                                         config::TypeExec::External => {
@@ -303,10 +349,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                             .expect(MSG_ERROR_CONFIG)
                                                             .as_str(),
                                                         &output_path,
-                                                        &executor
-                                                            .output_file
-                                                            .expect(MSG_ERROR_CONFIG)
-                                                            .as_str(),
+                                                        &output_file,
                                                         &args,
                                                     );
                                                 }
@@ -314,14 +357,12 @@ fn main() -> Result<(), anyhow::Error> {
                                             }
                                         }
                                         config::TypeExec::Internal => {
-                                            let filename =
-                                                executor.output_file.expect(MSG_ERROR_CONFIG);
                                             let tool_name = executor.name.expect(MSG_ERROR_CONFIG);
                                             spinner.set_message(format!(
                                                 "Processing: {} tool",
                                                 tool_name
                                             ));
-                                            run_internal(&tool_name, &filename, &output_path);
+                                            run_internal(&tool_name, &output_file);
                                         }
                                         config::TypeExec::System => {
                                             let executor_name =
@@ -333,8 +374,7 @@ fn main() -> Result<(), anyhow::Error> {
                                             run_system(
                                                 &executor_name,
                                                 &args,
-                                                &executor.output_file.expect(MSG_ERROR_CONFIG),
-                                                &output_path,
+                                                &output_file,
                                             );
                                         }
                                     }

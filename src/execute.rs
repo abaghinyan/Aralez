@@ -16,17 +16,15 @@ use std::io::{self, Write};
 use std::fs::{File, remove_file};
 use std::path::{Path, PathBuf};
 
-pub fn run_system(tool_name: &str, args: &[&str], output_filename: &str, output_path: &str) {
+pub fn run_system(tool_name: &str, args: &[&str], output_filename: &str) {
     dprintln!("[INFO] Execution of {} {:?}", tool_name, args);
 
     // Create the full path for the output file
-    let output_file_path = Path::new(output_path).join(output_filename);
-
-    let sanitized_args = sanitize_args(args, output_path);
+    let output_file_path = Path::new(output_filename);
 
     // Execute the command
     let output = Command::new(tool_name)
-        .args(sanitized_args)
+        .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
@@ -58,11 +56,11 @@ pub fn run_system(tool_name: &str, args: &[&str], output_filename: &str, output_
     dprintln!("[INFO] Execution of {} completed", tool_name);
 }
 
-pub fn run_internal(tool_name:&str, output_filename: &str, output_path: &str) {
+pub fn run_internal(tool_name:&str, output_filename: &str) {
     dprintln!("[INFO] Execution of {}", tool_name);
 
     // Create the full path for the output file
-    let output_file_path = Path::new(output_path).join(output_filename);
+    let output_file_path = Path::new(output_filename);
 
     match tool_name {
         "ProcInfo" => {
@@ -79,7 +77,7 @@ pub fn run_internal(tool_name:&str, output_filename: &str, output_path: &str) {
             return;
         }
     }
-    dprintln!("[INFO] Tool output has been saved to: {}", output_path);
+    dprintln!("[INFO] Tool output has been saved to: {}", output_filename);
     dprintln!("[INFO] Execution of {} completed", tool_name);
 }
 
@@ -101,11 +99,9 @@ pub fn run_external(
         }
     };
 
-    let sanitized_args = sanitize_args(args, output_path);
-
     // Execute the command and wait for completion
     let output = Command::new(&temp_exe_path)
-        .args(sanitized_args)
+        .args(args)
         .output();
 
     if let Err(e) = output {
@@ -121,7 +117,7 @@ pub fn run_external(
     }
 
     // Save the result to the specified output path
-    if let Err(e) = save_output_to_file(&output.stdout, output_file, output_path) {
+    if let Err(e) = save_output_to_file(&output.stdout, output_file) {
         dprintln!("[ERROR] Failed to save output to file: {}", e);
     }
 
@@ -170,8 +166,8 @@ fn save_to_temp_file(_filename: &str, exe_bytes: &[u8], output_path: &str) -> io
     Ok(output_file_path)
 }
 
-fn save_output_to_file(output: &[u8], output_filename: &str, output_path: &str) -> io::Result<()> {
-    let output_file_path = Path::new(output_path).join(output_filename);
+fn save_output_to_file(output: &[u8], output_filename: &str) -> io::Result<()> {
+    let output_file_path = Path::new(output_filename);
     let mut file = File::create(output_file_path)?;
     file.write_all(output)?;
     file.flush()?;
@@ -184,14 +180,4 @@ fn cleanup_temp_file(temp_exe_path: &Path) -> io::Result<()> {
         remove_file(temp_exe_path)?;
     }
     Ok(())
-}
-
-fn sanitize_args(args: &[&str], output_path: &str) -> Vec<String> {
-    replace_placeholder(args,"{{root_path}}", output_path)
-}
-
-fn replace_placeholder(input: &[&str], placeholder: &str, value: &str) -> Vec<String> {
-    input.iter()
-        .map(|s| s.replace(placeholder, value))
-        .collect()
 }

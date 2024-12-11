@@ -242,22 +242,22 @@ fn main() -> Result<(), anyhow::Error> {
                 continue;
             }
         }
-        dprintln!("[INFO] == Starting task {} ==", section_name);
-        spinner.set_message(format!("Processing: {} task", section_name));
+        dprintln!("[INFO] == Starting task `{}` ==", section_name);
+        spinner.set_message(format!("Processing: `{}` task", section_name));
         match section_config.r#type {
             config::TypeTasks::Collect => {
                 let drive: String = section_config
                     .drive
                     .clone()
                     .unwrap_or_else(|| default_drive.to_string());
-                spinner.set_message(format!("Processing: {} drive", drive));
+                spinner.set_message(format!("Processing: `{}` drive", drive));
 
                 if drive == "*" {
                     process_all_drives(&mut section_config, root_output)?;
                 } else {
                     // Check if the drive exists
                     if !is_drive_accessible(&drive) {
-                        dprintln!("[ERROR] Drive {} is not accessible or does not exist", drive);
+                        dprintln!("[ERROR] Drive `{}` is not accessible or does not exist", drive);
                     } else {
                         process_drive_artifacts(&drive, &mut section_config, root_output)?;
                     }
@@ -322,7 +322,7 @@ fn main() -> Result<(), anyhow::Error> {
                                             let executor_name =
                                                 executor.name.clone().expect(MSG_ERROR_CONFIG);
                                             spinner.set_message(format!(
-                                                "Processing: {} tool",
+                                                "Processing: `{}` tool",
                                                 executor_name
                                             ));
                                             match get_bin(executor_name) {
@@ -345,7 +345,7 @@ fn main() -> Result<(), anyhow::Error> {
                                         config::TypeExec::Internal => {
                                             let tool_name = executor.name.expect(MSG_ERROR_CONFIG);
                                             spinner.set_message(format!(
-                                                "Processing: {} tool",
+                                                "Processing: `{}` tool",
                                                 tool_name
                                             ));
                                             run_internal(&tool_name, &output_file);
@@ -354,7 +354,7 @@ fn main() -> Result<(), anyhow::Error> {
                                             let executor_name =
                                                 executor.name.expect(MSG_ERROR_CONFIG);
                                             spinner.set_message(format!(
-                                                "Processing: {} tool",
+                                                "Processing: `{}` tool",
                                                 executor_name
                                             ));
                                             run (

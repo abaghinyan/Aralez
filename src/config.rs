@@ -48,6 +48,12 @@ pub enum TypeConfig {
     Glob,
 }
 
+#[derive(PartialEq)]
+pub enum ExecType {
+    External,
+    System
+}
+
 // Implement IntoIterator for `&Entries`
 impl<'a> IntoIterator for &'a Entries {
     type Item = (&'a String, &'a Vec<SearchConfig>);

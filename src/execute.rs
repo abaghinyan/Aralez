@@ -11,45 +11,14 @@ mod process;
 mod process_details;
 
 use std::process::{Command, Stdio};
-use std::fs;
 use std::io::{self, Write};
 use std::fs::{File, remove_file};
 use std::path::{Path, PathBuf};
 
-pub fn run_system(tool_name: &str, args: &[&str], output_filename: &str) {
-    dprintln!("[INFO] Execution of {} {:?}", tool_name, args);
-
-    // Create the full path for the output file
-    let output_file_path = Path::new(output_filename);
-
-    // Execute the command
-    let output = Command::new(tool_name)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output();
-
-    if let Err(e) = output {
-        dprintln!("[ERROR] Failed to execute tool `{}`: {}", tool_name, e);
-        return; // Return early to continue the main process without stopping
-    }
-
-    let output = output.unwrap(); // Safe unwrap because we handled the error above
-
-    dprintln!("[INFO] Exit code of tool_name: {:?}", output.status.code().unwrap_or(-1));
-
-    // Write the output to the specified file
-    if let Err(e) = fs::File::create(&output_file_path).and_then(|mut file| file.write_all(&output.stdout)) {
-        dprintln!("[ERROR] Failed to write tool output to file `{}`: {}", output_file_path.display(), e);
-        return; // Return early if writing the output fails
-    }
-
-    dprintln!("[INFO] Tool output has been saved to: {}", output_file_path.display());
-    dprintln!("[INFO] Execution of {} completed", tool_name);
-}
+use crate::config::ExecType;
 
 pub fn run_internal(tool_name:&str, output_filename: &str) {
-    dprintln!("[INFO] Execution of {}", tool_name);
+    dprintln!("[INFO] > `{}` | Starting execution", tool_name);
 
     // Create the full path for the output file
     let output_file_path = Path::new(output_filename);
@@ -65,58 +34,98 @@ pub fn run_internal(tool_name:&str, output_filename: &str) {
             network_info::run_network_info(&output_file_path);
         }
         &_ => {
-            dprintln!("[ERROR] Internal tool {} not found", tool_name);
+            dprintln!("[ERROR] > `{}` | Internal tool not found", tool_name);
             return;
         }
     }
-    dprintln!("[INFO] Tool output has been saved to: {}", output_filename);
-    dprintln!("[INFO] Execution of {} completed", tool_name);
+    dprintln!("[INFO] > `{}` | The output has been saved to: {}", tool_name, output_filename);
+    dprintln!("[INFO] > `{}` | Execution completed", tool_name);
 }
 
-pub fn run_external(
-    exe_bytes: &[u8], 
-    filename: &str, 
-    output_path: &str, 
-    output_file: &str, 
-    args: &[&str]
+pub fn run (
+    mut name: String, 
+    args: &[&str],
+    exec_type: ExecType,
+    exe_bytes: Option<&[u8]>, 
+    output_path: Option<&str>, 
+    output_file: &str
 ) {
-    dprintln!("[INFO] Execution of {} {:?}", filename, args);
+    let mut display_name = name.clone();
+    if exec_type == ExecType::External {
+        // Save the executable to a temporary file
+        let buffer = match exe_bytes {
+            Some(bytes) => bytes,
+            None => {
+                dprintln!("[ERROR] > `{}` | Content of the external file not found", name);
+                return;
+            },
+        };
+        let path = match output_path {
+            Some(p) => p,
+            None => {
+                dprintln!("[ERROR] > `{}` | The output path for the executable not found", name);
+                return;
+            },
+        };
+        let temp_exe_path = match save_to_temp_file(&name, buffer, path) {
+            Ok(path) => path,  // If saving succeeds, use the path
+            Err(e) => {
+                dprintln!("[ERROR] > `{}` | Failed to save to temp file: {}", name, e);
+                return;  // Exit the function if there's an error
+            }
+        };
+        
+        name = temp_exe_path.to_string_lossy().to_string();
 
-    // Save the executable to a temporary file
-    let temp_exe_path = match save_to_temp_file(filename, exe_bytes, output_path) {
-        Ok(path) => path,  // If saving succeeds, use the path
+        // Get the filename
+        let tmp_display_name = temp_exe_path.file_name().and_then(|os_str| os_str.to_str()).unwrap_or(&name.as_str());
+        display_name = tmp_display_name.to_string();
+    }
+
+    // Execute the command and wait for completion
+    let child = match Command::new(&name)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => {
+            dprintln!("[INFO] > `{}` ({}) | Starting execution with args: {:?}", display_name, &child.id(), args);
+            child
+        }
         Err(e) => {
-            dprintln!("[ERROR] Failed to save to temp file: {}", e);
-            return;  // Exit the function if there's an error
+            dprintln!("[ERROR] > `{}` | Failed to spawn process: {}", display_name, e);
+            return;
         }
     };
 
-    // Execute the command and wait for completion
-    let output = Command::new(&temp_exe_path)
-        .args(args)
-        .output();
+    let pid = child.id();
 
-    if let Err(e) = output {
-        dprintln!("[ERROR] Failed to execute file: {}", e);
-        return; // Exit if execution fails
-    }
+    // Wait for the process to finish and capture its output
+    let output = match child.wait_with_output() {
+        Ok(output) => output,
+        Err(e) => {
+            dprintln!("[ERROR] > `{}` ({}) | Failed to execute: {}", display_name, pid, e);
+            return;
+        }
+    }; 
 
-    let output = output.unwrap(); // Safe because we already handled the error
-
-    dprintln!("[INFO] Exit code of {}: {:?}", filename, output.status.code().unwrap_or(-1));
+    dprintln!("[INFO] > `{}` ({}) | Exit code: {:?}", display_name, pid, output.status.code().unwrap_or(-1));
 
     // Save the result to the specified output path
     if let Err(e) = save_output_to_file(&output.stdout, output_file) {
-        dprintln!("[ERROR] Failed to save output to file: {}", e);
+        dprintln!("[ERROR] > `{}` ({}) | Failed to save output to file: {}", display_name, pid, e);
     }
 
-    // Clean up the temporary file
-    if let Err(e) = cleanup_temp_file(&temp_exe_path) {
-        dprintln!("[ERROR] Failed to clean up temp file: {}", e);
+    if exec_type == ExecType::External {
+        // Clean up the temporary file
+        if let Err(e) = cleanup_temp_file(&name) {
+            dprintln!("[ERROR] > `{}` ({}) | Failed to clean up temp file: {}", display_name, pid, e);
+        }
     }
 
-    dprintln!("[INFO] Tool output has been saved to: {}", output_path);
-    dprintln!("[INFO] Execution of {} completed", filename);
+    dprintln!("[INFO] > `{}` ({}) | The output has been saved to: {}", display_name, pid, output_file);
+    dprintln!("[INFO] > `{}` ({}) | Execution completed", display_name, pid);
 }
 
 pub fn get_bin(name: String) -> Result<&'static [u8], anyhow::Error> {
@@ -135,7 +144,7 @@ pub fn get_bin(name: String) -> Result<&'static [u8], anyhow::Error> {
     Ok(exe_bytes)
 }
 
-fn save_to_temp_file(_filename: &str, exe_bytes: &[u8], output_path: &str) -> io::Result<PathBuf> {
+fn save_to_temp_file(_filename: &String, exe_bytes: &[u8], output_path: &str) -> io::Result<PathBuf> {
     // Get the temp directory
     let output_file_path = Path::new(output_path).join(_filename);
 
@@ -163,10 +172,11 @@ fn save_output_to_file(output: &[u8], output_filename: &str) -> io::Result<()> {
     Ok(())
 }
 
-fn cleanup_temp_file(temp_exe_path: &Path) -> io::Result<()> {
-    dprintln!("[INFO] {:?}", temp_exe_path);
-    if temp_exe_path.exists() {
-        remove_file(temp_exe_path)?;
+fn cleanup_temp_file(temp_exe_path: &str) -> io::Result<()> {
+    dprintln!("[INFO] > `{:?}` : Remove the temporary file", temp_exe_path);
+    let exec_path = Path::new(temp_exe_path);
+    if exec_path.exists() {
+        remove_file(exec_path)?;
     }
     Ok(())
 }

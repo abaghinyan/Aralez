@@ -17,10 +17,8 @@ mod utils;
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
-use config::Config;
-use execute::run_external;
-use execute::run_system;
-use execute::{get_bin, run_internal};
+use config::{Config, ExecType};
+use execute::{get_bin, run, run_internal};
 use indicatif::{ProgressBar, ProgressStyle};
 use ntfs_reader::{process_all_drives, process_drive_artifacts};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -244,7 +242,7 @@ fn main() -> Result<(), anyhow::Error> {
                 continue;
             }
         }
-        dprintln!("[INFO] START TASK {}", section_name);
+        dprintln!("[INFO] == Starting task {} ==", section_name);
         spinner.set_message(format!("Processing: {} task", section_name));
         match section_config.r#type {
             config::TypeTasks::Collect => {
@@ -329,16 +327,16 @@ fn main() -> Result<(), anyhow::Error> {
                                             ));
                                             match get_bin(executor_name) {
                                                 Ok(bin) => {
-                                                    run_external(
-                                                        bin,
-                                                        &executor
+                                                    run (
+                                                        executor
                                                             .name
                                                             .clone()
-                                                            .expect(MSG_ERROR_CONFIG)
-                                                            .as_str(),
-                                                        &output_path,
-                                                        &output_file,
+                                                            .expect(MSG_ERROR_CONFIG),
                                                         &args,
+                                                        config::ExecType::External,
+                                                        Some(bin),
+                                                        Some(&output_path),
+                                                        &output_file
                                                     );
                                                 }
                                                 Err(e) => dprintln!("{}", e),
@@ -359,10 +357,13 @@ fn main() -> Result<(), anyhow::Error> {
                                                 "Processing: {} tool",
                                                 executor_name
                                             ));
-                                            run_system(
-                                                &executor_name,
+                                            run (
+                                                executor_name,
                                                 &args,
-                                                &output_file,
+                                                ExecType::System,
+                                                None,
+                                                None,
+                                                &output_file
                                             );
                                         }
                                     }

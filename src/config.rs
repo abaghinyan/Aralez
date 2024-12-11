@@ -397,8 +397,8 @@ impl Config {
             .rposition(|window| window == marker) // rposition finds the last occurrence
     }
 
-    pub fn save(&self, output_dir: &str) -> std::io::Result<()> {
-        let yaml_string = serde_yaml::to_string(&self).expect("Failed to serialize config to YAML");
+    pub fn save(&self, output_dir: &str) -> Result<()> {
+        let data = Config::get_raw_data()?;
 
         // Ensure the root_output folder exists
         let path = Path::new(output_dir);
@@ -411,7 +411,7 @@ impl Config {
 
         // Write the YAML string to the file
         let mut file = File::create(config_file_path)?;
-        file.write_all(yaml_string.as_bytes())?;
+        file.write_all(data.as_bytes())?;
         Ok(())
     }
 

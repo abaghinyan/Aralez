@@ -289,14 +289,8 @@ fn main() -> Result<(), anyhow::Error> {
                                                         updated_arg = arg.replace("{{root_output_path}}", output_path);
                                                         if let Some(pos) = updated_arg.rfind('\\') {
                                                             let directory_path = &updated_arg[..pos];
-                                                            match ensure_directory_exists(directory_path) {
-                                                                Ok(_) => dprintln!("[INFO] Directory {} is created", directory_path),
-                                                                Err(e) => dprintln!(
-                                                                    "[ERROR] Directory {} can't be created: {}",
-                                                                    directory_path,
-                                                                    e.to_string()
-                                                                ),
-                                                            }
+                                                            ensure_directory_exists(directory_path)
+                                                                .expect("Failed to create or access output directory");
                                                         }
                                                     } 
                                                     updated_arg
@@ -306,7 +300,7 @@ fn main() -> Result<(), anyhow::Error> {
                                         None => Vec::new(),
                                     };
                                     let args: Vec<&str> = args_refs.iter().map(String::as_str).collect();
-                                    
+
                                     // Sanitize output_file
                                     let updated_output_file = match executor.output_file {
                                         Some(output_file) => {
@@ -315,14 +309,8 @@ fn main() -> Result<(), anyhow::Error> {
                                                 updated_output_file = output_file.replace("{{root_output_path}}", output_path);
                                                 if let Some(pos) = updated_output_file.rfind('\\') {
                                                     let directory_path = &updated_output_file[..pos];
-                                                    match ensure_directory_exists(directory_path) {
-                                                        Ok(_) => dprintln!("[INFO] Directory {} is created", directory_path),
-                                                        Err(e) => dprintln!(
-                                                            "[ERROR] Directory {} can't be created: {}",
-                                                            directory_path,
-                                                            e.to_string()
-                                                        ),
-                                                    }
+                                                    ensure_directory_exists(directory_path)
+                                                        .expect("Failed to create or access output directory");
                                                 }
                                             }
                                             updated_output_file

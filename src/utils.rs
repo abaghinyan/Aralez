@@ -493,7 +493,7 @@ pub fn ensure_directory_exists(path: &str) -> std::io::Result<()> {
     let path = Path::new(path);
     if !path.exists() {
         fs::create_dir_all(path)?;
-        dprintln!("[INFO] Created output directory: {}", path.display());
+        dprintln!("[INFO] Directory {} is created", path.display());
     }
     Ok(())
 }

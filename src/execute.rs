@@ -36,15 +36,7 @@ pub fn run_system(tool_name: &str, args: &[&str], output_filename: &str) {
 
     let output = output.unwrap(); // Safe unwrap because we handled the error above
 
-    // Check if the execution was successful
-    if !output.status.success() {
-        dprintln!(
-            "[ERROR] Command `{}` failed with status: {}",
-            tool_name,
-            output.status
-        );
-        return; // Continue without further execution if the command failed
-    }
+    dprintln!("[INFO] Exit code of tool_name: {:?}", output.status.code().unwrap_or(-1));
 
     // Write the output to the specified file
     if let Err(e) = fs::File::create(&output_file_path).and_then(|mut file| file.write_all(&output.stdout)) {
@@ -111,10 +103,7 @@ pub fn run_external(
 
     let output = output.unwrap(); // Safe because we already handled the error
 
-    // Check the exit status
-    if !output.status.success() {
-        dprintln!("[ERROR] Command failed with exit code: {:?}", output.status.code());
-    }
+    dprintln!("[INFO] Exit code of {}: {:?}", filename, output.status.code().unwrap_or(-1));
 
     // Save the result to the specified output path
     if let Err(e) = save_output_to_file(&output.stdout, output_file) {

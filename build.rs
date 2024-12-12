@@ -147,7 +147,9 @@ fn extract_sysinternals(tools_dir: &Path) -> io::Result<()> {
         }
     }
 
-    fs::remove_file(&zip_file_path).expect("Failed to remove the ZIP file");
+    if fs::metadata(&zip_file_path).is_ok() {
+        fs::remove_file(&zip_file_path).expect("Failed to remove the ZIP file");
+    }
 
     Ok(())
 }

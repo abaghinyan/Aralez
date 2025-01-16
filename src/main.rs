@@ -431,34 +431,35 @@ fn add_directory_to_zip<W: Write + Seek>(
         let entry = entry?;
         let path = entry.path();
         let name = format!("{}{}", parent_dir, entry.file_name().to_string_lossy());
+        if path.exists() {
+            if path.is_dir() {
+                zip.add_directory(&format!("{}/", name), *options)?;
+                add_directory_to_zip(zip, &path, &format!("{}/", name), options)?;
+            } else {
+                let mut file = File::open(&path)?;
 
-        if path.is_dir() {
-            zip.add_directory(&format!("{}/", name), *options)?;
-            add_directory_to_zip(zip, &path, &format!("{}/", name), options)?;
-        } else {
-            let mut file = File::open(&path)?;
+                // Retrieve last modified time and convert to DateTime components
+                let metadata = file.metadata()?;
+                let modified_time = metadata.modified()?.duration_since(UNIX_EPOCH).unwrap_or_default();
+                let datetime = DateTime::<Utc>::from(UNIX_EPOCH + modified_time);
+                let naive_datetime = datetime.naive_utc();
 
-            // Retrieve last modified time and convert to DateTime components
-            let metadata = file.metadata()?;
-            let modified_time = metadata.modified()?.duration_since(UNIX_EPOCH).unwrap_or_default();
-            let datetime = DateTime::<Utc>::from(UNIX_EPOCH + modified_time);
-            let naive_datetime = datetime.naive_utc();
+                // Convert to ZipDateTime using date and time components
+                let zip_datetime = ZipDateTime::from_date_and_time(
+                    naive_datetime.year() as u16,
+                    naive_datetime.month() as u8,
+                    naive_datetime.day() as u8,
+                    naive_datetime.hour() as u8,
+                    naive_datetime.minute() as u8,
+                    naive_datetime.second() as u8,
+                ).unwrap_or_else(|_| ZipDateTime::default_for_write());
 
-            // Convert to ZipDateTime using date and time components
-            let zip_datetime = ZipDateTime::from_date_and_time(
-                naive_datetime.year() as u16,
-                naive_datetime.month() as u8,
-                naive_datetime.day() as u8,
-                naive_datetime.hour() as u8,
-                naive_datetime.minute() as u8,
-                naive_datetime.second() as u8,
-            ).unwrap_or_else(|_| ZipDateTime::default_for_write());
+                // Set options with the zip DateTime
+                let file_options = options.clone().last_modified_time(zip_datetime);
 
-            // Set options with the zip DateTime
-            let file_options = options.clone().last_modified_time(zip_datetime);
-
-            zip.start_file(name, file_options)?;
-            io::copy(&mut file, zip)?;
+                zip.start_file(name, file_options)?;
+                io::copy(&mut file, zip)?;
+            }
         }
     }
 

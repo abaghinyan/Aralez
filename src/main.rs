@@ -123,15 +123,9 @@ pub fn add_resource(
             return Err(io::Error::last_os_error());
         }
 
-        println!(
-            "Resource `{}` successfully added to `{}`.",
-            resource_name, output_path
-        );
-
         return Ok(());
     }
 
-    dprintln!("[ERROR] Problem to add the external tool in the resource");
     Err(io::Error::last_os_error())
 }
 
@@ -198,8 +192,6 @@ pub fn remove_resource(resource_name: &str, output_path: &str) -> io::Result<()>
     if commit_result == 0 {
         return Err(io::Error::last_os_error());
     }
-
-    println!("Resource `{}` removed successfully from `{}`.", resource_name, output_path);
 
     Ok(())
 }
@@ -282,7 +274,7 @@ fn update_embedded_config(new_config_path: &str, output_exe_path: &str) -> std::
     new_exe_file.write_all(config::CONFIG_MARKER_END)?;
 
     println!(
-        "New executable with updated config created at: {}",
+        "[INFO] New executable with updated config created at: {}",
         output_exe_path
     );
 
@@ -339,34 +331,27 @@ fn main() -> Result<(), anyhow::Error> {
             Arg::new("change_config")
                 .long("change_config")
                 .help("Change the embedded configuration file")
-                .value_name("CONFIG_FILE")
+                .value_names(&["CONFIG_FILE", "OUTPUT_FILE"])
                 .value_hint(clap::ValueHint::FilePath)
-                .required(false),
-        )
-        .arg(
-            Arg::new("output")
-                .long("output")
-                .help("Specify the output executable file name when changing the embedded configuration")
-                .value_name("OUTPUT_FILE")
-                .value_hint(clap::ValueHint::FilePath)
-                .requires("change_config")
-                .requires("add_tool")
+                .num_args(2)
                 .required(false),
         )
         .arg(
             Arg::new("add_tool")
                 .long("add_tool")
                 .help("Add a new executable tool to the resources")
-                .value_name("EXECUTABLE_TOOL_PATH")
+                .value_names(&["EXECUTABLE_TOOL_PATH", "OUTPUT_FILE"])
                 .value_hint(clap::ValueHint::FilePath)
+                .num_args(2)
                 .required(false),
         )
         .arg(
             Arg::new("remove_tool")
                 .long("remove_tool")
                 .help("Remove an executable tool to the resources")
-                .value_name("EXECUTABLE_TOOL_NAME")
+                .value_names(&["EXECUTABLE_TOOL_NAME", "OUTPUT_FILE"])
                 .value_hint(clap::ValueHint::Other)
+                .num_args(2)
                 .required(false),
         )
         .arg(
@@ -375,19 +360,17 @@ fn main() -> Result<(), anyhow::Error> {
                 .help("List all external tools")
                 .action(clap::ArgAction::SetTrue),
         )
-        .group(
-            clap::ArgGroup::new("actions")
-                .args(["change_config", "add_tool", "remove_tool"])
-                .required(false), 
-        )
         .help_template(HELP_TEMPLATE)
         .get_matches();
 
     // Handle changing the embedded configuration
-    if let Some(config_path) = matches.get_one::<String>("change_config") {
+    if let Some(values) = matches.get_many::<String>("change_config") {
+        let args: Vec<_> = values.collect();
+        let config_path = args[0];
+        let output_path = args[1];
         match Config::check_config_file(&config_path) {
             Ok(_) => {
-                if let Some(output_path) = matches.get_one::<String>("output") {
+                if !output_path.is_empty() {
                     update_embedded_config(config_path, output_path)?;
                 } else {
                     return Err(anyhow::anyhow!(
@@ -402,9 +385,15 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Add new tool
-    if let Some(tool_path) = matches.get_one::<String>("add_tool") {
-        if let Some(output_path) = matches.get_one::<String>("output") {
-            add_resource(tool_path, output_path)?;
+    if let Some(values) = matches.get_many::<String>("add_tool") {
+        let args: Vec<_> = values.collect();
+        let tool_path = args[0];
+        let output_path = args[1];
+        if !output_path.is_empty() {
+            match add_resource(tool_path, output_path) {
+                Ok(_) => println!("[INFO] The tool `{}` was successfully added to `{}`.",tool_path, output_path),
+                Err(_) => println!("[ERROR] Problem to add the external tool {} in the resource.", tool_path),
+            }
         } else {
             return Err(anyhow::anyhow!(
                 "[ERROR] Output file name is required when adding external tool"
@@ -414,10 +403,13 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Remove tool
-    if let Some(tool_name) = matches.get_one::<String>("remove_tool") {
-        if let Some(output_path) = matches.get_one::<String>("output") {
+    if let Some(values) = matches.get_many::<String>("remove_tool") {
+        let args: Vec<_> = values.collect();
+        let tool_name = args[0];
+        let output_path = args[1];
+        if !output_path.is_empty() {
             match remove_resource(tool_name, output_path) {
-                Ok(_) => println!("[INFO] Resource {} was deleted", tool_name),
+                Ok(_) => println!("[INFO] Resource {} was removed successfully from {}.", tool_name, output_path),
                 Err(_) => {
                     println!("[WARN] Tool doesn't exist or is static")
                 },

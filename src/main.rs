@@ -15,9 +15,10 @@ mod sector_reader;
 mod utils;
 
 use std::ffi::CString;
-use windows_sys::Win32::System::LibraryLoader::BeginUpdateResourceA;
-use windows_sys::Win32::System::LibraryLoader::EndUpdateResourceA;
-use windows_sys::Win32::System::LibraryLoader::UpdateResourceA;
+use execute::get_list_tools;
+use windows_sys::Win32::System::LibraryLoader::{BeginUpdateResourceA, EndUpdateResourceA, UpdateResourceA, EnumResourceNamesA, GetModuleHandleA, FindResourceA};
+use std::ffi::CStr;
+use std::os::raw::c_void;
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
@@ -134,6 +135,118 @@ pub fn add_resource(
     Err(io::Error::last_os_error())
 }
 
+pub fn remove_resource(resource_name: &str, output_path: &str) -> io::Result<()> {
+    let resource_type: u16 = 10;
+
+    // Check if the resource exists
+    let resource_exists = unsafe {
+        let exe_handle = GetModuleHandleA(std::ptr::null());
+        if exe_handle.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+
+        let resource_name_cstr = CString::new(resource_name)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid resource name"))?;
+
+        !FindResourceA(
+            exe_handle,
+            resource_name_cstr.as_ptr() as *const u8,
+            resource_type as *const u8,
+        )
+        .is_null()
+    };
+
+    if !resource_exists {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Resource `{}` of type `{}` not found in the executable.", resource_name, resource_type),
+        ));
+    }
+
+    // Copy the current executable to the specified output file
+    let current_exe = env::current_exe().expect("Failed to get current executable path");
+    fs::copy(&current_exe, &output_path)?;
+
+    // Open the executable for resource updates
+    let output_cstr = CString::new(output_path)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid output path"))?;
+    let handle = unsafe { BeginUpdateResourceA(output_cstr.as_ptr() as *const u8, 0) }; 
+    if handle.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+
+    // Remove the specified resource
+    let resource_name_cstr = CString::new(resource_name)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid resource name"))?;
+    let result = unsafe {
+        UpdateResourceA(
+            handle,
+            resource_type as *const u8,
+            resource_name_cstr.as_ptr() as *const u8,
+            0x0409, // Language ID (US English)
+            std::ptr::null_mut(), // Null pointer to remove the resource
+            0,                    // Size is 0 when removing a resource
+        )
+    };
+    if result == 0 {
+        unsafe { EndUpdateResourceA(handle, 1) }; // Abort the update
+        return Err(io::Error::last_os_error());
+    }
+
+    // Commit the resource update
+    let commit_result = unsafe { EndUpdateResourceA(handle, 0) };
+    if commit_result == 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    println!("Resource `{}` removed successfully from `{}`.", resource_name, output_path);
+
+    Ok(())
+}
+
+fn list_resources(resource_type: u16) -> Result<Vec<String>, std::io::Error> {
+    let mut resources = Vec::new();
+
+    unsafe {
+        // Get a handle to the current executable
+        let exe_handle = GetModuleHandleA(std::ptr::null());
+        if exe_handle.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        // Callback function to handle each resource name
+        unsafe extern "system" fn callback(
+            _: *mut c_void,
+            _: *const u8,
+            resource_name: *const u8,
+            lparam: isize,
+        ) -> i32 {
+            // Cast lparam back to a mutable reference to the resources vector
+            let resources = &mut *(lparam as *mut Vec<String>);
+            if !resource_name.is_null() {
+                // Convert the resource name to a Rust String
+                let name = CStr::from_ptr(resource_name as *const i8).to_string_lossy().into_owned();
+                resources.push(name);
+            }
+            1 // Continue enumeration
+        }
+
+        // Call EnumResourceNamesA to enumerate all resources of the given type
+        let result = EnumResourceNamesA(
+            exe_handle,
+            resource_type as *const u8,
+            Some(callback),
+            &mut resources as *mut _ as isize,
+        );
+
+        if result == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+
+    Ok(resources)
+}
+
 // Helper function to pretty-print the configuration
 fn show_config() -> Result<()> {
     let data = Config::get_raw_data()?;
@@ -248,9 +361,23 @@ fn main() -> Result<(), anyhow::Error> {
                 .value_hint(clap::ValueHint::FilePath)
                 .required(false),
         )
+        .arg(
+            Arg::new("remove_tool")
+                .long("remove_tool")
+                .help("Remove an executable tool to the resources")
+                .value_name("EXECUTABLE_TOOL_NAME")
+                .value_hint(clap::ValueHint::Other)
+                .required(false),
+        )
+        .arg(
+            Arg::new("list_tools")
+                .long("list_tools")
+                .help("List all external tools")
+                .action(clap::ArgAction::SetTrue),
+        )
         .group(
             clap::ArgGroup::new("actions")
-                .args(["change_config", "add_tool"])
+                .args(["change_config", "add_tool", "remove_tool"])
                 .required(false), 
         )
         .help_template(HELP_TEMPLATE)
@@ -282,6 +409,41 @@ fn main() -> Result<(), anyhow::Error> {
             return Err(anyhow::anyhow!(
                 "[ERROR] Output file name is required when adding external tool"
             ));
+        }
+        return Ok(());
+    }
+
+    // Remove tool
+    if let Some(tool_name) = matches.get_one::<String>("remove_tool") {
+        if let Some(output_path) = matches.get_one::<String>("output") {
+            match remove_resource(tool_name, output_path) {
+                Ok(_) => println!("[INFO] Resource {} was deleted", tool_name),
+                Err(_) => {
+                    println!("[WARN] Tool doesn't exist or is static")
+                },
+            }
+        } else {
+            return Err(anyhow::anyhow!(
+                "[ERROR] Output file name is required when adding external tool"
+            ));
+        }
+        return Ok(());
+    }
+
+    // list all tools
+    if matches.get_flag("list_tools") {
+        println!("== External tools ==");
+        let ext_list = get_list_tools();
+        for tool in ext_list {
+            println!("(static) {}",tool);
+        }
+        match list_resources(10) {
+            Ok(list_tools_array) => {
+                for tool in list_tools_array {
+                    println!("(dynamic) {}",tool);
+                }
+            },
+            Err(_) => ()
         }
         return Ok(());
     }

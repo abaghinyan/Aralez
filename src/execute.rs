@@ -130,6 +130,19 @@ pub fn run (
     dprintln!("[INFO] > `{}` ({}) | Execution completed", display_name, pid);
 }
 
+pub fn get_list_tools () -> Vec<&'static str> {
+    vec![
+        "autorunsc.exe",
+        "handle.exe",
+        "tcpvcon.exe",
+        "pslist.exe",
+        "Listdlls.exe",
+        "PsService.exe",
+        "pipelist.exe",
+        "winpmem_mini_x64_rc2.exe"
+    ]
+}
+
 pub fn get_bin(name: String) -> Result<Vec<u8>, anyhow::Error> {
     let exe_bytes: Vec<u8> = match name.as_str() {
         "autorunsc.exe" => include_bytes!("../tools/autorunsc.exe").to_vec(),

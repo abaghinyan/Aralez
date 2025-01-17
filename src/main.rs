@@ -14,6 +14,10 @@ mod ntfs_reader;
 mod sector_reader;
 mod utils;
 
+use std::ffi::CString;
+use windows_sys::Win32::System::LibraryLoader::BeginUpdateResourceA;
+use windows_sys::Win32::System::LibraryLoader::EndUpdateResourceA;
+use windows_sys::Win32::System::LibraryLoader::UpdateResourceA;
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
@@ -63,6 +67,72 @@ USAGE:
 
 {all-args}
 ";
+
+pub fn add_resource(
+    tool_path: &str,
+    output_path: &str,
+) -> io::Result<()> {
+    // Path to the current executable
+    let current_exe = env::current_exe().expect("Failed to get current executable path");
+    if let Some(resource_name) = tool_path.split('\\').last() {
+        // Check if the tool file exists
+        if !Path::new(tool_path).exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("File {} not found", tool_path),
+            ));
+        }
+
+        // Load the tool file
+        let tool_data = fs::read(tool_path)?;
+
+        // Copy the original executable to the output path
+        fs::copy(current_exe, output_path)?;
+
+        // Open the copied executable for updating resources
+        let output_path_cstr = CString::new(output_path)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid output path"))?;
+        let handle = unsafe { BeginUpdateResourceA(output_path_cstr.as_ptr() as *const u8, 0) };
+        if handle.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+
+        // Add the resource to the output executable
+        let resource_name_cstr = CString::new(resource_name)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid resource name"))?;
+        let result = unsafe {
+            UpdateResourceA(
+                handle,
+                10 as *const u8, // Custom resource type
+                resource_name_cstr.as_ptr() as *const u8,
+                0x0409, // Language ID (US English)
+                tool_data.as_ptr() as *const _,
+                tool_data.len() as u32,
+            )
+        };
+        if result == 0 {
+            // Clean up and return the error
+            unsafe { EndUpdateResourceA(handle, 1) };
+            return Err(io::Error::last_os_error());
+        }
+
+        // Commit the resource updates
+        let commit_result = unsafe { EndUpdateResourceA(handle, 0) };
+        if commit_result == 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        println!(
+            "Resource `{}` successfully added to `{}`.",
+            resource_name, output_path
+        );
+
+        return Ok(());
+    }
+
+    dprintln!("[ERROR] Problem to add the external tool in the resource");
+    Err(io::Error::last_os_error())
+}
 
 // Helper function to pretty-print the configuration
 fn show_config() -> Result<()> {
@@ -122,7 +192,7 @@ fn main() -> Result<(), anyhow::Error> {
     println!("{}", env!("CARGO_PKG_DESCRIPTION"));
     println!("Developed by: {}", env!("CARGO_PKG_AUTHORS"));
     println!();
-
+    
     let matches = Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
@@ -167,7 +237,21 @@ fn main() -> Result<(), anyhow::Error> {
                 .value_name("OUTPUT_FILE")
                 .value_hint(clap::ValueHint::FilePath)
                 .requires("change_config")
+                .requires("add_tool")
                 .required(false),
+        )
+        .arg(
+            Arg::new("add_tool")
+                .long("add_tool")
+                .help("Add a new executable tool to the resources")
+                .value_name("EXECUTABLE_TOOL_PATH")
+                .value_hint(clap::ValueHint::FilePath)
+                .required(false),
+        )
+        .group(
+            clap::ArgGroup::new("actions")
+                .args(["change_config", "add_tool"])
+                .required(false), 
         )
         .help_template(HELP_TEMPLATE)
         .get_matches();
@@ -188,6 +272,18 @@ fn main() -> Result<(), anyhow::Error> {
             Err(e) => return Err(anyhow::anyhow!(e.to_string())),
         }
         
+    }
+
+    // Add new tool
+    if let Some(tool_path) = matches.get_one::<String>("add_tool") {
+        if let Some(output_path) = matches.get_one::<String>("output") {
+            add_resource(tool_path, output_path)?;
+        } else {
+            return Err(anyhow::anyhow!(
+                "[ERROR] Output file name is required when adding external tool"
+            ));
+        }
+        return Ok(());
     }
 
     // Handle show_config flag
@@ -334,7 +430,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                             .expect(MSG_ERROR_CONFIG),
                                                         &args,
                                                         config::ExecType::External,
-                                                        Some(bin),
+                                                        Some(&bin),
                                                         Some(&output_path),
                                                         &output_file
                                                     );
@@ -380,16 +476,14 @@ fn main() -> Result<(), anyhow::Error> {
 
     // Move the logfile into the root folder
     let logfile = &format!("{}.log", root_output);
-    let tmp_logfile = &format!("{}.log", ".aralez");
-    if Path::new(tmp_logfile).exists() {
-        if Path::new(root_output).exists() {
-            let destination_file = format!("{}/{}", root_output, logfile);
-            fs::rename(tmp_logfile, &destination_file)?;
-        } else {
-            dprintln!("[WARN] Root file not found");
-        }
+    let tmp_log_filename = &format!("{}.log", ".aralez");
+    let tmp_log_file = File::open(tmp_log_filename).expect("Unable to open the log file");
+    drop(tmp_log_file);
+    if Path::new(root_output).exists() {
+        let destination_file = format!("{}/{}", root_output, logfile);
+        fs::rename(tmp_log_filename, &destination_file)?;
     } else {
-        dprintln!("[WARN] The log file not found");
+        println!("[WARN] Root file not found");
     }
 
     spinner.set_message("Running: compression");

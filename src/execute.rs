@@ -10,12 +10,14 @@ mod network_info;
 mod process;
 mod process_details;
 
+use crate::config::ExecType;
+
 use std::process::{Command, Stdio};
 use std::io::{self, Write};
 use std::fs::{File, remove_file};
 use std::path::{Path, PathBuf};
-
-use crate::config::ExecType;
+use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, FindResourceA, LoadResource, LockResource, SizeofResource};
+use std::ffi::CString;
 
 pub fn run_internal(tool_name:&str, output_filename: &str) {
     dprintln!("[INFO] > `{}` | Starting execution", tool_name);
@@ -128,20 +130,72 @@ pub fn run (
     dprintln!("[INFO] > `{}` ({}) | Execution completed", display_name, pid);
 }
 
-pub fn get_bin(name: String) -> Result<&'static [u8], anyhow::Error> {
-    let exe_bytes: &[u8] = match name.as_str() {
-        "autorunsc.exe" => include_bytes!("../tools/autorunsc.exe"),
-        "handle.exe" => include_bytes!("../tools/handle.exe"),
-        "tcpvcon.exe" => include_bytes!("../tools/tcpvcon.exe"),
-        "pslist.exe" => include_bytes!("../tools/pslist.exe"),
-        "Listdlls.exe" => include_bytes!("../tools/Listdlls.exe"),
-        "PsService.exe" => include_bytes!("../tools/PsService.exe"),
-        "pipelist.exe" => include_bytes!("../tools/pipelist.exe"),
-        "winpmem_mini_x64_rc2.exe" => include_bytes!("../tools/winpmem_mini_x64_rc2.exe"),
-        _ => return Err(anyhow::anyhow!(format!("[ERROR] {} not found", name))),
+pub fn get_bin(name: String) -> Result<Vec<u8>, anyhow::Error> {
+    let exe_bytes: Vec<u8> = match name.as_str() {
+        "autorunsc.exe" => include_bytes!("../tools/autorunsc.exe").to_vec(),
+        "handle.exe" => include_bytes!("../tools/handle.exe").to_vec(),
+        "tcpvcon.exe" => include_bytes!("../tools/tcpvcon.exe").to_vec(),
+        "pslist.exe" => include_bytes!("../tools/pslist.exe").to_vec(),
+        "Listdlls.exe" => include_bytes!("../tools/Listdlls.exe").to_vec(),
+        "PsService.exe" => include_bytes!("../tools/PsService.exe").to_vec(),
+        "pipelist.exe" => include_bytes!("../tools/pipelist.exe").to_vec(),
+        "winpmem_mini_x64_rc2.exe" => include_bytes!("../tools/winpmem_mini_x64_rc2.exe").to_vec(),
+        _ => match extract_resource(&name) {
+            Ok(bytes) => bytes, // Return owned Vec<u8> from extract_resource
+            Err(_) => return Err(anyhow::anyhow!(format!("[ERROR] {} not found", name))),
+        },
     };
 
     Ok(exe_bytes)
+}
+
+pub fn extract_resource(
+    resource_name: &str,
+) -> std::io::Result<Vec<u8>> {
+    // The resource is a custom resources 
+    let resource_type: u16 = 10;
+
+    unsafe {
+        // Get a handle to the current executable
+        let module_handle = GetModuleHandleA(std::ptr::null());
+        if module_handle.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        // Find the resource
+        let resource_name_cstr = CString::new(resource_name)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid resource name"))?;
+        let resource = FindResourceA(
+            module_handle,
+            resource_name_cstr.as_ptr() as *const u8,
+            resource_type as *const u8,
+        );
+        if resource.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        // Load the resource
+        let resource_handle = LoadResource(module_handle, resource);
+        if resource_handle.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        // Get a pointer to the resource data
+        let resource_data = LockResource(resource_handle);
+        if resource_data.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        // Get the size of the resource
+        let resource_size = SizeofResource(module_handle, resource);
+        if resource_size == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        let data_slice = std::slice::from_raw_parts(resource_data as *const u8, resource_size as usize);
+
+        return Ok(data_slice.to_vec());
+    }
 }
 
 fn save_to_temp_file(_filename: &String, exe_bytes: &[u8], output_path: &str) -> io::Result<PathBuf> {
@@ -151,15 +205,6 @@ fn save_to_temp_file(_filename: &String, exe_bytes: &[u8], output_path: &str) ->
     // Write the bytes to the temp file
     let mut file = File::create(&output_file_path)?;
     file.write_all(exe_bytes)?;
-
-    // Make the file executable on Unix-like systems
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = file.metadata()?.permissions();
-        permissions.set_mode(0o755);
-        file.set_permissions(permissions)?;
-    }
 
     Ok(output_file_path)
 }

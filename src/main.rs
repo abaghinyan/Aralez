@@ -13,12 +13,10 @@ mod execute;
 mod ntfs_reader;
 mod sector_reader;
 mod utils;
+mod resource;
 
-use std::ffi::CString;
 use execute::get_list_tools;
-use windows_sys::Win32::System::LibraryLoader::{BeginUpdateResourceA, EndUpdateResourceA, UpdateResourceA, EnumResourceNamesA, GetModuleHandleA, FindResourceA};
-use std::ffi::CStr;
-use std::os::raw::c_void;
+use resource::{add_resource, list_resources, remove_resource};
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
@@ -28,9 +26,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use ntfs_reader::{process_all_drives, process_drive_artifacts};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::env;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::{self, Write};
-use std::io::{Seek, SeekFrom};
+use std::io::Seek;
 use std::path::Path;
 use utils::{ensure_directory_exists, remove_dir_all};
 use zip::{write::FileOptions, CompressionMethod, ZipWriter};
@@ -69,175 +67,7 @@ USAGE:
 {all-args}
 ";
 
-pub fn add_resource(
-    tool_path: &str,
-    output_path: &str,
-) -> io::Result<()> {
-    // Path to the current executable
-    let current_exe = env::current_exe().expect("Failed to get current executable path");
-    if let Some(resource_name) = tool_path.split('\\').last() {
-        // Check if the tool file exists
-        if !Path::new(tool_path).exists() {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("File {} not found", tool_path),
-            ));
-        }
 
-        // Load the tool file
-        let tool_data = fs::read(tool_path)?;
-
-        // Copy the original executable to the output path
-        fs::copy(current_exe, output_path)?;
-
-        // Open the copied executable for updating resources
-        let output_path_cstr = CString::new(output_path)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid output path"))?;
-        let handle = unsafe { BeginUpdateResourceA(output_path_cstr.as_ptr() as *const u8, 0) };
-        if handle.is_null() {
-            return Err(io::Error::last_os_error());
-        }
-
-        // Add the resource to the output executable
-        let resource_name_cstr = CString::new(resource_name)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid resource name"))?;
-        let result = unsafe {
-            UpdateResourceA(
-                handle,
-                10 as *const u8, // Custom resource type
-                resource_name_cstr.as_ptr() as *const u8,
-                0x0409, // Language ID (US English)
-                tool_data.as_ptr() as *const _,
-                tool_data.len() as u32,
-            )
-        };
-        if result == 0 {
-            // Clean up and return the error
-            unsafe { EndUpdateResourceA(handle, 1) };
-            return Err(io::Error::last_os_error());
-        }
-
-        // Commit the resource updates
-        let commit_result = unsafe { EndUpdateResourceA(handle, 0) };
-        if commit_result == 0 {
-            return Err(io::Error::last_os_error());
-        }
-
-        return Ok(());
-    }
-
-    Err(io::Error::last_os_error())
-}
-
-pub fn remove_resource(resource_name: &str, output_path: &str) -> io::Result<()> {
-    let resource_type: u16 = 10;
-
-    // Check if the resource exists
-    let resource_exists = unsafe {
-        let exe_handle = GetModuleHandleA(std::ptr::null());
-        if exe_handle.is_null() {
-            return Err(io::Error::last_os_error());
-        }
-
-        let resource_name_cstr = CString::new(resource_name)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid resource name"))?;
-
-        !FindResourceA(
-            exe_handle,
-            resource_name_cstr.as_ptr() as *const u8,
-            resource_type as *const u8,
-        )
-        .is_null()
-    };
-
-    if !resource_exists {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("Resource `{}` of type `{}` not found in the executable.", resource_name, resource_type),
-        ));
-    }
-
-    // Copy the current executable to the specified output file
-    let current_exe = env::current_exe().expect("Failed to get current executable path");
-    fs::copy(&current_exe, &output_path)?;
-
-    // Open the executable for resource updates
-    let output_cstr = CString::new(output_path)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid output path"))?;
-    let handle = unsafe { BeginUpdateResourceA(output_cstr.as_ptr() as *const u8, 0) }; 
-    if handle.is_null() {
-        return Err(io::Error::last_os_error());
-    }
-
-    // Remove the specified resource
-    let resource_name_cstr = CString::new(resource_name)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid resource name"))?;
-    let result = unsafe {
-        UpdateResourceA(
-            handle,
-            resource_type as *const u8,
-            resource_name_cstr.as_ptr() as *const u8,
-            0x0409, // Language ID (US English)
-            std::ptr::null_mut(), // Null pointer to remove the resource
-            0,                    // Size is 0 when removing a resource
-        )
-    };
-    if result == 0 {
-        unsafe { EndUpdateResourceA(handle, 1) }; // Abort the update
-        return Err(io::Error::last_os_error());
-    }
-
-    // Commit the resource update
-    let commit_result = unsafe { EndUpdateResourceA(handle, 0) };
-    if commit_result == 0 {
-        return Err(io::Error::last_os_error());
-    }
-
-    Ok(())
-}
-
-fn list_resources(resource_type: u16) -> Result<Vec<String>, std::io::Error> {
-    let mut resources = Vec::new();
-
-    unsafe {
-        // Get a handle to the current executable
-        let exe_handle = GetModuleHandleA(std::ptr::null());
-        if exe_handle.is_null() {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        // Callback function to handle each resource name
-        unsafe extern "system" fn callback(
-            _: *mut c_void,
-            _: *const u8,
-            resource_name: *const u8,
-            lparam: isize,
-        ) -> i32 {
-            // Cast lparam back to a mutable reference to the resources vector
-            let resources = &mut *(lparam as *mut Vec<String>);
-            if !resource_name.is_null() {
-                // Convert the resource name to a Rust String
-                let name = CStr::from_ptr(resource_name as *const i8).to_string_lossy().into_owned();
-                resources.push(name);
-            }
-            1 // Continue enumeration
-        }
-
-        // Call EnumResourceNamesA to enumerate all resources of the given type
-        let result = EnumResourceNamesA(
-            exe_handle,
-            resource_type as *const u8,
-            Some(callback),
-            &mut resources as *mut _ as isize,
-        );
-
-        if result == 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-    }
-
-    Ok(resources)
-}
 
 // Helper function to pretty-print the configuration
 fn show_config() -> Result<()> {
@@ -249,36 +79,6 @@ fn show_config() -> Result<()> {
 // Helper function to check the configuration
 fn check_config() -> Result<Config, anyhow::Error> {
     Config::load()
-}
-
-// Function to update the embedded configuration
-fn update_embedded_config(new_config_path: &str, output_exe_path: &str) -> std::io::Result<()> {
-    let new_config_data = fs::read(new_config_path)?;
-
-    // Path to the current executable
-    let current_exe = env::current_exe().expect("Failed to get current executable path");
-
-    // Copy the current executable to the specified output file
-    fs::copy(&current_exe, &output_exe_path)?;
-
-    // Open the copied executable file for reading and writing
-    let mut new_exe_file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&output_exe_path)?;
-
-    // Append the config marker and new config data at the end of the file
-    new_exe_file.seek(SeekFrom::End(0))?;
-    new_exe_file.write_all(config::CONFIG_MARKER_START)?;
-    new_exe_file.write_all(&new_config_data)?;
-    new_exe_file.write_all(config::CONFIG_MARKER_END)?;
-
-    println!(
-        "[INFO] New executable with updated config created at: {}",
-        output_exe_path
-    );
-
-    Ok(())
 }
 
 /// Helper function to check if the drive exists
@@ -371,7 +171,10 @@ fn main() -> Result<(), anyhow::Error> {
         match Config::check_config_file(&config_path) {
             Ok(_) => {
                 if !output_path.is_empty() {
-                    update_embedded_config(config_path, output_path)?;
+                    match add_resource(config_path, "config.yml", output_path) {
+                        Ok(_) => println!("[INFO] The config `{}` was successfully added to `{}`.",config_path, output_path),
+                        Err(_) => println!("[ERROR] Problem to add the config {} in the resource.", config_path),
+                    }
                 } else {
                     return Err(anyhow::anyhow!(
                         "[ERROR] Output file name is required when changing configuration"
@@ -390,9 +193,17 @@ fn main() -> Result<(), anyhow::Error> {
         let tool_path = args[0];
         let output_path = args[1];
         if !output_path.is_empty() {
-            match add_resource(tool_path, output_path) {
-                Ok(_) => println!("[INFO] The tool `{}` was successfully added to `{}`.",tool_path, output_path),
-                Err(_) => println!("[ERROR] Problem to add the external tool {} in the resource.", tool_path),
+            if let Some(resource_name) = tool_path.split('\\').last() {
+                if resource_name != "config.yml" {
+                    match add_resource(tool_path, resource_name, output_path) {
+                        Ok(_) => println!("[INFO] The tool `{}` was successfully added to `{}`.",tool_path, output_path),
+                        Err(_) => println!("[ERROR] Problem to add the external tool {} in the resource.", tool_path),
+                    }
+                } else {
+                    println!("[ERROR] The filename cant't be 'config.yml'.");
+                }
+            } else {
+                println!("[ERROR] File {} not found.", tool_path);
             }
         } else {
             return Err(anyhow::anyhow!(
@@ -430,9 +241,11 @@ fn main() -> Result<(), anyhow::Error> {
             println!("(static) {}",tool);
         }
         match list_resources(10) {
-            Ok(list_tools_array) => {
-                for tool in list_tools_array {
-                    println!("(dynamic) {}",tool);
+            Ok(list_resources_array) => {
+                for resource_element in list_resources_array {
+                    if resource_element != "CONFIG.YML" {
+                        println!("(dynamic) {}",resource_element);
+                    }
                 }
             },
             Err(_) => ()

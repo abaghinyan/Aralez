@@ -11,13 +11,12 @@ mod process;
 mod process_details;
 
 use crate::config::ExecType;
+use crate::resource::extract_resource;
 
 use std::process::{Command, Stdio};
 use std::io::{self, Write};
 use std::fs::{File, remove_file};
 use std::path::{Path, PathBuf};
-use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, FindResourceA, LoadResource, LockResource, SizeofResource};
-use std::ffi::CString;
 
 pub fn run_internal(tool_name:&str, output_filename: &str) {
     dprintln!("[INFO] > `{}` | Starting execution", tool_name);
@@ -160,55 +159,6 @@ pub fn get_bin(name: String) -> Result<Vec<u8>, anyhow::Error> {
     };
 
     Ok(exe_bytes)
-}
-
-pub fn extract_resource(
-    resource_name: &str,
-) -> std::io::Result<Vec<u8>> {
-    // The resource is a custom resources 
-    let resource_type: u16 = 10;
-
-    unsafe {
-        // Get a handle to the current executable
-        let module_handle = GetModuleHandleA(std::ptr::null());
-        if module_handle.is_null() {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        // Find the resource
-        let resource_name_cstr = CString::new(resource_name)
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid resource name"))?;
-        let resource = FindResourceA(
-            module_handle,
-            resource_name_cstr.as_ptr() as *const u8,
-            resource_type as *const u8,
-        );
-        if resource.is_null() {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        // Load the resource
-        let resource_handle = LoadResource(module_handle, resource);
-        if resource_handle.is_null() {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        // Get a pointer to the resource data
-        let resource_data = LockResource(resource_handle);
-        if resource_data.is_null() {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        // Get the size of the resource
-        let resource_size = SizeofResource(module_handle, resource);
-        if resource_size == 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        let data_slice = std::slice::from_raw_parts(resource_data as *const u8, resource_size as usize);
-
-        return Ok(data_slice.to_vec());
-    }
 }
 
 fn save_to_temp_file(_filename: &String, exe_bytes: &[u8], output_path: &str) -> io::Result<PathBuf> {

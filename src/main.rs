@@ -282,6 +282,12 @@ fn main() -> Result<(), anyhow::Error> {
     config.save(root_output)?;
 
     dprintln!("Aralez version: {}", env!("CARGO_PKG_VERSION"));
+    
+    #[cfg(target_pointer_width = "64")]
+    dprintln!("Aralez architecture: x64 (64bit)");
+
+    #[cfg(target_pointer_width = "32")]
+    dprintln!("Aralez architecture: x86 (32bit)");
 
     // Create a spinner
     let spinner = ProgressBar::new_spinner();

@@ -12,7 +12,7 @@ tasks:
     disabled: true
     entries:
       dump:
-        - name: "winpmem_mini_x64_rc2.exe"
+        - name: "winpmem_mini_rc2.exe"
           args: ["{{root_output_path}}\\tools\\memdump.raw"]
           output_file: "{{root_output_path}}\\tools\\memdump_log.txt"
           exec_type: "external"

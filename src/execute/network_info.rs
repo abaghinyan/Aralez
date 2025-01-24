@@ -43,7 +43,7 @@ pub fn get_tcp_connections() -> Vec<(Ipv4Addr, u16, Ipv4Addr, u16, &'static str)
 
     unsafe {
         let mut buffer_size: u32 = 0;
-        let result = GetTcpTable(None, &mut buffer_size, FALSE);
+        let result = GetTcpTable(None, &mut buffer_size, false);
 
         if result != ERROR_INSUFFICIENT_BUFFER.0 {
             dprintln!("[ERROR] Failed to get the required buffer size for TCP table. Error code: {}", result);
@@ -51,7 +51,7 @@ pub fn get_tcp_connections() -> Vec<(Ipv4Addr, u16, Ipv4Addr, u16, &'static str)
         }
 
         let mut tcp_table: Vec<u8> = vec![0; buffer_size as usize];
-        let result = GetTcpTable(Some(tcp_table.as_mut_ptr() as *mut MIB_TCPTABLE), &mut buffer_size, FALSE);
+        let result = GetTcpTable(Some(tcp_table.as_mut_ptr() as *mut MIB_TCPTABLE), &mut buffer_size, false);
 
         if result == NO_ERROR.0 {
             let table = tcp_table.as_ptr() as *const MIB_TCPTABLE;

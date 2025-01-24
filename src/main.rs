@@ -13,7 +13,10 @@ mod execute;
 mod ntfs_reader;
 mod sector_reader;
 mod utils;
+mod resource;
 
+use execute::get_list_tools;
+use resource::{add_resource, list_resources, remove_resource};
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
@@ -23,9 +26,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use ntfs_reader::{process_all_drives, process_drive_artifacts};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::env;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::{self, Write};
-use std::io::{Seek, SeekFrom};
+use std::io::Seek;
 use std::path::Path;
 use utils::{ensure_directory_exists, remove_dir_all};
 use zip::{write::FileOptions, CompressionMethod, ZipWriter};
@@ -64,6 +67,8 @@ USAGE:
 {all-args}
 ";
 
+
+
 // Helper function to pretty-print the configuration
 fn show_config() -> Result<()> {
     let data = Config::get_raw_data()?;
@@ -74,36 +79,6 @@ fn show_config() -> Result<()> {
 // Helper function to check the configuration
 fn check_config() -> Result<Config, anyhow::Error> {
     Config::load()
-}
-
-// Function to update the embedded configuration
-fn update_embedded_config(new_config_path: &str, output_exe_path: &str) -> std::io::Result<()> {
-    let new_config_data = fs::read(new_config_path)?;
-
-    // Path to the current executable
-    let current_exe = env::current_exe().expect("Failed to get current executable path");
-
-    // Copy the current executable to the specified output file
-    fs::copy(&current_exe, &output_exe_path)?;
-
-    // Open the copied executable file for reading and writing
-    let mut new_exe_file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&output_exe_path)?;
-
-    // Append the config marker and new config data at the end of the file
-    new_exe_file.seek(SeekFrom::End(0))?;
-    new_exe_file.write_all(config::CONFIG_MARKER_START)?;
-    new_exe_file.write_all(&new_config_data)?;
-    new_exe_file.write_all(config::CONFIG_MARKER_END)?;
-
-    println!(
-        "New executable with updated config created at: {}",
-        output_exe_path
-    );
-
-    Ok(())
 }
 
 /// Helper function to check if the drive exists
@@ -122,7 +97,7 @@ fn main() -> Result<(), anyhow::Error> {
     println!("{}", env!("CARGO_PKG_DESCRIPTION"));
     println!("Developed by: {}", env!("CARGO_PKG_AUTHORS"));
     println!();
-
+    
     let matches = Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
@@ -156,28 +131,50 @@ fn main() -> Result<(), anyhow::Error> {
             Arg::new("change_config")
                 .long("change_config")
                 .help("Change the embedded configuration file")
-                .value_name("CONFIG_FILE")
+                .value_names(&["CONFIG_FILE", "OUTPUT_FILE"])
                 .value_hint(clap::ValueHint::FilePath)
+                .num_args(2)
                 .required(false),
         )
         .arg(
-            Arg::new("output")
-                .long("output")
-                .help("Specify the output executable file name when changing the embedded configuration")
-                .value_name("OUTPUT_FILE")
+            Arg::new("add_tool")
+                .long("add_tool")
+                .help("Add a new executable tool to the resources")
+                .value_names(&["EXECUTABLE_TOOL_PATH", "OUTPUT_FILE"])
                 .value_hint(clap::ValueHint::FilePath)
-                .requires("change_config")
+                .num_args(2)
                 .required(false),
+        )
+        .arg(
+            Arg::new("remove_tool")
+                .long("remove_tool")
+                .help("Remove an executable tool to the resources")
+                .value_names(&["EXECUTABLE_TOOL_NAME", "OUTPUT_FILE"])
+                .value_hint(clap::ValueHint::Other)
+                .num_args(2)
+                .required(false),
+        )
+        .arg(
+            Arg::new("list_tools")
+                .long("list_tools")
+                .help("List all external tools")
+                .action(clap::ArgAction::SetTrue),
         )
         .help_template(HELP_TEMPLATE)
         .get_matches();
 
     // Handle changing the embedded configuration
-    if let Some(config_path) = matches.get_one::<String>("change_config") {
+    if let Some(values) = matches.get_many::<String>("change_config") {
+        let args: Vec<_> = values.collect();
+        let config_path = args[0];
+        let output_path = args[1];
         match Config::check_config_file(&config_path) {
             Ok(_) => {
-                if let Some(output_path) = matches.get_one::<String>("output") {
-                    update_embedded_config(config_path, output_path)?;
+                if !output_path.is_empty() {
+                    match add_resource(config_path, "config.yml", output_path) {
+                        Ok(_) => println!("[INFO] The config `{}` was successfully added to `{}`.",config_path, output_path),
+                        Err(_) => println!("[ERROR] Problem to add the config {} in the resource.", config_path),
+                    }
                 } else {
                     return Err(anyhow::anyhow!(
                         "[ERROR] Output file name is required when changing configuration"
@@ -188,6 +185,72 @@ fn main() -> Result<(), anyhow::Error> {
             Err(e) => return Err(anyhow::anyhow!(e.to_string())),
         }
         
+    }
+
+    // Add new tool
+    if let Some(values) = matches.get_many::<String>("add_tool") {
+        let args: Vec<_> = values.collect();
+        let tool_path = args[0];
+        let output_path = args[1];
+        if !output_path.is_empty() {
+            if let Some(resource_name) = tool_path.split('\\').last() {
+                if resource_name != "config.yml" {
+                    match add_resource(tool_path, resource_name, output_path) {
+                        Ok(_) => println!("[INFO] The tool `{}` was successfully added to `{}`.",tool_path, output_path),
+                        Err(_) => println!("[ERROR] Problem to add the external tool {} in the resource.", tool_path),
+                    }
+                } else {
+                    println!("[ERROR] The filename cant't be 'config.yml'.");
+                }
+            } else {
+                println!("[ERROR] File {} not found.", tool_path);
+            }
+        } else {
+            return Err(anyhow::anyhow!(
+                "[ERROR] Output file name is required when adding external tool"
+            ));
+        }
+        return Ok(());
+    }
+
+    // Remove tool
+    if let Some(values) = matches.get_many::<String>("remove_tool") {
+        let args: Vec<_> = values.collect();
+        let tool_name = args[0];
+        let output_path = args[1];
+        if !output_path.is_empty() {
+            match remove_resource(tool_name, output_path) {
+                Ok(_) => println!("[INFO] Resource {} was removed successfully from {}.", tool_name, output_path),
+                Err(_) => {
+                    println!("[WARN] Tool doesn't exist or is static")
+                },
+            }
+        } else {
+            return Err(anyhow::anyhow!(
+                "[ERROR] Output file name is required when adding external tool"
+            ));
+        }
+        return Ok(());
+    }
+
+    // list all tools
+    if matches.get_flag("list_tools") {
+        println!("== External tools ==");
+        let ext_list = get_list_tools();
+        for tool in ext_list {
+            println!("(static) {}",tool);
+        }
+        match list_resources(10) {
+            Ok(list_resources_array) => {
+                for resource_element in list_resources_array {
+                    if resource_element != "CONFIG.YML" {
+                        println!("(dynamic) {}",resource_element);
+                    }
+                }
+            },
+            Err(_) => ()
+        }
+        return Ok(());
     }
 
     // Handle show_config flag
@@ -219,6 +282,12 @@ fn main() -> Result<(), anyhow::Error> {
     config.save(root_output)?;
 
     dprintln!("Aralez version: {}", env!("CARGO_PKG_VERSION"));
+    
+    #[cfg(target_pointer_width = "64")]
+    dprintln!("Aralez architecture: x64 (64bit)");
+
+    #[cfg(target_pointer_width = "32")]
+    dprintln!("Aralez architecture: x86 (32bit)");
 
     // Create a spinner
     let spinner = ProgressBar::new_spinner();
@@ -272,7 +341,7 @@ fn main() -> Result<(), anyhow::Error> {
                             let executor = executor_iter.clone();
                             match executor.exec_type {
                                 Some(exec_type) => {
-                                    let output_path = root_output; // Adjust the path as necessary
+                                    let output_path = root_output; 
                                     ensure_directory_exists(&output_path)
                                         .expect("Failed to create or access output directory");
 
@@ -334,7 +403,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                             .expect(MSG_ERROR_CONFIG),
                                                         &args,
                                                         config::ExecType::External,
-                                                        Some(bin),
+                                                        Some(&bin),
                                                         Some(&output_path),
                                                         &output_file
                                                     );
@@ -380,16 +449,14 @@ fn main() -> Result<(), anyhow::Error> {
 
     // Move the logfile into the root folder
     let logfile = &format!("{}.log", root_output);
-    let tmp_logfile = &format!("{}.log", ".aralez");
-    if Path::new(tmp_logfile).exists() {
-        if Path::new(root_output).exists() {
-            let destination_file = format!("{}/{}", root_output, logfile);
-            fs::rename(tmp_logfile, &destination_file)?;
-        } else {
-            dprintln!("[WARN] Root file not found");
-        }
+    let tmp_log_filename = &format!("{}.log", ".aralez");
+    let tmp_log_file = File::open(tmp_log_filename).expect("Unable to open the log file");
+    drop(tmp_log_file);
+    if Path::new(root_output).exists() {
+        let destination_file = format!("{}/{}", root_output, logfile);
+        fs::rename(tmp_log_filename, &destination_file)?;
     } else {
-        dprintln!("[WARN] The log file not found");
+        println!("[WARN] Root file not found");
     }
 
     spinner.set_message("Running: compression");

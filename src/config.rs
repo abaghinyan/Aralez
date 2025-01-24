@@ -6,6 +6,7 @@
 // Author(s): Areg Baghinyan
 //
 
+use crate::resource::extract_resource;
 use crate::utils::{remove_trailing_slash, replace_env_vars};
 use anyhow::Result;
 use chrono::prelude::*;
@@ -19,10 +20,7 @@ use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
-use std::{env, fmt};
-
-pub const CONFIG_MARKER_START: &[u8] = b"# CONFIG_START";
-pub const CONFIG_MARKER_END: &[u8] = b"# CONFIG_END";
+use std::fmt;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
@@ -338,7 +336,7 @@ impl Config {
 
     pub fn load() -> Result<Self, anyhow::Error> {
         // Load configuration: Try to load the embedded configuration first, then fallback to default
-        let config_data = Config::load_embedded_config()?;
+        let config_data = Config::load_embedded_config().unwrap_or(String::new());
         if config_data.is_empty() {
             return match Config::load_default() {
                 Ok(conf) => Ok(conf),
@@ -365,24 +363,12 @@ impl Config {
     
     // Function to load the embedded configuration at runtime
     pub fn load_embedded_config() -> Result<String, anyhow::Error> {
-        let current_exe = env::current_exe()?;
-        let mut file = File::open(current_exe)?;
+        let config_data = extract_resource("config.yml")?;
+        let config_string = String::from_utf8(config_data)?;
 
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
-
-        if let Some(start) = Config::find_marker(&buffer, CONFIG_MARKER_START) {
-            if let Some(end) = Config::find_marker(&buffer[start..], CONFIG_MARKER_END) {
-                let config_data = &buffer[start + CONFIG_MARKER_START.len()..start + end];
-                let config_string = String::from_utf8_lossy(config_data);
-                return Ok(config_string.into_owned());
-            }
-        }
-
-        Err(anyhow::anyhow!(
-            "Embedded configuration not found or the config file is not valid"
-        ))
+        return Ok(config_string);
     }
+
     /// Load the raw configuration as a plain string, choosing between embedded or default.
     pub fn get_raw_data() -> Result<String> {
         // Attempt to load the embedded configuration
@@ -391,16 +377,10 @@ impl Config {
                 return Ok(embedded_config);
             }
         }
-
         // If embedded config is not found, fall back to loading the default config file
         let yaml_data = include_str!("../config/.config.yml");
-        Ok(yaml_data.to_string())
-    }
 
-    // Helper function to find the marker in the binary data
-    fn find_marker(data: &[u8], marker: &[u8]) -> Option<usize> {
-        data.windows(marker.len())
-            .rposition(|window| window == marker) // rposition finds the last occurrence
+        Ok(yaml_data.to_string())
     }
 
     pub fn save(&self, output_dir: &str) -> Result<()> {

@@ -1,3 +1,10 @@
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright © 2024 Areg Baghinyan. All Rights Reserved.
+//
+// Author(s): Areg Baghinyan
+//
 use reqwest::blocking::get;
 use std::env;
 use std::fs::{self, File};

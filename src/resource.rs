@@ -1,3 +1,10 @@
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright © 2024 Areg Baghinyan. All Rights Reserved.
+//
+// Author(s): Areg Baghinyan
+//
 use std::ffi::CString;
 use windows_sys::Win32::System::LibraryLoader::{BeginUpdateResourceA, EndUpdateResourceA, UpdateResourceA, EnumResourceNamesA, GetModuleHandleA, FindResourceA};
 use windows_sys::Win32::System::LibraryLoader::{LoadResource, LockResource, SizeofResource};

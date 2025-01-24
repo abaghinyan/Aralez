@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright © 2024 Areg Baghinyan. All Rights Reserved.
+// Copyright © 2025 Areg Baghinyan. All Rights Reserved.
 //
 // Author(s): Areg Baghinyan
 //

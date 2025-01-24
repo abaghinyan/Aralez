@@ -341,7 +341,7 @@ fn main() -> Result<(), anyhow::Error> {
                             let executor = executor_iter.clone();
                             match executor.exec_type {
                                 Some(exec_type) => {
-                                    let output_path = root_output; // Adjust the path as necessary
+                                    let output_path = root_output; 
                                     ensure_directory_exists(&output_path)
                                         .expect("Failed to create or access output directory");
 

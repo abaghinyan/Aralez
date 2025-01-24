@@ -138,7 +138,7 @@ pub fn get_list_tools () -> Vec<&'static str> {
         "Listdlls.exe",
         "PsService.exe",
         "pipelist.exe",
-        "winpmem_mini_x64_rc2.exe"
+        "winpmem_mini_rc2.exe"
     ]
 }
 

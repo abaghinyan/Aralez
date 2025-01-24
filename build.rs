@@ -65,10 +65,42 @@ fn main() -> io::Result<()> {
         fs::create_dir_all(tools_dir).expect("Failed to create tools directory");
     }
 
-    let tools = vec![
-        ("https://download.sysinternals.com/files/SysinternalsSuite.zip", "SysinternalsSuite.zip"),
-        ("https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x64_rc2.exe", "winpmem_mini_x64_rc2.exe"),
-    ];
+    // Initialize the tools variable as mutable
+    let tools: Vec<(&str, &str)>;
+    let exe_files: Vec<(&str, &str)>;
+
+    // Conditionally populate tools based on the target architecture
+    if target.contains("x86_64") {
+        tools = vec![
+            ("https://download.sysinternals.com/files/SysinternalsSuite.zip", "SysinternalsSuite.zip"),
+            ("https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x64_rc2.exe", "winpmem_mini_rc2.exe"),
+        ];
+        exe_files = vec![
+            ("autorunsc64.exe", "autorunsc.exe"),
+            ("handle64.exe", "handle.exe"),
+            ("Listdlls64.exe","Listdlls.exe"),
+            ("pipelist64.exe", "pipelist.exe"),
+            ("pslist64.exe", "pslist.exe"),
+            ("PsService64.exe", "PsService.exe"),
+            ("tcpvcon64.exe", "tcpvcon.exe"),
+        ];
+    } else if target.contains("i686") {
+        tools = vec![
+            ("https://download.sysinternals.com/files/SysinternalsSuite.zip", "SysinternalsSuite.zip"),
+            ("https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x86.exe", "winpmem_mini_rc2.exe"),
+        ];
+        exe_files = vec![
+            ("autorunsc.exe", "autorunsc.exe"),
+            ("handle.exe", "handle.exe"),
+            ("Listdlls.exe","Listdlls.exe"),
+            ("pipelist.exe", "pipelist.exe"),
+            ("pslist.exe", "pslist.exe"),
+            ("PsService.exe", "PsService.exe"),
+            ("tcpvcon.exe", "tcpvcon.exe"),
+        ];
+    } else {
+        panic!("Unsupported target architecture: {}", target);
+    }
 
     for (url, file_name) in tools {
         let file_path = tools_dir.join(file_name);
@@ -86,7 +118,7 @@ fn main() -> io::Result<()> {
         }
     }
 
-    if let Err(e) = extract_sysinternals(&tools_dir) {
+    if let Err(e) = extract_sysinternals(&tools_dir, &exe_files) {
         eprintln!("Error extracting Sysinternals tools: {}", e);
     }
 
@@ -113,7 +145,7 @@ fn download_file(url: &str, destination: &Path) -> Result<(), String> {
     }
 }
 
-fn extract_sysinternals(tools_dir: &Path) -> io::Result<()> {
+fn extract_sysinternals(tools_dir: &Path, exe_files: &Vec<(&str, &str)>) -> io::Result<()> {
     let zip_file_path = tools_dir.join("SysinternalsSuite.zip");
     if !zip_file_path.exists() {
         println!("SysinternalsSuite.zip not found, skipping extraction.");
@@ -123,27 +155,17 @@ fn extract_sysinternals(tools_dir: &Path) -> io::Result<()> {
     let zip_file = File::open(&zip_file_path)?;
     let mut archive = ZipArchive::new(zip_file)?;
 
-    let exe_files = vec![
-        "autorunsc.exe",
-        "handle.exe",
-        "Listdlls.exe",
-        "pslist.exe",
-        "PsService.exe",
-        "tcpvcon.exe",
-        "pipelist.exe",
-    ];
-
-    for file_name in exe_files {
-        let mut file = match archive.by_name(file_name) {
+    for (in_file_name, out_file_name) in exe_files {
+        let mut file = match archive.by_name(in_file_name) {
             Ok(f) => f,
             Err(_) => continue,
         };
 
-        let out_path = tools_dir.join(file_name);
+        let out_path = tools_dir.join(out_file_name);
         if !out_path.exists() {
             let mut out_file = File::create(&out_path)?;
             io::copy(&mut file, &mut out_file)?;
-            println!("Extracted {} to {:?}", file_name, out_path);
+            println!("Extracted {} to {:?}", in_file_name, out_path);
         }
     }
 

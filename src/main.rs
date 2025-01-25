@@ -111,7 +111,7 @@ fn main() -> Result<(), anyhow::Error> {
         .arg(
             Arg::new("default_drive")
                 .long("default_drive")
-                .help("Specify the default drive to process (default: C)")
+                .help("Specify the default drive to process")
                 .value_name("DRIVE")
                 .default_value("C"),
         )

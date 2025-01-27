@@ -67,6 +67,11 @@ USAGE:
 {all-args}
 ";
 
+#[cfg(target_pointer_width = "64")]
+const TARGET_ARCH: &str = "x86-64";
+
+#[cfg(target_pointer_width = "32")]
+const TARGET_ARCH: &str = "x86";
 
 
 // Helper function to pretty-print the configuration
@@ -90,9 +95,10 @@ fn is_drive_accessible(drive: &str) -> bool {
 fn main() -> Result<(), anyhow::Error> {
     // Print the welcome message
     println!(
-        "Welcome to {} version {}",
+        "Welcome to {} version {} ({})",
         env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION")
+        env!("CARGO_PKG_VERSION"),
+        TARGET_ARCH
     );
     println!("{}", env!("CARGO_PKG_DESCRIPTION"));
     println!("Developed by: {}", env!("CARGO_PKG_AUTHORS"));
@@ -282,12 +288,7 @@ fn main() -> Result<(), anyhow::Error> {
     config.save(root_output)?;
 
     dprintln!("Aralez version: {}", env!("CARGO_PKG_VERSION"));
-    
-    #[cfg(target_pointer_width = "64")]
-    dprintln!("Aralez architecture: x64 (64bit)");
-
-    #[cfg(target_pointer_width = "32")]
-    dprintln!("Aralez architecture: x86 (32bit)");
+    dprintln!("Aralez architecture: {}", TARGET_ARCH);
 
     // Create a spinner
     let spinner = ProgressBar::new_spinner();

@@ -68,7 +68,7 @@ USAGE:
 ";
 
 #[cfg(target_pointer_width = "64")]
-const TARGET_ARCH: &str = "x86-64";
+const TARGET_ARCH: &str = "x86_64";
 
 #[cfg(target_pointer_width = "32")]
 const TARGET_ARCH: &str = "x86";

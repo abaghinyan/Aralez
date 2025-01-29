@@ -67,13 +67,6 @@ USAGE:
 {all-args}
 ";
 
-#[cfg(target_pointer_width = "64")]
-const TARGET_ARCH: &str = "x86_64";
-
-#[cfg(target_pointer_width = "32")]
-const TARGET_ARCH: &str = "x86";
-
-
 // Helper function to pretty-print the configuration
 fn show_config() -> Result<()> {
     let data = Config::get_raw_data()?;
@@ -93,6 +86,13 @@ fn is_drive_accessible(drive: &str) -> bool {
 }
 
 fn main() -> Result<(), anyhow::Error> {
+
+    #[cfg(target_pointer_width = "64")]
+    const TARGET_ARCH: &str = "x86_64";
+
+    #[cfg(target_pointer_width = "32")]
+    const TARGET_ARCH: &str = "x86";
+
     // Print the welcome message
     println!(
         "Welcome to {} version {} ({})",
@@ -287,8 +287,7 @@ fn main() -> Result<(), anyhow::Error> {
 
     config.save(root_output)?;
 
-    dprintln!("Aralez version: {}", env!("CARGO_PKG_VERSION"));
-    dprintln!("Aralez architecture: {}", TARGET_ARCH);
+    dprintln!("Aralez version: {} ({})", env!("CARGO_PKG_VERSION"), TARGET_ARCH);
 
     // Create a spinner
     let spinner = ProgressBar::new_spinner();

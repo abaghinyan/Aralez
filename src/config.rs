@@ -36,6 +36,7 @@ pub struct SectionConfig {
     pub priority: u8,
     pub r#type: TypeTasks,
     pub drive: Option<String>,
+    pub output_folder: Option<String>,
     pub max_size: Option<u64>,
     pub exclude_drives: Option<Vec<String>>,
     pub entries: Entries,

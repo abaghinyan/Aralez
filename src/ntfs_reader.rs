@@ -9,7 +9,7 @@
 use crate::config::SectionConfig;
 use crate::sector_reader::SectorReader;
 use crate::utils::{
-    ensure_directory_exists, get, split_path,
+    ensure_directory_exists, get, split_path
 };
 use anyhow::Result;
 use glob::Pattern;
@@ -426,12 +426,9 @@ impl Node {
 pub fn process_drive_artifacts(
     drive: &str,
     section_config: &mut SectionConfig,
-    root_output: &str,
+    output_path: &str,
 ) -> Result<()> {
     let drive_letter = drive.chars().next().unwrap();
-    let output_path = format!("{}\\{}", root_output, drive_letter);
-
-    ensure_directory_exists(&output_path)?;
 
     let ntfs_path: &str = &format!("\\\\.\\{}:", drive_letter);
 
@@ -541,7 +538,14 @@ pub fn process_all_drives(section_config: &mut SectionConfig, root_output: &str)
                 }
             }
         }
-        process_drive_artifacts(&drive, section_config, root_output)?;
+        let drive_letter = drive.chars().next().unwrap();
+        let output_folder  = if root_output.contains("{{drive}}") {
+            root_output.replace("{{drive}}", &drive_letter.to_string())
+        } else {
+            format!("{}\\{}", root_output, drive_letter)
+        };
+        ensure_directory_exists(&output_folder)?;
+        process_drive_artifacts(&drive, section_config, &output_folder)?;
     }
 
     Ok(())

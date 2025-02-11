@@ -14,12 +14,13 @@ tasks:
       dump:
         - name: "winpmem_mini_rc2.exe"
           args: ["{{root_output_path}}\\tools\\memdump.raw"]
-          output_file: "{{root_output_path}}\\tools\\memdump_log.txt"
+          output_file: "memdump_log.txt"
           exec_type: "external"
 
   artifacts:
     type: "collect"
     priority: 1
+    output_folder: "{{root_output_path}}\\{{drive}}"
     entries: 
       mft:
         - root_path: "\\"
@@ -132,74 +133,75 @@ tasks:
   tools:
     priority: 3
     type: "execute"
+    output_folder: "{{root_output_path}}\\tools\\"
     entries: 
       external: 
         - name: "autorunsc.exe"
           args: ["-nobanner", "-c", "/accepteula"]
-          output_file: "{{root_output_path}}\\tools\\Autorunsc.txt"
+          output_file: "Autorunsc.txt"
           exec_type: "external"
         - name: "handle.exe"
           args: ["/accepteula", "/a", "/nobanner"]
-          output_file: "{{root_output_path}}\\tools\\Handle.txt"
+          output_file: "Handle.txt"
           exec_type: "external"
         - name: "tcpvcon.exe"
           args: ["/accepteula", "-a"]
-          output_file: "{{root_output_path}}\\tools\\TCPvCon.txt"
+          output_file: "TCPvCon.txt"
           exec_type: "external"
         - name: "pslist.exe"
           args: ["/accepteula"]
-          output_file: "{{root_output_path}}\\tools\\PSList.txt"
+          output_file: "PSList.txt"
           exec_type: "external"
         - name: "Listdlls.exe"
           args: ["/accepteula"]
-          output_file: "{{root_output_path}}\\tools\\ListDLLs.txt"
+          output_file: "ListDLLs.txt"
           exec_type: "external"    
         - name: "PsService.exe"
           args: ["/accepteula", "query"]
-          output_file: "{{root_output_path}}\\tools\\PSService.txt"
+          output_file: "PSService.txt"
           exec_type: "external"
         - name: "pipelist.exe"
           args: ["/accepteula"]
-          output_file: "{{root_output_path}}\\tools\\PipeList.txt"
+          output_file: "PipeList.txt"
           exec_type: "external"
       system:
         - name: "netstat.exe"
           args: ["-anob"]
-          output_file: "{{root_output_path}}\\tools\\NetStat.txt"
+          output_file: "NetStat.txt"
           exec_type: "system"
         - name: "ipconfig.exe"
           args: ["/all"]
-          output_file: "{{root_output_path}}\\tools\\IPConfig.txt"
+          output_file: "IPConfig.txt"
           exec_type: "system"
         - name: "ipconfig.exe"
           args: ["/displaydns"]
-          output_file: "{{root_output_path}}\\tools\\DNSCache.txt"
+          output_file: "DNSCache.txt"
           exec_type: "system"
         - name: "systeminfo.exe"
           args: []
-          output_file: "{{root_output_path}}\\tools\\SystemInfo.txt"
+          output_file: "SystemInfo.txt"
           exec_type: "system"
         - name: "tasklist.exe"
           args: ["/v", "/fo", "csv"]
-          output_file: "{{root_output_path}}\\tools\\TaskList.csv"
+          output_file: "TaskList.csv"
           exec_type: "system"
         - name: "net.exe"
           args: ["share"]
-          output_file: "{{root_output_path}}\\tools\\NetShare.csv"
+          output_file: "NetShare.csv"
           exec_type: "system"
         - name: "powershell"
           args: ["-command", "Get-ComputerInfo"]
-          output_file: "{{root_output_path}}\\tools\\ComputerInfo.txt"
+          output_file: "ComputerInfo.txt"
           exec_type: "system"
       internal: 
         - name: "ProcInfo"
-          output_file: "{{root_output_path}}\\tools\\ProcInfo.txt"
+          output_file: "ProcInfo.txt"
           exec_type: "internal"
         - name: "ProcDetailsInfo"
-          output_file: "{{root_output_path}}\\tools\\ProcDetailsInfo.txt"
+          output_file: "ProcDetailsInfo.txt"
           exec_type: "internal"
         - name: "PortsInfo"
-          output_file: "{{root_output_path}}\\tools\\PortsInfo.txt"
+          output_file: "PortsInfo.txt"
           exec_type: "internal"
 
   useless_task:

@@ -321,13 +321,24 @@ fn main() -> Result<(), anyhow::Error> {
                 spinner.set_message(format!("Processing: `{}` drive", drive));
 
                 if drive == "*" {
-                    process_all_drives(&mut section_config, root_output)?;
+                    let output_collect_folder = match section_config.output_folder.clone(){
+                        Some(o) => o.replace("{{root_output_path}}", root_output),
+                        None => root_output.to_string(),
+                    };
+                    process_all_drives(&mut section_config, &output_collect_folder)?;
                 } else {
                     // Check if the drive exists
                     if !is_drive_accessible(&drive) {
                         dprintln!("[ERROR] Drive `{}` is not accessible or does not exist", drive);
                     } else {
-                        process_drive_artifacts(&drive, &mut section_config, root_output)?;
+                        let output_collect_folder = match section_config.output_folder.clone(){
+                            Some(o) => o.replace("{{root_output_path}}", root_output)
+                                                .replace("{{drive}}", &drive),
+                            None => format!("{}\\{}", root_output, drive),
+                        };
+                        ensure_directory_exists(&output_collect_folder)?;
+                        process_drive_artifacts(&drive, &mut section_config,
+                            &output_collect_folder)?;
                     }
                 }
             }
@@ -367,32 +378,37 @@ fn main() -> Result<(), anyhow::Error> {
                                     };
                                     let args: Vec<&str> = args_refs.iter().map(String::as_str).collect();
 
+                                    let executor_name =
+                                    executor.name.clone().expect(MSG_ERROR_CONFIG);
+                                    spinner.set_message(format!(
+                                        "Processing: `{}` tool",
+                                        executor_name
+                                    ));
+
                                     // Sanitize output_file
                                     let updated_output_file = match executor.output_file {
                                         Some(output_file) => {
-                                            let mut updated_output_file: String = output_file.to_string();
-                                            if  output_file.contains("{{root_output_path}}") {
-                                                updated_output_file = output_file.replace("{{root_output_path}}", output_path);
-                                                if let Some(pos) = updated_output_file.rfind('\\') {
-                                                    let directory_path = &updated_output_file[..pos];
-                                                    ensure_directory_exists(directory_path)
-                                                        .expect("Failed to create or access output directory");
-                                                }
+                                            let updated_output_file: String = output_file.to_string();
+                                            if let Some(pos) = updated_output_file.rfind('\\') {
+                                                let directory_path = &updated_output_file[..pos];
+                                                ensure_directory_exists(directory_path)
+                                                    .expect("Failed to create or access output directory");
                                             }
                                             updated_output_file
                                         },
-                                        None => "".to_string(),
+                                        None => executor_name.clone().replace(".exe", ".txt").to_string(),
                                     };
                                     let output_file = updated_output_file.as_str();
+                                    let output_exec_folder = match section_config.output_folder.clone(){
+                                        Some(o) => o.replace("{{root_output_path}}", root_output),
+                                        None => format!("{}\\{}", root_output, "tools"),
+                                    };
+                                    ensure_directory_exists(&output_exec_folder)
+                                        .expect("Failed to create or access output directory");
+                                    let output_fullpath = format!("{}\\{}",output_exec_folder,output_file);
 
                                     match exec_type {
                                         config::TypeExec::External => {
-                                            let executor_name =
-                                                executor.name.clone().expect(MSG_ERROR_CONFIG);
-                                            spinner.set_message(format!(
-                                                "Processing: `{}` tool",
-                                                executor_name
-                                            ));
                                             match get_bin(executor_name) {
                                                 Ok(bin) => {
                                                     run (
@@ -404,34 +420,23 @@ fn main() -> Result<(), anyhow::Error> {
                                                         config::ExecType::External,
                                                         Some(&bin),
                                                         Some(&output_path),
-                                                        &output_file
+                                                        &output_fullpath
                                                     );
                                                 }
                                                 Err(e) => dprintln!("{}", e),
                                             }
                                         }
                                         config::TypeExec::Internal => {
-                                            let tool_name = executor.name.expect(MSG_ERROR_CONFIG);
-                                            spinner.set_message(format!(
-                                                "Processing: `{}` tool",
-                                                tool_name
-                                            ));
-                                            run_internal(&tool_name, &output_file);
+                                            run_internal(&executor_name, &output_fullpath);
                                         }
                                         config::TypeExec::System => {
-                                            let executor_name =
-                                                executor.name.expect(MSG_ERROR_CONFIG);
-                                            spinner.set_message(format!(
-                                                "Processing: `{}` tool",
-                                                executor_name
-                                            ));
                                             run (
                                                 executor_name,
                                                 &args,
                                                 ExecType::System,
                                                 None,
                                                 None,
-                                                &output_file
+                                                &output_fullpath
                                             );
                                         }
                                     }
@@ -504,7 +509,7 @@ fn add_directory_to_zip<W: Write + Seek>(
                 add_directory_to_zip(zip, &path, &format!("{}/", name), options)?;
             } else {
                 let mut file = File::open(&path)?;
-    
+
                 // Retrieve last modified time and convert to DateTime components
                 let metadata = file.metadata()?;
                 let modified_time = metadata.modified()?.duration_since(UNIX_EPOCH).unwrap_or_default();

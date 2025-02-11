@@ -446,7 +446,7 @@ pub fn process_drive_artifacts(
                     .sanitize()
                     .expect("[ERROR] Config sanitization failed");
                 let encrypt_option = search_config.encrypt.clone();
-                let max_size = search_config.max_size;
+                let max_size = search_config.get_max_size(section_config.max_size);
                 search_config.objects.iter().flatten().for_each(|object| {
                     let c_obj = split_path(&object.replace("\\", "/"));
                     let d_p: String = if c_obj.0.is_empty() {

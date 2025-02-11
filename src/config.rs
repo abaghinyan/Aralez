@@ -36,6 +36,7 @@ pub struct SectionConfig {
     pub priority: u8,
     pub r#type: TypeTasks,
     pub drive: Option<String>,
+    pub max_size: Option<u64>,
     pub exclude_drives: Option<Vec<String>>,
     pub entries: Entries,
     pub disabled: Option<bool>,
@@ -319,10 +320,10 @@ pub struct SearchConfig {
     pub output_file: Option<String>,
     pub args: Option<Vec<String>>,
     pub objects: Option<Vec<String>>,
-    pub max_size: Option<u64>,
     pub encrypt: Option<String>,
     pub r#type: Option<TypeConfig>,
     pub exec_type: Option<TypeExec>,
+    max_size: Option<u64>,
 }
 
 impl Config {
@@ -435,6 +436,17 @@ impl Config {
 }
 
 impl SearchConfig {
+    // Function that return the min between the max size of the task and the entry
+    // This part should be improved 
+    pub fn get_max_size(&self, section_config_max_size: Option<u64>) -> Option<u64> {
+        match (self.max_size, section_config_max_size) {
+            (Some(search_max), Some(section_max)) => Some(search_max.min(section_max)), // Return the smaller max_size
+            (Some(search_max), None) => Some(search_max), // If section has no max_size, use search_max
+            (None, Some(section_max)) => Some(section_max), // If search has no max_size, use section_max
+            (None, None) => None, // No max_size defined
+        }
+    }
+
     // Method to get root_path with environment variables replaced
     pub fn get_expanded_root_path(&self) -> String {
         replace_env_vars(&self.root_path.clone().unwrap_or_default())

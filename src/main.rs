@@ -16,11 +16,12 @@ mod utils;
 mod resource;
 
 use execute::get_list_tools;
+use indexmap::IndexMap;
 use resource::{add_resource, list_resources, remove_resource};
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
-use config::{Config, ExecType};
+use config::{get_config, set_config, Config, ExecType};
 use execute::{get_bin, run, run_internal};
 use indicatif::{ProgressBar, ProgressStyle};
 use ntfs_reader::{process_all_drives, process_drive_artifacts};
@@ -276,6 +277,11 @@ fn main() -> Result<(), anyhow::Error> {
 
     let config = Config::load()?;
 
+    set_config(Config {
+        output_filename: format!("{}.log", config.get_output_filename()), // Placeholder (overridden)
+        tasks: IndexMap::new(),
+    });
+
     // Check if the --debug flag was provided
     if matches.get_flag("debug") {
         env::set_var("DEBUG_MODE", "true");
@@ -451,16 +457,13 @@ fn main() -> Result<(), anyhow::Error> {
 
     dprintln!("[INFO] All tasks completed");
 
+    let src_log_file = format!("{}.log", root_output);
     // Move the logfile into the root folder
-    let logfile = &format!("{}.log", root_output);
-    let tmp_log_filename = &format!("{}.log", ".aralez");
-    let tmp_log_file = File::open(tmp_log_filename).expect("Unable to open the log file");
-    drop(tmp_log_file);
-    if Path::new(root_output).exists() {
-        let destination_file = format!("{}/{}", root_output, logfile);
-        fs::rename(tmp_log_filename, &destination_file)?;
+    if Path::new(&src_log_file).exists() {
+        let dest_log_file = format!("{}/{}", root_output, src_log_file);
+        fs::rename(src_log_file, dest_log_file)?;
     } else {
-        println!("[WARN] Root file not found");
+        println!("[WARN] Log file not found");
     }
 
     spinner.set_message("Running: compression");

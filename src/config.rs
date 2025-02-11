@@ -21,6 +21,25 @@ use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::fmt;
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+
+// Global static config
+static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| Mutex::new(Config {
+    output_filename: "default.log".to_string(), // Placeholder
+    tasks: IndexMap::new(),
+}));
+
+/// **Function to update the global config instance**
+pub fn set_config(new_config: Config) {
+    let mut config = CONFIG.lock().unwrap();
+    *config = new_config;
+}
+
+/// **Function to retrieve the current config**
+pub fn get_config() -> Config {
+    CONFIG.lock().unwrap().clone()
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {

@@ -5,6 +5,7 @@
 #
 # Author(s): Areg Baghinyan
 #
+max_size:1000000000
 tasks: 
   memory:
     priority: 0

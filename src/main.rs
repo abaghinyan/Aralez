@@ -16,7 +16,6 @@ mod utils;
 mod resource;
 
 use execute::get_list_tools;
-use indexmap::IndexMap;
 use resource::{add_resource, list_resources, remove_resource};
 use anyhow::Result;
 use clap::Parser;
@@ -275,7 +274,8 @@ fn main() -> Result<(), anyhow::Error> {
 
     set_config(Config {
         output_filename: format!("{}.log", config.get_output_filename()), // Placeholder (overridden)
-        tasks: IndexMap::new(),
+        tasks: config.tasks.clone(),
+        max_size: config.max_size,
     });
 
     // Check if the --debug flag was provided

@@ -28,6 +28,7 @@ use std::sync::Mutex;
 static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| Mutex::new(Config {
     output_filename: "default.log".to_string(), // Placeholder
     tasks: IndexMap::new(),
+    max_size: None,
 }));
 
 /// **Function to update the global config instance**
@@ -45,6 +46,7 @@ pub fn get_config() -> Config {
 pub struct Config {
     pub tasks: IndexMap<String, SectionConfig>,
     pub output_filename: String,
+    pub max_size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -279,7 +281,7 @@ impl<'de> Deserialize<'de> for TypeTasks {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeExec {
     External,
     Internal,
@@ -333,7 +335,7 @@ impl<'de> Deserialize<'de> for TypeExec {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct SearchConfig {
     pub root_path: Option<String>,
     pub name: Option<String>,
@@ -457,13 +459,20 @@ impl Config {
 
 impl SearchConfig {
     // Function that return the min between the max size of the task and the entry
-    // This part should be improved 
     pub fn get_max_size(&self, section_config_max_size: Option<u64>) -> Option<u64> {
-        match (self.max_size, section_config_max_size) {
-            (Some(search_max), Some(section_max)) => Some(search_max.min(section_max)), // Return the smaller max_size
-            (Some(search_max), None) => Some(search_max), // If section has no max_size, use search_max
-            (None, Some(section_max)) => Some(section_max), // If search has no max_size, use section_max
-            (None, None) => None, // No max_size defined
+        let config = CONFIG.lock().unwrap(); 
+        let config_max_size = config.max_size;
+        match (self.max_size, section_config_max_size, config_max_size) {
+            (Some(search_max), Some(section_max), Some(config_max)) => {
+                Some(search_max.min(section_max).min(config_max))
+            }
+            (Some(search_max), Some(section_max), None) => Some(search_max.min(section_max)),
+            (Some(search_max), None, Some(config_max)) => Some(search_max.min(config_max)),
+            (None, Some(section_max), Some(config_max)) => Some(section_max.min(config_max)),
+            (Some(search_max), None, None) => Some(search_max),
+            (None, Some(section_max), None) => Some(section_max),
+            (None, None, Some(config_max)) => Some(config_max),
+            (None, None, None) => None,
         }
     }
 

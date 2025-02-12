@@ -6,6 +6,7 @@
 # Author(s): Areg Baghinyan
 #
 max_size:1000000000
+version: "Aralez_config_v1.0"
 tasks: 
   memory:
     priority: 0

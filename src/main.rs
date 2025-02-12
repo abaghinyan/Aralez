@@ -276,6 +276,7 @@ fn main() -> Result<(), anyhow::Error> {
         output_filename: format!("{}.log", config.get_output_filename()), // Placeholder (overridden)
         tasks: config.tasks.clone(),
         max_size: config.max_size,
+        version: config.version.clone()
     });
 
     // Check if the --debug flag was provided
@@ -289,6 +290,7 @@ fn main() -> Result<(), anyhow::Error> {
     config.save(root_output)?;
 
     dprintln!("Aralez version: {} ({})", env!("CARGO_PKG_VERSION"), TARGET_ARCH);
+    dprintln!("Configuration version: {} ", &config.version.clone().unwrap_or("unknown".to_string()));
 
     // Create a spinner
     let spinner = ProgressBar::new_spinner();

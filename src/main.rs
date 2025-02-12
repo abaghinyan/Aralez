@@ -57,11 +57,7 @@ struct Cli {
 
 const MSG_ERROR_CONFIG: &str = "[ERROR] Config error";
 
-const HELP_TEMPLATE: &str = "{bin} {version}
-{author}
-
-{about}
-
+const HELP_TEMPLATE: &str = "
 USAGE:
     {usage}
 

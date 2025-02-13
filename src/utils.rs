@@ -35,7 +35,7 @@ pub fn get<T>(
     encrypt: Option<&String>,
     ads: &str,
     drive: &str,
-) -> Result<(), Error>
+) -> Result<bool, Error>
 where
     T: Read + Seek,
 {
@@ -82,7 +82,7 @@ where
     {
         Ok(f) => f,
         Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-            return Ok(());
+            return Ok(false);
         }
         Err(e) => {
             return Err(anyhow::anyhow!(
@@ -202,7 +202,7 @@ where
                                 {
                                     Ok(f) => f,
                                     Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                                        return Ok(());
+                                        return Ok(false);
                                     }
                                     Err(e) => {
                                         return Err(anyhow::anyhow!(
@@ -288,7 +288,7 @@ where
                                 {
                                     Ok(f) => f,
                                     Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                                        return Ok(());
+                                        return Ok(false);
                                     }
                                     Err(e) => {
                                         return Err(anyhow::anyhow!(
@@ -357,7 +357,7 @@ where
     match output_file.flush() {
         Ok(_) => {
             dprintln!("[INFO] Data successfully saved to `{}`", output_file_name);
-            return Ok(());
+            return Ok(true);
         }
         Err(e) => {
             return Err(anyhow::anyhow!(

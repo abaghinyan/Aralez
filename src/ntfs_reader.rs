@@ -42,11 +42,11 @@ fn process_all_directory(
     drive: &str,
     encrypt: Option<String>,
     max_size: Option<u64>,
-) -> Result<(HashSet<String>, u32)> {
+    success_files_count: &mut u32
+) -> Result<HashSet<String>> {
     let index = file.directory_index(fs)?;
     let mut iter = index.entries();
     let mut entries = Vec::new();
-    let mut success_files_count: u32 = 0;
     let mut local_visited_files: HashSet<String> = HashSet::new();
     // Collect all entries into a vector
     while let Some(entry_result) = iter.next(fs) {
@@ -83,8 +83,9 @@ fn process_all_directory(
                     destination_folder,
                     drive,
                     encrypt.clone(),
-                    max_size
-                ) {
+                    max_size,
+                    success_files_count
+                ){
                     dprintln!("[ERROR] Processing subdirectory: {:?}", e);
                 }
             } else {
@@ -114,9 +115,11 @@ fn process_all_directory(
                     }
                     if size_ok {
                         match get(&sub_file, &new_path, destination_folder, fs, encrypt.as_ref(), ads, drive) {
-                            Ok(_) => {
+                            Ok(saved) => {
                                 local_visited_files.insert(path_check);
-                                success_files_count += 1
+                                if saved {
+                                    *success_files_count += 1;
+                                }
                             }
                             Err(e) => dprintln!("{}", e.to_string()),
                         }
@@ -126,7 +129,7 @@ fn process_all_directory(
         }
     }
 
-    Ok((local_visited_files, success_files_count))
+    Ok(local_visited_files)
 }
 
 /// Recursively process NTFS directories and files and apply glob matching
@@ -139,13 +142,13 @@ fn process_directory(
     parent: &Entry,
     destination_folder: &str,
     visited_files: &mut HashSet<String>,
-    drive: &str
+    drive: &str,
+    success_files_count: &mut u32
 ) -> Result<u32> {
     let index = file.directory_index(fs)?;
     let mut iter = index.entries();
     let mut entries = Vec::new();
     let mut first_elements = config_tree.get_first_level_items();
-    let mut success_files_count: u32 = 0;
     // Collect all entries into a vector
     while let Some(entry_result) = iter.next(fs) {
         match entry_result {
@@ -184,11 +187,11 @@ fn process_directory(
                                 destination_folder,
                                 drive,
                                 obj_node.encrypt.clone(),
-                                obj_node.max_size
+                                obj_node.max_size,
+                                success_files_count
                                 
                             ) {
-                                Ok((current_visited_files, count)) => {
-                                    success_files_count += count;
+                                Ok(current_visited_files) => {
                                     visited_files.extend(current_visited_files);
                                 },
                                 Err(e) => dprintln!("[ERROR] Problem to process the entire folder: {}", e.to_string()),
@@ -217,7 +220,7 @@ fn process_directory(
                         }
     
                         if sub_file.is_directory() {
-                            match process_directory(
+                            if let Err(e) = process_directory (
                                 fs,
                                 ntfs,
                                 &sub_file,
@@ -226,10 +229,10 @@ fn process_directory(
                                 entry,
                                 destination_folder,
                                 visited_files,
-                                drive
+                                drive,
+                                success_files_count
                             ){
-                                Ok(count) => success_files_count += count,
-                                Err(e) => dprintln!("[ERROR] Problem to process the folder {:?} {}", &sub_file, e.to_string()),
+                                dprintln!("[ERROR] Problem to process the folder {:?} {}", &sub_file, e.to_string());
                             }
                         }
                         let mut size_ok = true;
@@ -251,9 +254,11 @@ fn process_directory(
                                 ads,
                                 drive,
                             ) {
-                                Ok(_) => {
-                                    success_files_count += 1;
+                                Ok(saved) => {
                                     visited_files.insert(path_check);
+                                    if saved {
+                                        *success_files_count += 1;
+                                    }
                                 }
                                 Err(e) => dprintln!("{}", e.to_string()),
                             }
@@ -268,7 +273,7 @@ fn process_directory(
         }
     }
 
-    Ok(success_files_count)
+    Ok(*success_files_count)
 }
 
 fn get_file_size(file: &NtfsFile, mut fs:  &mut BufReader<SectorReader<File>>) -> u64 {
@@ -299,6 +304,8 @@ fn explorer(ntfs_path: &str, config_tree: &mut Node, destination_folder: &str, d
         name: "\\".to_string(),
         file_record_number,
     };
+    let mut success_files_count: u32 = 0;
+
     match process_directory(
         &mut fs,
         &ntfs,
@@ -308,7 +315,8 @@ fn explorer(ntfs_path: &str, config_tree: &mut Node, destination_folder: &str, d
         &parent,
         destination_folder,
         &mut visited_files,
-        drive
+        drive,
+        &mut success_files_count
     ) {
         Ok(count) => {
             dprintln!(

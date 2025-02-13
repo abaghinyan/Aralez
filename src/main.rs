@@ -56,7 +56,11 @@ struct Cli {
 
 const MSG_ERROR_CONFIG: &str = "[ERROR] Config error";
 
-const HELP_TEMPLATE: &str = "
+const HELP_TEMPLATE: &str = "{bin} {version}
+{author}
+
+{about}
+
 USAGE:
     {usage}
 
@@ -88,17 +92,6 @@ fn is_drive_accessible(drive: &str) -> bool {
 }
 
 fn main() -> Result<(), anyhow::Error> {
-    // Print the welcome message
-    println!(
-        "Welcome to {} version {} ({})",
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION"),
-        TARGET_ARCH
-    );
-    println!("{}", env!("CARGO_PKG_DESCRIPTION"));
-    println!("Developed by: {}", env!("CARGO_PKG_AUTHORS"));
-    println!();
-    
     let matches = Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
@@ -284,6 +277,17 @@ fn main() -> Result<(), anyhow::Error> {
         env::set_var("DEBUG_MODE", "true");
         println!("Debug mode activated!");
     }
+
+    // Print the welcome message
+    println!(
+        "Welcome to {} version {} ({})",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        TARGET_ARCH
+    );
+    println!("{}", env!("CARGO_PKG_DESCRIPTION"));
+    println!("Developed by: {}", env!("CARGO_PKG_AUTHORS"));
+    println!();
 
     let root_output = &config.get_output_filename();
 

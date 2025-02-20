@@ -122,6 +122,11 @@ tasks:
           max_size: 5242880
           encrypt: "infected"
 
+  brain:
+    type: "correlate"
+    priority: 10
+    output_folder: "{{root_output_path}}\\brain\\"
+
   all_drives__artifacts: 
     type: "collect"
     priority: 2

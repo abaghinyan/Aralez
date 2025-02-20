@@ -26,19 +26,17 @@ use std::sync::Mutex;
 
 // Global static config
 static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| Mutex::new(Config {
-    output_filename: "default.log".to_string(), // Placeholder
+    output_filename: "default.log".to_string(),
     tasks: IndexMap::new(),
     max_size: None,
     version: None
 }));
 
-/// **Function to update the global config instance**
 pub fn set_config(new_config: Config) {
     let mut config = CONFIG.lock().unwrap();
     *config = new_config;
 }
 
-/// **Function to retrieve the current config**
 pub fn get_config() -> Config {
     CONFIG.lock().unwrap().clone()
 }
@@ -52,7 +50,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Entries(HashMap<String, Vec<SearchConfig>>);
+pub struct Entries(pub HashMap<String, Vec<SearchConfig>>);
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SectionConfig {
@@ -62,7 +60,7 @@ pub struct SectionConfig {
     pub output_folder: Option<String>,
     pub max_size: Option<u64>,
     pub exclude_drives: Option<Vec<String>>,
-    pub entries: Entries,
+    pub entries: Option<Entries>,
     pub disabled: Option<bool>,
 }
 
@@ -239,6 +237,7 @@ impl<'de> Deserialize<'de> for TypeConfig {
 pub enum TypeTasks {
     Execute,
     Collect,
+    Correlate,
 }
 
 impl Serialize for TypeTasks {
@@ -249,6 +248,7 @@ impl Serialize for TypeTasks {
         match *self {
             TypeTasks::Execute => serializer.serialize_str("execute"),
             TypeTasks::Collect => serializer.serialize_str("collect"),
+            TypeTasks::Correlate => serializer.serialize_str("correlate"),
         }
     }
 }
@@ -264,7 +264,7 @@ impl<'de> Deserialize<'de> for TypeTasks {
             type Value = TypeTasks;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a string containing 'execute' or 'collect'")
+                formatter.write_str("a string containing 'execute', 'collect' or 'correlate'")
             }
 
             fn visit_str<E>(self, value: &str) -> Result<TypeTasks, E>
@@ -274,7 +274,8 @@ impl<'de> Deserialize<'de> for TypeTasks {
                 match value {
                     "execute" => Ok(TypeTasks::Execute),
                     "collect" => Ok(TypeTasks::Collect),
-                    _ => Err(de::Error::unknown_variant(value, &["execute", "collect"])),
+                    "correlate" => Ok(TypeTasks::Correlate),
+                    _ => Err(de::Error::unknown_variant(value, &["execute", "collect", "correlate"])),
                 }
             }
         }
@@ -347,7 +348,7 @@ pub struct SearchConfig {
     pub encrypt: Option<String>,
     pub r#type: Option<TypeConfig>,
     pub exec_type: Option<TypeExec>,
-    max_size: Option<u64>,
+    pub max_size: Option<u64>,
 }
 
 impl Config {

@@ -14,17 +14,20 @@ mod ntfs_reader;
 mod sector_reader;
 mod utils;
 mod resource;
+mod brain;
 
 use execute::get_list_tools;
+use brain::{collect_registries, collect_services};
 use resource::{add_resource, list_resources, remove_resource};
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
-use config::{get_config, set_config, Config, ExecType};
+use config::{get_config, set_config, Config, Entries, ExecType};
 use execute::{get_bin, run, run_internal};
 use indicatif::{ProgressBar, ProgressStyle};
 use ntfs_reader::{process_all_drives, process_drive_artifacts};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -351,9 +354,8 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
             config::TypeTasks::Execute => {
-                let _ = &section_config
-                    .entries
-                    .par_iter()
+                if let Some(entries) =  &section_config.entries {
+                    entries.par_iter()
                     .for_each(|(_, executors)| {
                         executors.par_iter().for_each(|executor_iter| {
                             let executor = executor_iter.clone();
@@ -453,7 +455,31 @@ fn main() -> Result<(), anyhow::Error> {
                             }
                         });
                     });
+                }
             }
+            config::TypeTasks::Correlate => {
+                let output_collect_folder = match section_config.output_folder.clone(){
+                    Some(o) => o.replace("{{root_output_path}}", root_output)
+                                        .replace("{{drive}}", &default_drive),
+                    None => format!("{}\\{}", root_output, default_drive),
+                };
+                // Collect suspecious files
+                match collect_services(default_drive) {
+                    Ok(search_config_service) => {
+                        let entries= HashMap::from([("services".to_string(), vec![search_config_service])]);
+                        section_config.entries = Some(Entries(entries));
+                        process_drive_artifacts(&default_drive, &mut section_config,
+                            &format!("{}/{}", &output_collect_folder,"services"))?;
+                    },
+                    Err(e) => dprintln!("{}", e),
+                }
+
+                let search_config_registry = collect_registries();
+                let entries= HashMap::from([("registries".to_string(), vec![search_config_registry])]);
+                section_config.entries = Some(Entries(entries));
+                process_drive_artifacts(&default_drive, &mut section_config,
+                    &format!("{}/{}", &output_collect_folder,"registries"))?;
+            },
         }
     }
 

@@ -443,9 +443,8 @@ pub fn process_drive_artifacts(
     let ntfs_path: &str = &format!("\\\\.\\{}:", drive_letter);
 
     let mut config_entries: HashMap<String, (Vec<String>, Option<String>, Option<u64>)> = HashMap::new();
-
-    section_config
-        .entries
+    if let Some(ref mut entries) = section_config.entries {
+        entries
         .iter_mut()
         .for_each(|(_, search_config_vec)| {
             search_config_vec.iter_mut().for_each(|search_config| {
@@ -482,6 +481,7 @@ pub fn process_drive_artifacts(
                 });
             });
         });
+    }
 
     let mut tree = Node::new_directory(false, None, None);
 

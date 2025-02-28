@@ -56,7 +56,7 @@ pub struct Entries(pub HashMap<String, Vec<SearchConfig>>);
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SectionConfig {
-    pub priority: u8,
+    pub priority: Option<u8>,
     pub r#type: TypeTasks,
     pub drive: Option<String>,
     pub output_folder: Option<String>,
@@ -454,7 +454,7 @@ impl Config {
         let mut tasks_vec: Vec<(String, SectionConfig)> = self.tasks.clone().into_iter().collect();
 
         // Sort by priority
-        tasks_vec.sort_by_key(|(_, section)| section.priority);
+        tasks_vec.sort_by_key(|(_, section)| section.priority.unwrap_or(255));
 
         tasks_vec
     }

@@ -52,7 +52,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Entries(HashMap<String, Vec<SearchConfig>>);
+pub struct Entries(pub HashMap<String, Vec<SearchConfig>>);
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SectionConfig {
@@ -62,7 +62,7 @@ pub struct SectionConfig {
     pub output_folder: Option<String>,
     pub max_size: Option<u64>,
     pub exclude_drives: Option<Vec<String>>,
-    pub entries: Entries,
+    pub entries: Option<Entries>,
     pub disabled: Option<bool>,
 }
 
@@ -347,7 +347,8 @@ pub struct SearchConfig {
     pub encrypt: Option<String>,
     pub r#type: Option<TypeConfig>,
     pub exec_type: Option<TypeExec>,
-    max_size: Option<u64>,
+    pub max_size: Option<u64>,
+    pub link: Option<String>,
 }
 
 impl Config {
@@ -456,6 +457,10 @@ impl Config {
         tasks_vec.sort_by_key(|(_, section)| section.priority);
 
         tasks_vec
+    }
+
+    pub fn get_task(&self, name: String) -> Option<&SectionConfig> {
+        self.tasks.get(&name)
     }
 }
 

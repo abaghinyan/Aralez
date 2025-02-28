@@ -18,11 +18,12 @@ use std::io::{self, Write};
 use std::fs::{File, remove_file};
 use std::path::{Path, PathBuf};
 
-pub fn run_internal(tool_name:&str, output_filename: &str) {
+pub fn run_internal(tool_name:&str, output_filename: &str) -> Option<String> {
     dprintln!("[INFO] > `{}` | Starting execution", tool_name);
 
     // Create the full path for the output file
     let output_file_path = Path::new(output_filename);
+    let output: Option<String> = None;
 
     match tool_name {
         "ProcInfo" => {
@@ -36,11 +37,13 @@ pub fn run_internal(tool_name:&str, output_filename: &str) {
         }
         &_ => {
             dprintln!("[ERROR] > `{}` | Internal tool not found", tool_name);
-            return;
+            return None;
         }
     }
     dprintln!("[INFO] > `{}` | The output has been saved to: {}", tool_name, output_filename);
     dprintln!("[INFO] > `{}` | Execution completed", tool_name);
+
+    return output;
 }
 
 pub fn run (
@@ -50,7 +53,7 @@ pub fn run (
     exe_bytes: Option<&[u8]>, 
     output_path: Option<&str>, 
     output_file: &str
-) {
+) -> Option<String> {
     let mut display_name = name.clone();
     if exec_type == ExecType::External {
         // Save the executable to a temporary file
@@ -58,21 +61,21 @@ pub fn run (
             Some(bytes) => bytes,
             None => {
                 dprintln!("[ERROR] > `{}` | Content of the external file not found", name);
-                return;
+                return None;
             },
         };
         let path = match output_path {
             Some(p) => p,
             None => {
                 dprintln!("[ERROR] > `{}` | The output path for the executable not found", name);
-                return;
+                return None;
             },
         };
         let temp_exe_path = match save_to_temp_file(&name, buffer, path) {
             Ok(path) => path,  // If saving succeeds, use the path
             Err(e) => {
                 dprintln!("[ERROR] > `{}` | Failed to save to temp file: {}", name, e);
-                return;  // Exit the function if there's an error
+                return None;  // Exit the function if there's an error
             }
         };
         
@@ -96,7 +99,7 @@ pub fn run (
         }
         Err(e) => {
             dprintln!("[ERROR] > `{}` | Failed to spawn process: {}", display_name, e);
-            return;
+            return None;
         }
     };
 
@@ -107,7 +110,7 @@ pub fn run (
         Ok(output) => output,
         Err(e) => {
             dprintln!("[ERROR] > `{}` ({}) | Failed to execute: {}", display_name, pid, e);
-            return;
+            return None;
         }
     }; 
 
@@ -127,6 +130,8 @@ pub fn run (
 
     dprintln!("[INFO] > `{}` ({}) | The output has been saved to: {}", display_name, pid, output_file);
     dprintln!("[INFO] > `{}` ({}) | Execution completed", display_name, pid);
+
+    return Some(String::from_utf8(output.stdout).unwrap_or("".to_string()));
 }
 
 pub fn get_list_tools () -> Vec<&'static str> {

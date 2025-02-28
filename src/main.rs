@@ -14,17 +14,20 @@ mod ntfs_reader;
 mod sector_reader;
 mod utils;
 mod resource;
+mod path;
 
 use execute::get_list_tools;
+use path::{insert_if_valid, remove_drive_letter};
 use resource::{add_resource, list_resources, remove_resource};
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
-use config::{get_config, set_config, Config, ExecType};
+use config::{get_config, set_config, Config, Entries, ExecType, SearchConfig, SectionConfig};
 use execute::{get_bin, run, run_internal};
 use indicatif::{ProgressBar, ProgressStyle};
 use ntfs_reader::{process_all_drives, process_drive_artifacts};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -322,38 +325,39 @@ fn main() -> Result<(), anyhow::Error> {
         spinner.set_message(format!("Processing: `{}` task", section_name));
         match section_config.r#type {
             config::TypeTasks::Collect => {
-                let drive: String = section_config
-                    .drive
-                    .clone()
-                    .unwrap_or_else(|| default_drive.to_string());
-                spinner.set_message(format!("Processing: `{}` drive", drive));
+                if let Some(_) = section_config.entries {
+                    let drive: String = section_config
+                        .drive
+                        .clone()
+                        .unwrap_or_else(|| default_drive.to_string());
+                    spinner.set_message(format!("Processing: `{}` drive", drive));
 
-                if drive == "*" {
-                    let output_collect_folder = match section_config.output_folder.clone(){
-                        Some(o) => o.replace("{{root_output_path}}", root_output),
-                        None => root_output.to_string(),
-                    };
-                    process_all_drives(&mut section_config, &output_collect_folder)?;
-                } else {
-                    // Check if the drive exists
-                    if !is_drive_accessible(&drive) {
-                        dprintln!("[ERROR] Drive `{}` is not accessible or does not exist", drive);
-                    } else {
+                    if drive == "*" {
                         let output_collect_folder = match section_config.output_folder.clone(){
-                            Some(o) => o.replace("{{root_output_path}}", root_output)
-                                                .replace("{{drive}}", &drive),
-                            None => format!("{}\\{}", root_output, drive),
+                            Some(o) => o.replace("{{root_output_path}}", root_output),
+                            None => root_output.to_string(),
                         };
-                        ensure_directory_exists(&output_collect_folder)?;
-                        process_drive_artifacts(&drive, &mut section_config,
-                            &output_collect_folder)?;
+                        process_all_drives(&mut section_config, &output_collect_folder)?;
+                    } else {
+                        // Check if the drive exists
+                        if !is_drive_accessible(&drive) {
+                            dprintln!("[ERROR] Drive `{}` is not accessible or does not exist", drive);
+                        } else {
+                            let output_collect_folder = match section_config.output_folder.clone(){
+                                Some(o) => o.replace("{{root_output_path}}", root_output)
+                                                    .replace("{{drive}}", &drive),
+                                None => format!("{}\\{}", root_output, drive),
+                            };
+                            ensure_directory_exists(&output_collect_folder)?;
+                            process_drive_artifacts(&drive, &mut section_config,
+                                &output_collect_folder)?;
+                        }
                     }
                 }
             }
             config::TypeTasks::Execute => {
-                let _ = &section_config
-                    .entries
-                    .par_iter()
+                if let Some(entries) =  &section_config.entries {
+                    entries.par_iter()
                     .for_each(|(_, executors)| {
                         executors.par_iter().for_each(|executor_iter| {
                             let executor = executor_iter.clone();
@@ -438,7 +442,7 @@ fn main() -> Result<(), anyhow::Error> {
                                             run_internal(&executor_name, &output_fullpath);
                                         }
                                         config::TypeExec::System => {
-                                            run (
+                                            let result = run (
                                                 executor_name,
                                                 &args,
                                                 ExecType::System,
@@ -446,6 +450,16 @@ fn main() -> Result<(), anyhow::Error> {
                                                 None,
                                                 &output_fullpath
                                             );
+                                            if let Some(link_element) = executor.link {
+                                                match config.get_task(link_element.clone()) {
+                                                    Some(task) => {
+                                                        if let Some(res) = result {
+                                                            collect_exec_result(&section_config, res, task.clone(), root_output, default_drive);
+                                                        }
+                                                    },
+                                                    None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -453,6 +467,7 @@ fn main() -> Result<(), anyhow::Error> {
                             }
                         });
                     });
+                }
             }
         }
     }
@@ -477,6 +492,48 @@ fn main() -> Result<(), anyhow::Error> {
     spinner.finish_with_message("Tasks completed");
 
     Ok(())
+}
+
+fn collect_exec_result(section_config: &SectionConfig, result: String, task: SectionConfig, root_output: &str, default_drive: &String) {
+    let files_path: Vec<String> = result.lines().map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty()) 
+        .collect();
+    let mut file_entries:HashSet<String> = HashSet::new();
+    for file_path in files_path {
+        insert_if_valid(&mut file_entries, &file_path);
+    }
+    let file_entries_vec = file_entries.into_iter().map(|path| remove_drive_letter(&path)).collect();
+
+    let search_config = SearchConfig {
+        root_path: Some("\\".to_owned()),
+        name: None,
+        output_file: None,
+        args: None,
+        objects: Some(file_entries_vec),
+        encrypt: None,
+        r#type: None,
+        exec_type: None,
+        max_size: None,
+        link: None,
+    };
+    let entries_f = HashMap::from([("services".to_string(), vec![search_config])]);
+    let mut sc = task;
+    sc.entries = Some(Entries(entries_f));
+
+    let drive: String = section_config
+    .drive
+    .clone()
+    .unwrap_or_else(|| default_drive.to_string());
+
+    let output_collect_folder = match sc.output_folder.clone(){
+        Some(o) => o.replace("{{root_output_path}}", root_output)
+                            .replace("{{drive}}", &drive),
+        None => format!("{}\\{}", root_output, drive),
+    };
+    ensure_directory_exists(&output_collect_folder)
+        .expect("Failed to create or access output directory");
+    let _ = process_drive_artifacts(&drive, &mut sc,
+        &output_collect_folder);
 }
 
 fn zip_dir(dir_name: &str) -> io::Result<()> {

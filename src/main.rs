@@ -423,7 +423,7 @@ fn main() -> Result<(), anyhow::Error> {
                                         config::TypeExec::External => {
                                             match get_bin(executor_name) {
                                                 Ok(bin) => {
-                                                    run (
+                                                    let result = run (
                                                         executor
                                                             .name
                                                             .clone()
@@ -434,12 +434,32 @@ fn main() -> Result<(), anyhow::Error> {
                                                         Some(&output_path),
                                                         &output_fullpath
                                                     );
+                                                    if let Some(link_element) = executor.link {
+                                                        match config.get_task(link_element.clone()) {
+                                                            Some(task) => {
+                                                                if let Some(res) = result {
+                                                                    collect_exec_result(&section_config, res, task.clone(), root_output, default_drive);
+                                                                }
+                                                            },
+                                                            None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
+                                                        }
+                                                    }
                                                 }
                                                 Err(e) => dprintln!("{}", e),
                                             }
                                         }
                                         config::TypeExec::Internal => {
-                                            run_internal(&executor_name, &output_fullpath);
+                                            let result = run_internal(&executor_name, &output_fullpath);
+                                            if let Some(link_element) = executor.link {
+                                                match config.get_task(link_element.clone()) {
+                                                    Some(task) => {
+                                                        if let Some(res) = result {
+                                                            collect_exec_result(&section_config, res, task.clone(), root_output, default_drive);
+                                                        }
+                                                    },
+                                                    None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
+                                                }
+                                            }
                                         }
                                         config::TypeExec::System => {
                                             let result = run (

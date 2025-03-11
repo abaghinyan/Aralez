@@ -7,6 +7,7 @@
 #
 max_size: 1000000000
 version: "Aralez_config_v1.0"
+# encrypt: "secret"
 tasks: 
   memory:
     priority: 0

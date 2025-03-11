@@ -29,7 +29,8 @@ static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| Mutex::new(Config {
     output_filename: "default.log".to_string(), // Placeholder
     tasks: IndexMap::new(),
     max_size: None,
-    version: None
+    version: None,
+    encrypt: None
 }));
 
 /// **Function to update the global config instance**
@@ -49,6 +50,7 @@ pub struct Config {
     pub output_filename: String,
     pub max_size: Option<u64>,
     pub version: Option<String>,
+    pub encrypt: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

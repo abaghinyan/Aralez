@@ -157,6 +157,13 @@ fn main() -> Result<(), anyhow::Error> {
                 .help("List all external tools")
                 .action(clap::ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("encrypt")
+                .short('e')
+                .long("encrypt")
+                .help("Encrypt the archive with a password by using AES256")
+                .value_name("PASSWORD")
+        )
         .help_template(HELP_TEMPLATE)
         .get_matches();
 
@@ -268,11 +275,17 @@ fn main() -> Result<(), anyhow::Error> {
 
     let config = Config::load()?;
 
+    let mut archive_encrypt = config.encrypt.clone();
+    if let Some(_) = matches.get_one::<String>("encrypt") {
+        archive_encrypt = matches.get_one::<String>("encrypt").cloned();
+    }
+
     set_config(Config {
         output_filename: format!("{}.log", config.get_output_filename()), // Placeholder (overridden)
         tasks: config.tasks.clone(),
         max_size: config.max_size,
-        version: config.version.clone()
+        version: config.version.clone(),
+        encrypt: archive_encrypt.clone(),
     });
 
     // Check if the --debug flag was provided
@@ -505,7 +518,7 @@ fn main() -> Result<(), anyhow::Error> {
 
     spinner.set_message("Running: compression");
 
-    zip_dir(root_output)?;
+    zip_dir(root_output, archive_encrypt)?;
 
     remove_dir_all(root_output)?;
 
@@ -556,7 +569,7 @@ fn collect_exec_result(section_config: &SectionConfig, result: String, task: Sec
         &output_collect_folder);
 }
 
-fn zip_dir(dir_name: &str) -> io::Result<()> {
+fn zip_dir(dir_name: &str, encrypt: Option<String>) -> io::Result<()> {
     let root_path = Path::new(dir_name);
     fs::create_dir_all(&root_path)?;
 
@@ -564,9 +577,15 @@ fn zip_dir(dir_name: &str) -> io::Result<()> {
     let zip_file = File::create(&zip_file_name)?;
 
     let mut zip = ZipWriter::new(zip_file);
-    let options = FileOptions::default()
+    let mut options = FileOptions::default()
         .compression_method(CompressionMethod::Deflated)
         .large_file(true);
+
+    let password_ref = encrypt.as_ref(); // Get a reference to the original Option<Vec<u8>>
+
+    if let Some(password) = password_ref {
+        options = options.with_aes_encryption(zip::AesMode::Aes256, password);
+    }
 
     add_directory_to_zip(&mut zip, root_path, "", &options)?;
 

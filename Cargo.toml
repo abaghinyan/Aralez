@@ -23,7 +23,7 @@ chrono = { version = "0.4", features = ["serde"] }
 winreg = { version = "0.52", features = ["transactions"] }
 widestring = "1"
 hostname = "0.4"
-zip = "2"
+zip  = { version = "2", features = ["aes-crypto"] }
 aes-gcm = "0.10" 
 aes = "0.8"
 rand = "0.8" 

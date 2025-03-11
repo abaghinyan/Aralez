@@ -101,12 +101,14 @@ fn main() -> Result<(), anyhow::Error> {
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .arg(
             Arg::new("debug")
-                .long("debug")
-                .help("Activate debug mode")
+                .short('v')
+                .long("verbos")
+                .help("Activate verbos mode")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("default_drive")
+                .short('d')
                 .long("default_drive")
                 .help("Specify the default drive to process")
                 .value_name("DRIVE")
@@ -114,18 +116,21 @@ fn main() -> Result<(), anyhow::Error> {
         )
         .arg(
             Arg::new("show_config")
+                .short('s')
                 .long("show_config")
                 .help("Show the configuration file and exit")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("check_config")
+                .short('x')
                 .long("check_config")
                 .help("Check the configuration file")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("change_config")
+                .short('c')
                 .long("change_config")
                 .help("Change the embedded configuration file")
                 .value_names(&["CONFIG_FILE", "OUTPUT_FILE"])
@@ -135,6 +140,7 @@ fn main() -> Result<(), anyhow::Error> {
         )
         .arg(
             Arg::new("add_tool")
+                .short('a')
                 .long("add_tool")
                 .help("Add a new executable tool to the resources")
                 .value_names(&["EXECUTABLE_TOOL_PATH", "OUTPUT_FILE"])
@@ -144,6 +150,7 @@ fn main() -> Result<(), anyhow::Error> {
         )
         .arg(
             Arg::new("remove_tool")
+                .short('r')
                 .long("remove_tool")
                 .help("Remove an executable tool to the resources")
                 .value_names(&["EXECUTABLE_TOOL_NAME", "OUTPUT_FILE"])
@@ -153,6 +160,7 @@ fn main() -> Result<(), anyhow::Error> {
         )
         .arg(
             Arg::new("list_tools")
+                .short('l')
                 .long("list_tools")
                 .help("List all external tools")
                 .action(clap::ArgAction::SetTrue),

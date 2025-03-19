@@ -122,6 +122,10 @@ tasks:
           objects: ["*.exe", "*.dll", "*.scr", "*.bat", "*.cmd", "*.vbs", "*.ps1", "*.docm", "*.doc", "*.docx", "*.xlsm", "*.xls", "*.xlsx", "*.js", "*.jar", "*.msi"]
           max_size: 5242880
           encrypt: "infected"
+  services:
+    priority: 3
+    type: "collect"
+    output_folder: "{{root_output_path}}\\suspicious\\"
 
   all_drives__artifacts: 
     type: "collect"
@@ -196,6 +200,12 @@ tasks:
           args: ["-command", "Get-ComputerInfo"]
           output_file: "ComputerInfo.txt"
           exec_type: "system"
+        - name: "powershell"
+          args: ["-command", "Get-WinEvent -LogName System -FilterXPath '*[System[(EventID=7045)]]' | ForEach-Object { ([xml]$_.ToXml()).Event.EventData.Data | Where-Object Name -EQ 'ImagePath' | Select-Object -ExpandProperty '#text' }"]
+          output_file: "ComputerInfo.txt"
+          exec_type: "system"
+          link: "services"
+
       internal: 
         - name: "ProcInfo"
           output_file: "ProcInfo.txt"

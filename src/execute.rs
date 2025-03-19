@@ -6,18 +6,32 @@
 // Author(s): Areg Baghinyan
 //
 
-mod network_info;
-mod process;
-mod process_details;
+#[cfg(target_os = "windows")]
+pub mod windows {
+    pub mod network_info;
+    pub mod process;
+    pub mod process_details;
+}
+
+// Bring modules into scope
+#[cfg(target_os = "windows")]
+use windows::*;
+
+#[cfg(target_os = "windows")]
+pub mod windows_os {
+    pub use crate::resource::extract_resource;
+}
+
+#[cfg(target_os = "windows")]
+use windows_os::*;
 
 use crate::config::ExecType;
-use crate::resource::extract_resource;
-
 use std::process::{Command, Stdio};
 use std::io::{self, Write};
 use std::fs::{File, remove_file};
 use std::path::{Path, PathBuf};
 
+#[cfg(target_os = "windows")] 
 pub fn run_internal(tool_name:&str, output_filename: &str) -> Option<String> {
     dprintln!("[INFO] > `{}` | Starting execution", tool_name);
 
@@ -134,6 +148,7 @@ pub fn run (
     return Some(String::from_utf8(output.stdout).unwrap_or("".to_string()));
 }
 
+#[cfg(target_os = "windows")]
 pub fn get_list_tools () -> Vec<&'static str> {
     vec![
         "autorunsc.exe",
@@ -147,6 +162,7 @@ pub fn get_list_tools () -> Vec<&'static str> {
     ]
 }
 
+#[cfg(target_os = "windows")]
 pub fn get_bin(name: String) -> Result<Vec<u8>, anyhow::Error> {
     let exe_bytes: Vec<u8> = match name.as_str() {
         "autorunsc.exe" => include_bytes!("../tools/autorunsc.exe").to_vec(),

@@ -6,11 +6,21 @@
 // Author(s): Areg Baghinyan
 //
 
+#[cfg(target_os = "windows")]
+pub mod windows_os {
+    pub use crate::utils::ensure_directory_exists;
+
+    pub use std::io;
+    pub use std::path::Path;
+    pub use std::io::SeekFrom;
+}
+
+#[cfg(target_os = "windows")]
+use windows_os::*;
+
 use crate::config::SectionConfig;
 use crate::sector_reader::SectorReader;
-use crate::utils::{
-    ensure_directory_exists, get, split_path
-};
+use crate::utils::{ get, split_path };
 use anyhow::Result;
 use glob::Pattern;
 use ntfs::Ntfs;
@@ -18,12 +28,11 @@ use ntfs::NtfsFile;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs::File;
-use std::io;
 use std::io::BufReader;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::Path;
+use std::io::{Read, Seek};
 use std::u64;
 
+#[cfg(target_os = "windows")]
 const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
 
 #[derive(Debug)]
@@ -218,7 +227,7 @@ fn process_directory(
                         if !&obj_name.contains("*") && !obj_node.all {
                             obj_node.checked = true;
                         }
-    
+
                         if sub_file.is_directory() {
                             if let Err(e) = process_directory (
                                 fs,
@@ -438,9 +447,11 @@ pub fn process_drive_artifacts(
     section_config: &mut SectionConfig,
     output_path: &str,
 ) -> Result<()> {
-    let drive_letter = drive.chars().next().unwrap();
-
-    let ntfs_path: &str = &format!("\\\\.\\{}:", drive_letter);
+    let ntfs_path: &str = if cfg!(target_os = "windows") {
+        &format!("\\\\.\\{}:", drive.chars().next().unwrap())
+    } else {
+        drive
+    };
 
     let mut config_entries: HashMap<String, (Vec<String>, Option<String>, Option<u64>)> = HashMap::new();
     if let Some(ref mut entries) = section_config.entries {
@@ -495,6 +506,7 @@ pub fn process_drive_artifacts(
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
 pub fn list_ntfs_drives() -> io::Result<Vec<String>> {
     let mut ntfs_drives = Vec::new();
 
@@ -518,6 +530,7 @@ pub fn list_ntfs_drives() -> io::Result<Vec<String>> {
     Ok(ntfs_drives)
 }
 
+#[cfg(target_os = "windows")]
 /// Function to check if a partition is NTFS by looking for the NTFS signature
 fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> io::Result<bool> {
     let mut boot_sector = [0u8; 512]; // Boot sector is typically 512 bytes
@@ -537,6 +550,7 @@ pub fn initialize_ntfs<T: Read + Seek>(fs: &mut T) -> Result<Ntfs> {
 }
 
 /// Process all NTFS drives except the C drive
+#[cfg(target_os = "windows")]
 pub fn process_all_drives(section_config: &mut SectionConfig, root_output: &str) -> Result<()> {
     let ntfs_drives = list_ntfs_drives()?;
 

@@ -6,7 +6,15 @@
 // Author(s): Areg Baghinyan
 //
 
-use crate::resource::extract_resource;
+#[cfg(target_os = "windows")]
+pub mod windows_os {
+    pub use crate::resource::extract_resource;
+    pub use std::io::Read;
+}
+
+#[cfg(target_os = "windows")]
+use windows_os::*;
+
 use crate::utils::{remove_trailing_slash, replace_env_vars};
 use anyhow::Result;
 use chrono::prelude::*;
@@ -17,7 +25,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs::{create_dir_all, File};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::fmt;
@@ -77,6 +85,19 @@ pub enum TypeConfig {
 pub enum ExecType {
     External,
     System
+}
+
+impl SectionConfig {
+    pub fn get_output_folder(&self) -> Option<String> {
+        #[cfg(target_os = "linux")]
+        {
+            self.output_folder.as_ref().map(|folder| folder.replace("\\", "/"))
+        }
+        #[cfg(target_os = "windows")]
+        {
+            self.output_folder.clone()
+        }
+    }
 }
 
 // Implement IntoIterator for `&Entries`
@@ -287,9 +308,11 @@ impl<'de> Deserialize<'de> for TypeTasks {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeExec {
-    External,
-    Internal,
     System,
+    #[cfg(target_os = "windows")]
+    Internal,
+    #[cfg(target_os = "windows")]
+    External,
 }
 
 impl Serialize for TypeExec {
@@ -298,7 +321,9 @@ impl Serialize for TypeExec {
         S: Serializer,
     {
         match *self {
+            #[cfg(target_os = "windows")]
             TypeExec::External => serializer.serialize_str("external"),
+            #[cfg(target_os = "windows")] 
             TypeExec::Internal => serializer.serialize_str("internal"),
             TypeExec::System => serializer.serialize_str("system"),
         }
@@ -324,7 +349,9 @@ impl<'de> Deserialize<'de> for TypeExec {
                 E: de::Error,
             {
                 match value {
+                    #[cfg(target_os = "windows")] 
                     "external" => Ok(TypeExec::External),
+                    #[cfg(target_os = "windows")]
                     "internal" => Ok(TypeExec::Internal),
                     "system" => Ok(TypeExec::System),
                     _ => Err(de::Error::unknown_variant(
@@ -364,19 +391,27 @@ impl Config {
 
     pub fn load() -> Result<Self, anyhow::Error> {
         // Load configuration: Try to load the embedded configuration first, then fallback to default
-        let config_data = Config::load_embedded_config().unwrap_or(String::new());
-        if config_data.is_empty() {
-            return match Config::load_default() {
-                Ok(conf) => Ok(conf),
-                Err(e) => Err(e),
+        #[cfg(target_os = "windows")] {
+            let config_data = Config::load_embedded_config().unwrap_or(String::new());
+            if config_data.is_empty() {
+                return match Config::load_default() {
+                    Ok(conf) => Ok(conf),
+                    Err(e) => Err(e),
+                }
             }
+            return match serde_yaml::from_str(&config_data) {
+                Ok(config) => Ok(config),
+                Err(e) => Err(anyhow::anyhow!(e.to_string()) ),
+            };
         }
-        return match serde_yaml::from_str(&config_data) {
-            Ok(config) => Ok(config),
-            Err(e) => Err(anyhow::anyhow!(e.to_string()) ),
-        };
+        #[cfg(target_os = "linux")]
+        match Config::load_default() {
+            Ok(conf) => Ok(conf),
+            Err(e) => Err(e),
+        }
     }
 
+    #[cfg(target_os = "windows")]
     pub fn check_config_file(filepath: &String) -> Result<Self, anyhow::Error> {
         let mut file = File::open(filepath)?;
         let mut buffer = Vec::new();
@@ -390,6 +425,7 @@ impl Config {
     }
     
     // Function to load the embedded configuration at runtime
+    #[cfg(target_os = "windows")]
     pub fn load_embedded_config() -> Result<String, anyhow::Error> {
         let config_data = extract_resource("config.yml")?;
         let config_string = String::from_utf8(config_data)?;
@@ -400,6 +436,7 @@ impl Config {
     /// Load the raw configuration as a plain string, choosing between embedded or default.
     pub fn get_raw_data() -> Result<String> {
         // Attempt to load the embedded configuration
+        #[cfg(target_os = "windows")]
         if let Ok(embedded_config) = Config::load_embedded_config() {
             if !embedded_config.is_empty() {
                 return Ok(embedded_config);

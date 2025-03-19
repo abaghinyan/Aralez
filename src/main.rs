@@ -8,24 +8,38 @@
 #[macro_use]
 mod macros;
 
+#[cfg(target_os = "windows")]
+pub mod resource;
+
 mod config;
 mod execute;
 mod ntfs_reader;
 mod sector_reader;
 mod utils;
-mod resource;
 mod path;
 
-use execute::get_list_tools;
+#[cfg(target_os = "windows")]
+pub mod windows_os {
+    pub use crate::execute::{get_list_tools, run_internal, get_bin};
+    pub use crate::resource::{add_resource, list_resources, remove_resource};
+    pub use crate::ntfs_reader::process_all_drives;
+    pub use crate::resource::extract_resource;
+}
+
+#[cfg(target_os = "windows")]
+use windows_os::*;
+
+#[cfg(target_os = "linux")]
+use users::get_effective_uid;
+
+use execute::run;
 use path::{insert_if_valid, remove_drive_letter};
-use resource::{add_resource, list_resources, remove_resource};
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
 use config::{get_config, set_config, Config, Entries, ExecType, SearchConfig, SectionConfig};
-use execute::{get_bin, run, run_internal};
 use indicatif::{ProgressBar, ProgressStyle};
-use ntfs_reader::{process_all_drives, process_drive_artifacts};
+use ntfs_reader::process_drive_artifacts;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -90,12 +104,23 @@ fn check_config() -> Result<Config, anyhow::Error> {
 
 /// Helper function to check if the drive exists
 fn is_drive_accessible(drive: &str) -> bool {
-    let drive_path = format!("{}:\\", drive);
+    let drive_path = if cfg!(target_os = "windows") {
+        format!("{}:\\", drive)
+    } else {
+        drive.to_string()
+    };
     fs::metadata(&drive_path).is_ok()
 }
 
 fn main() -> Result<(), anyhow::Error> {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
+    #[cfg(target_os = "linux")]
+    if get_effective_uid() != 0 {
+        eprintln!("[WARN] Aralez must be run as root/administrator.");
+        eprintln!("Try: sudo ./aralez");
+        std::process::exit(1);
+    }
+
+    let mut cmd = Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
@@ -105,14 +130,6 @@ fn main() -> Result<(), anyhow::Error> {
                 .long("verbos")
                 .help("Activate verbos mode")
                 .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("default_drive")
-                .short('d')
-                .long("default_drive")
-                .help("Specify the default drive to process")
-                .value_name("DRIVE")
-                .default_value("C"),
         )
         .arg(
             Arg::new("show_config")
@@ -129,6 +146,16 @@ fn main() -> Result<(), anyhow::Error> {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("encrypt")
+                .short('e')
+                .long("encrypt")
+                .help("Encrypt the archive with a password by using AES256")
+                .value_name("PASSWORD")
+        )
+        .help_template(HELP_TEMPLATE);
+    #[cfg(target_os = "windows")]
+    {
+        cmd = cmd.arg(
             Arg::new("change_config")
                 .short('c')
                 .long("change_config")
@@ -137,6 +164,14 @@ fn main() -> Result<(), anyhow::Error> {
                 .value_hint(clap::ValueHint::FilePath)
                 .num_args(2)
                 .required(false),
+        )
+        .arg(
+            Arg::new("default_drive")
+                .short('d')
+                .long("default_drive")
+                .help("Specify the default drive to process")
+                .value_name("DRIVE")
+                .default_value("C"),
         )
         .arg(
             Arg::new("add_tool")
@@ -164,18 +199,25 @@ fn main() -> Result<(), anyhow::Error> {
                 .long("list_tools")
                 .help("List all external tools")
                 .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("encrypt")
-                .short('e')
-                .long("encrypt")
-                .help("Encrypt the archive with a password by using AES256")
-                .value_name("PASSWORD")
-        )
-        .help_template(HELP_TEMPLATE)
-        .get_matches();
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        cmd = cmd.arg(
+            Arg::new("default_drive")
+                .short('d')
+                .long("default_drive")
+                .help("Specify the mounted NTFS device to process (ex: /dev/loopX)")
+                .value_name("DRIVE")
+                .required_unless_present_any(["show_config", "check_config"]),
+        );
+    }
+
+    let matches = cmd.get_matches();
 
     // Handle changing the embedded configuration
+    #[cfg(target_os = "windows")]
     if let Some(values) = matches.get_many::<String>("change_config") {
         let args: Vec<_> = values.collect();
         let config_path = args[0];
@@ -200,6 +242,7 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Add new tool
+    #[cfg(target_os = "windows")]
     if let Some(values) = matches.get_many::<String>("add_tool") {
         let args: Vec<_> = values.collect();
         let tool_path = args[0];
@@ -226,6 +269,7 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Remove tool
+    #[cfg(target_os = "windows")]
     if let Some(values) = matches.get_many::<String>("remove_tool") {
         let args: Vec<_> = values.collect();
         let tool_name = args[0];
@@ -246,12 +290,16 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // list all tools
+    #[cfg(target_os = "windows")]
     if matches.get_flag("list_tools") {
         println!("== External tools ==");
-        let ext_list = get_list_tools();
-        for tool in ext_list {
-            println!("(static) {}",tool);
+        #[cfg(target_os = "windows")] {
+            let ext_list = get_list_tools();
+            for tool in ext_list {
+                println!("(static) {}",tool);
+            }
         }
+
         match list_resources(10) {
             Ok(list_resources_array) => {
                 for resource_element in list_resources_array {
@@ -354,17 +402,19 @@ fn main() -> Result<(), anyhow::Error> {
                     spinner.set_message(format!("Processing: `{}` drive", drive));
 
                     if drive == "*" {
-                        let output_collect_folder = match section_config.output_folder.clone(){
-                            Some(o) => o.replace("{{root_output_path}}", root_output),
-                            None => root_output.to_string(),
-                        };
-                        process_all_drives(&mut section_config, &output_collect_folder)?;
+                        #[cfg(target_os = "windows")] {
+                            let output_collect_folder = match section_config.get_output_folder(){
+                                Some(o) => o.replace("{{root_output_path}}", root_output),
+                                None => root_output.to_string(),
+                            };
+                            process_all_drives(&mut section_config, &output_collect_folder)?;
+                        }
                     } else {
                         // Check if the drive exists
                         if !is_drive_accessible(&drive) {
                             dprintln!("[ERROR] Drive `{}` is not accessible or does not exist", drive);
                         } else {
-                            let output_collect_folder = match section_config.output_folder.clone(){
+                            let output_collect_folder = match section_config.get_output_folder() {
                                 Some(o) => o.replace("{{root_output_path}}", root_output)
                                                     .replace("{{drive}}", &drive),
                                 None => format!("{}\\{}", root_output, drive),
@@ -432,15 +482,20 @@ fn main() -> Result<(), anyhow::Error> {
                                         None => executor_name.clone().replace(".exe", ".txt").to_string(),
                                     };
                                     let output_file = updated_output_file.as_str();
-                                    let output_exec_folder = match section_config.output_folder.clone(){
+                                    let output_exec_folder = match section_config.get_output_folder(){
                                         Some(o) => o.replace("{{root_output_path}}", root_output),
                                         None => format!("{}\\{}", root_output, "tools"),
                                     };
                                     ensure_directory_exists(&output_exec_folder)
                                         .expect("Failed to create or access output directory");
-                                    let output_fullpath = format!("{}\\{}",output_exec_folder,output_file);
+                                    let output_fullpath: String = if cfg!(target_os = "windows") {
+                                        format!("{}\\{}",output_exec_folder,output_file)
+                                    } else {
+                                        format!("{}/{}",output_exec_folder,output_file)
+                                    };
 
                                     match exec_type {
+                                        #[cfg(target_os = "windows")] 
                                         config::TypeExec::External => {
                                             match get_bin(executor_name) {
                                                 Ok(bin) => {
@@ -469,6 +524,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                 Err(e) => dprintln!("{}", e),
                                             }
                                         }
+                                        #[cfg(target_os = "windows")] 
                                         config::TypeExec::Internal => {
                                             let result = run_internal(&executor_name, &output_fullpath);
                                             if let Some(link_element) = executor.link {
@@ -508,6 +564,7 @@ fn main() -> Result<(), anyhow::Error> {
                             }
                         });
                     });
+                    
                 }
             }
         }
@@ -566,7 +623,7 @@ fn collect_exec_result(section_config: &SectionConfig, result: String, task: Sec
     .clone()
     .unwrap_or_else(|| default_drive.to_string());
 
-    let output_collect_folder = match sc.output_folder.clone(){
+    let output_collect_folder = match sc.get_output_folder() {
         Some(o) => o.replace("{{root_output_path}}", root_output)
                             .replace("{{drive}}", &drive),
         None => format!("{}\\{}", root_output, drive),

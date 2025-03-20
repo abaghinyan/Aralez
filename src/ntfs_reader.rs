@@ -544,9 +544,13 @@ fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> io::Result<bool> {
 }
 
 pub fn initialize_ntfs<T: Read + Seek>(fs: &mut T) -> Result<Ntfs> {
-    let mut ntfs = Ntfs::new(fs)?;
-    ntfs.read_upcase_table(fs)?;
-    Ok(ntfs)
+    match Ntfs::new(fs) {
+        Ok(mut ntfs) => {
+            ntfs.read_upcase_table(fs)?;
+            Ok(ntfs)
+        },
+        Err(_) => Err(anyhow::anyhow!("[WARN] The current drive is not an NTFS partition")),
+    }
 }
 
 /// Process all NTFS drives except the C drive

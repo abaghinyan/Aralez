@@ -35,6 +35,7 @@ pub fn get<T>(
     encrypt: Option<&String>,
     ads: &str,
     drive: &str,
+    max_size: Option<u64>
 ) -> Result<bool, Error>
 where
     T: Read + Seek,
@@ -102,7 +103,7 @@ where
             match attribute.to_attribute() {
                 Ok(attr) => {
                     if attr.ty()? == NtfsAttributeType::IndexAllocation {
-                        get_attr(&attr, fs, &output_file_name)?;
+                        get_attr(&attr, fs, &output_file_name, max_size)?;
                     }
                 }
                 Err(_) => dprintln!("[ERROR] Can't getting attributes"),
@@ -373,29 +374,35 @@ fn get_valid_data_length<T>(fs: &mut T, attribut: &NtfsAttribute) -> Result<u64,
 where
     T: Read + Seek,
 {
-    return match &attribut.ty()? {
-        NtfsAttributeType::Data => match attribut.position().value() {
-            Some(data_attr_position) => {
-                let mut buff = vec![0u8; 64];
-                fs.seek(SeekFrom::Start(data_attr_position.get()))?;
-                fs.read_exact(&mut buff)?;
-                let byte_57 = buff[56];
-                let byte_58 = buff[57];
-                let byte_59 = buff[58];
-                let byte_60 = buff[59];
-                let vdl = ((byte_60 as u64) << 24)
-                    | ((byte_59 as u64) << 16)
-                    | ((byte_58 as u64) << 8)
-                    | (byte_57 as u64);
-                Ok(vdl)
+    match &attribut.ty()? {
+        NtfsAttributeType::Data => {
+            if attribut.is_resident() {
+                Ok(attribut.value_length() as u64)
+            } else {
+                match attribut.position().value() {
+                    Some(data_attr_position) => {
+                        let mut buff = vec![0u8; 64];
+                        fs.seek(SeekFrom::Start(data_attr_position.get()))?;
+                        fs.read_exact(&mut buff)?;
+                        let byte_57 = buff[56];
+                        let byte_58 = buff[57];
+                        let byte_59 = buff[58];
+                        let byte_60 = buff[59];
+                        let vdl = ((byte_60 as u64) << 24)
+                            | ((byte_59 as u64) << 16)
+                            | ((byte_58 as u64) << 8)
+                            | (byte_57 as u64);
+                        Ok(vdl)
+                    }
+                    None => Err(anyhow::anyhow!("[ERROR] $DATA position not found")),
+                }
             }
-            None => Err(anyhow::anyhow!("[ERROR] $DATA position not found")),
-        },
-        _ => Err(anyhow::anyhow!("[ERROR] Wrong attribut type")),
-    };
+        }
+        _ => Err(anyhow::anyhow!("[ERROR] Wrong attribute type")),
+    }
 }
 
-fn get_attr<T>(attr: &NtfsAttribute, fs: &mut T, output_file_name: &str) -> Result<(), Error>
+fn get_attr<T>(attr: &NtfsAttribute, fs: &mut T, output_file_name: &str, max_size: Option<u64>) -> Result<(), Error>
 where
     T: Read + Seek,
 {
@@ -407,6 +414,13 @@ where
 
     let attr_path = format!("{}%3A{}.idx", output_file_name, &attr_name);
     let mut attr_value = attr.value(fs)?;
+    if let Some(m_size) = max_size {
+        if attr_value.len() > m_size {
+            dprintln!("[WARN] Skip {} because the size {} exceeds {} bytes", &attr_path, attr_value.len(), m_size);
+
+            return Ok(());
+        }
+    }
 
     let mut output_file = match OpenOptions::new()
         .write(true)

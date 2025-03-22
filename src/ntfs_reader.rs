@@ -109,12 +109,12 @@ fn process_all_directory(
                     let mut size_ok = true;
                     if let Some(msize) = max_size {
                         if get_file_size(&sub_file, fs) as u64 > msize {
-                            dprintln!("[WARN] Skip {} because the size exceeds {} bytes", &new_path, &max_size.unwrap_or(0));
+                            dprintln!("[WARN] Skip {} because the size {} exceeds {} bytes", &new_path, get_file_size(&sub_file, fs), &max_size.unwrap_or(0));
                             size_ok = false;
                         }
                     }
                     if size_ok {
-                        match get(&sub_file, &new_path, destination_folder, fs, encrypt.as_ref(), ads, drive) {
+                        match get(&sub_file, &new_path, destination_folder, fs, encrypt.as_ref(), ads, drive, max_size) {
                             Ok(saved) => {
                                 local_visited_files.insert(path_check);
                                 if saved {
@@ -239,7 +239,7 @@ fn process_directory(
                         // check size
                         if let Some(msize) = obj_node.max_size {
                             if get_file_size(&sub_file, fs) as u64 > msize {
-                                dprintln!("[WARN] Skip {} because the size exceeds {} bytes", &new_path, &obj_node.max_size.unwrap_or(0));
+                                dprintln!("[WARN] Skip {} because the size {} exceeds {} bytes", &new_path, get_file_size(&sub_file, fs), &obj_node.max_size.unwrap_or(0));
                                 size_ok = false;
                             }
                         }
@@ -253,6 +253,7 @@ fn process_directory(
                                 obj_node.encrypt.as_ref(),
                                 ads,
                                 drive,
+                                obj_node.max_size
                             ) {
                                 Ok(saved) => {
                                     visited_files.insert(path_check);

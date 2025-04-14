@@ -13,7 +13,8 @@ pub mod resource;
 
 mod config;
 mod execute;
-mod ntfs_reader;
+mod fs_reader;
+mod ntfs_explorer;
 mod sector_reader;
 mod utils;
 mod path;
@@ -22,7 +23,7 @@ mod path;
 pub mod windows_os {
     pub use crate::execute::{get_list_tools, run_internal, get_bin};
     pub use crate::resource::{add_resource, list_resources, remove_resource};
-    pub use crate::ntfs_reader::process_all_drives;
+    pub use crate::fs_reader::process_all_drives;
     pub use crate::resource::extract_resource;
 }
 
@@ -39,7 +40,7 @@ use clap::Parser;
 use clap::{Arg, Command};
 use config::{get_config, set_config, Config, Entries, ExecType, SearchConfig, SectionConfig};
 use indicatif::{ProgressBar, ProgressStyle};
-use ntfs_reader::process_drive_artifacts;
+use fs_reader::process_drive_artifacts;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::{HashMap, HashSet};
 use std::env;

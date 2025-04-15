@@ -447,10 +447,10 @@ pub fn process_drive_artifacts(
     section_config: &mut SectionConfig,
     output_path: &str,
 ) -> Result<()> {
-    let ntfs_path: &str = if cfg!(target_os = "windows") {
-        &format!("\\\\.\\{}:", drive.chars().next().unwrap())
+    let ntfs_path: String = if cfg!(target_os = "windows") {
+        format!("\\\\.\\{}:", drive.chars().next().unwrap())
     } else {
-        drive
+        drive.to_string()
     };
 
     let mut config_entries: HashMap<String, (Vec<String>, Option<String>, Option<u64>)> = HashMap::new();
@@ -501,7 +501,7 @@ pub fn process_drive_artifacts(
         tree.insert(&path, files, encrypt, max_size);
     }
 
-    explorer(ntfs_path, &mut tree, &output_path.replace("\\", "/"), drive)?;
+    explorer(&ntfs_path, &mut tree, &output_path.replace("\\", "/"), drive)?;
 
     Ok(())
 }

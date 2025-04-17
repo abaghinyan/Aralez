@@ -10,11 +10,13 @@ mod macros;
 
 #[cfg(target_os = "windows")]
 pub mod resource;
+mod explorer {
+    pub mod ntfs;
+}
 
 mod config;
 mod execute;
 mod fs_reader;
-mod ntfs_explorer;
 mod sector_reader;
 mod utils;
 mod path;

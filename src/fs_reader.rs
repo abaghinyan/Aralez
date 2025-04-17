@@ -18,7 +18,7 @@ pub mod windows_os {
 #[cfg(target_os = "windows")]
 use windows_os::*;
 
-use crate::ntfs_explorer::NtfsExplorer;
+use crate::explorer::ntfs::NtfsExplorer;
 use crate::config::SectionConfig;
 use crate::sector_reader::SectorReader;
 use crate::utils::{ get, split_path };

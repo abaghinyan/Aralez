@@ -74,7 +74,7 @@ fn main() -> io::Result<()> {
                 let mut res = WindowsResource::new();
                 res.set_manifest_file("app.manifest");
                 res.set_icon("assets/aralez.ico").compile()?;
-    
+
                 if let Err(e) = res.compile() {
                     eprintln!("Failed to compile Windows resources: {}", e);
                     std::process::exit(1);

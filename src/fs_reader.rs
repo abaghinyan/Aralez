@@ -18,6 +18,7 @@ pub mod windows_os {
 #[cfg(target_os = "windows")]
 use windows_os::*;
 
+use crate::explorer::ntfs::NtfsExplorer;
 use crate::config::SectionConfig;
 use crate::sector_reader::SectorReader;
 use crate::utils::{ get, split_path };
@@ -36,9 +37,9 @@ use std::u64;
 const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
 
 #[derive(Debug)]
-struct Entry {
-    name: String,
-    file_record_number: u64,
+pub struct Entry {
+    pub name: String,
+    pub file_record_number: u64,
 }
 
 fn process_all_directory(
@@ -142,7 +143,7 @@ fn process_all_directory(
 }
 
 /// Recursively process NTFS directories and files and apply glob matching
-fn process_directory(
+pub fn process_directory(
     fs: &mut BufReader<SectorReader<File>>,
     ntfs: &Ntfs,
     file: &NtfsFile<'_>,
@@ -293,55 +294,17 @@ fn get_file_size(file: &NtfsFile, mut fs:  &mut BufReader<SectorReader<File>>) -
 }
 
 /// Entry point for parsing the NTFS partition and applying glob matching
-fn explorer(ntfs_path: &str, config_tree: &mut Node, destination_folder: &str, drive: &str) -> Result<()> {
-    // Open the NTFS partition for reading
-    let file = File::open(ntfs_path)?;
-    let sr = SectorReader::new(file, 4096)?;
-    let mut fs = BufReader::new(sr);
-
-    // Initialize NTFS parser
-    let ntfs = initialize_ntfs(&mut fs)?;
-
-    // Process the root directory
-    let root_dir = ntfs.root_directory(&mut fs)?;
-
-    // Start processing directories from root
-    let mut visited_files: HashSet<String> = HashSet::new();
-
-    let file_record_number = root_dir.file_record_number();
-    let parent = Entry {
-        name: "\\".to_string(),
-        file_record_number,
-    };
-    let mut success_files_count: u32 = 0;
-
-    match process_directory(
-        &mut fs,
-        &ntfs,
-        &root_dir,
-        config_tree,
-        "",
-        &parent,
-        destination_folder,
-        &mut visited_files,
-        drive,
-        &mut success_files_count
-    ) {
-        Ok(count) => {
-            dprintln!(
-                "[INFO] Collection completed with {} collected files",
-                count
-            );
-        },
-        Err(e) => dprintln!("[ERROR] Problem to process the folder: {:?}", e),
-    }
+fn explorer(path: &str, config_tree: &mut Node, destination_folder: &str, drive: &str) -> Result<()> {
+    let mut fs_explorer = create_explorer(FileSystemType::NTFS)?;
+    fs_explorer.initialize(&path)?;
+    fs_explorer.collect(config_tree, destination_folder, drive)?;
 
     Ok(())
 }
 
 // Define the structure for the file tree
 #[derive(Debug)]
-struct Node {
+pub struct Node {
     children: HashMap<String, Node>,
     checked: bool,
     all: bool, // if there is an **
@@ -577,4 +540,31 @@ pub fn process_all_drives(section_config: &mut SectionConfig, root_output: &str)
     }
 
     Ok(())
+}
+
+pub trait FileSystemExplorer {
+    fn initialize(
+        &mut self,
+        path: &str) -> Result<()>;
+    fn collect(
+        &mut self,
+        config_tree: &mut Node,
+        destination_folder: &str,
+        drive: &str) -> Result<()>;
+}
+
+pub enum FileSystemType {
+    NTFS,
+    // Other File Systems TODO
+}
+
+pub fn create_explorer(
+    fs_type: FileSystemType) -> Result<Box<dyn FileSystemExplorer>>
+{
+    match fs_type {
+        FileSystemType::NTFS => {
+            Ok(Box::new(NtfsExplorer::new()))
+        }
+        // Other File Systems TODO
+    }
 }

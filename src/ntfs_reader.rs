@@ -101,15 +101,14 @@ fn process_all_directory(
                 if !(ads.is_empty() || ads == "") {
                     path_check = format!("{}:{}", path_check, ads);
                 }
-                if Pattern::new(&obj_name_san.as_str().to_lowercase())
-                    .unwrap()
-                    .matches(&path_check.as_str().to_lowercase())
-                {
+                let pattern = Pattern::new(&obj_name_san.to_lowercase()).unwrap();
+                if pattern.matches(&path_check.to_lowercase()) {
                     // check size
                     let mut size_ok = true;
+                    let file_size = get_file_size(&sub_file, fs);
                     if let Some(msize) = max_size {
-                        if get_file_size(&sub_file, fs) as u64 > msize {
-                            dprintln!("[WARN] Skip {} because the size {} exceeds {} bytes", &new_path, get_file_size(&sub_file, fs), &max_size.unwrap_or(0));
+                        if file_size as u64 > msize {
+                            dprintln!("[WARN] Skip {} because the size {} exceeds {} bytes", &new_path, file_size, &max_size.unwrap_or(0));
                             size_ok = false;
                         }
                     }
@@ -210,10 +209,9 @@ fn process_directory(
                     if !(ads.is_empty() || ads == "") {
                         path_check = format!("{}:{}", path_check, ads);
                     }
+                    let pattern = Pattern::new(&obj_name_san.to_lowercase()).unwrap();
                     if !visited_files.contains(&path_check)
-                        && Pattern::new(&obj_name_san.as_str().to_lowercase())
-                            .unwrap()
-                            .matches(&new_path.as_str().to_lowercase())
+                        && pattern.matches(&path_check.to_lowercase())
                     {
                         if !&obj_name.contains("*") && !obj_node.all {
                             obj_node.checked = true;
@@ -236,10 +234,11 @@ fn process_directory(
                             }
                         }
                         let mut size_ok = true;
+                        let file_size = get_file_size(&sub_file, fs);
                         // check size
                         if let Some(msize) = obj_node.max_size {
-                            if get_file_size(&sub_file, fs) as u64 > msize {
-                                dprintln!("[WARN] Skip {} because the size {} exceeds {} bytes", &new_path, get_file_size(&sub_file, fs), &obj_node.max_size.unwrap_or(0));
+                            if file_size as u64 > msize {
+                                dprintln!("[WARN] Skip {} because the size {} exceeds {} bytes", &new_path, file_size, &obj_node.max_size.unwrap_or(0));
                                 size_ok = false;
                             }
                         }

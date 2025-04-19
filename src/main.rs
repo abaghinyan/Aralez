@@ -453,7 +453,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                         config::ExecType::External,
                                                         Some(&bin),
                                                         Some(&output_path),
-                                                        &output_fullpath
+                                                        &output_fullpath,
                                                     );
                                                     if let Some(link_element) = executor.link {
                                                         match config.get_task(link_element.clone()) {
@@ -489,7 +489,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                 ExecType::System,
                                                 None,
                                                 None,
-                                                &output_fullpath
+                                                &output_fullpath,
                                             );
                                             if let Some(link_element) = executor.link {
                                                 match config.get_task(link_element.clone()) {

@@ -17,6 +17,10 @@ use std::process::{Command, Stdio};
 use std::io::{self, Write};
 use std::fs::{File, remove_file};
 use std::path::{Path, PathBuf};
+use wait_timeout::ChildExt;
+use std::time::Duration;
+
+static TIMEOUT: u64 = 60;
 
 pub fn run_internal(tool_name:&str, output_filename: &str) -> Option<String> {
     dprintln!("[INFO] > `{}` | Starting execution", tool_name);
@@ -87,7 +91,7 @@ pub fn run (
     }
 
     // Execute the command and wait for completion
-    let child = match Command::new(&name)
+    let mut child = match Command::new(&name)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -102,17 +106,31 @@ pub fn run (
             return None;
         }
     };
+    let one_sec = Duration::from_secs(TIMEOUT);
+    let _status_code = match child.wait_timeout(one_sec).unwrap() {
+        Some(status) => status.code(),
+        None => {
+            dprintln!("[WARN] > `{}` | Execution timed out", display_name);
+            child.kill().unwrap();
+            child.wait().unwrap().code()
+        }
+    };
 
     let pid = child.id();
 
-    // Wait for the process to finish and capture its output
     let output = match child.wait_with_output() {
-        Ok(output) => output,
+        Ok(output) => {
+            if !output.status.success() {
+                let stderr_msg = String::from_utf8_lossy(&output.stderr);
+                dprintln!("[ERROR] > `{}` ({}) | Command failed: {}", display_name, pid, stderr_msg.trim());
+            }
+            output
+        }
         Err(e) => {
             dprintln!("[ERROR] > `{}` ({}) | Failed to execute: {}", display_name, pid, e);
             return None;
         }
-    }; 
+    };
 
     dprintln!("[INFO] > `{}` ({}) | Exit code: {:?}", display_name, pid, output.status.code().unwrap_or(-1));
 

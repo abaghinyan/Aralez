@@ -13,6 +13,8 @@ tasks:
     priority: 0
     type: "execute"
     disabled: true
+    memory_limit: 512
+    timeout: 60
     entries:
       dump:
         - name: "winpmem_mini_rc2.exe"
@@ -140,6 +142,8 @@ tasks:
   tools:
     priority: 3
     type: "execute"
+    memory_limit: 512
+    timeout: 60
     output_folder: "{{root_output_path}}\\tools\\"
     entries: 
       external: 

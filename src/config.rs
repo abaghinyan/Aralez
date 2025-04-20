@@ -66,6 +66,8 @@ pub struct SectionConfig {
     pub exclude_drives: Option<Vec<String>>,
     pub entries: Option<Entries>,
     pub disabled: Option<bool>,
+    pub memory_limit: Option<usize>,
+    pub timeout: Option<u64>
 }
 
 #[derive(Debug, Clone, PartialEq)]

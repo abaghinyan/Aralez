@@ -454,6 +454,8 @@ fn main() -> Result<(), anyhow::Error> {
                                                         Some(&bin),
                                                         Some(&output_path),
                                                         &output_fullpath,
+                                                        section_config.memory_limit,
+                                                        section_config.timeout
                                                     );
                                                     if let Some(link_element) = executor.link {
                                                         match config.get_task(link_element.clone()) {
@@ -490,6 +492,8 @@ fn main() -> Result<(), anyhow::Error> {
                                                 None,
                                                 None,
                                                 &output_fullpath,
+                                                section_config.memory_limit,
+                                                section_config.timeout
                                             );
                                             if let Some(link_element) = executor.link {
                                                 match config.get_task(link_element.clone()) {

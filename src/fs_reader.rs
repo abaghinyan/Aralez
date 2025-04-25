@@ -569,12 +569,17 @@ pub fn create_explorer(
     fs_type: FileSystemType) -> Result<Box<dyn FileSystemExplorer>>
 {
     match fs_type {
-        FileSystemType::NTFS => {
-            Ok(Box::new(NtfsExplorer::new()))
-        }
-        FileSystemType::EXT4 => {
-            Ok(Box::new(Ext4Explorer::new()))
-        }
-        // Other File Systems TODO
+        #[cfg(target_os = "windows")]
+        FileSystemType::NTFS => Ok(Box::new(NtfsExplorer::new())),
+
+        #[cfg(not(target_os = "windows"))]
+        FileSystemType::NTFS => Err(anyhow::anyhow!("NTFS is only supported on Windows")),
+
+        #[cfg(target_os = "linux")]
+        FileSystemType::EXT4 => Ok(Box::new(Ext4Explorer::new())),
+
+        #[cfg(not(target_os = "linux"))]
+        FileSystemType::EXT4 => Err(anyhow::anyhow!("EXT4 is only supported on Linux")),
     }
+    // Other File Systems TODO
 }

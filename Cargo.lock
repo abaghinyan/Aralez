@@ -142,6 +142,7 @@ dependencies = [
  "chrono",
  "clap",
  "csv",
+ "ext4-view",
  "filetime",
  "glob",
  "globset",
@@ -652,6 +653,16 @@ checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 dependencies = [
  "libc",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "ext4-view"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a13342a0b861937b2a48a197469c473a4d284092e79de043fcefa4a77c3e402d"
+dependencies = [
+ "bitflags",
+ "crc",
 ]
 
 [[package]]

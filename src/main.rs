@@ -10,8 +10,16 @@ mod macros;
 
 #[cfg(target_os = "windows")]
 pub mod resource;
+
+#[cfg(target_os = "windows")]
 mod explorer {
     pub mod ntfs;
+}
+
+#[cfg(target_os = "linux")]
+mod explorer {
+    pub mod ntfs;
+    pub mod ext4;
 }
 
 mod config;

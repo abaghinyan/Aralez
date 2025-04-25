@@ -18,19 +18,19 @@ pub mod windows_os {
 #[cfg(target_os = "windows")]
 use windows_os::*;
 
+#[cfg(target_os = "linux")]
+use crate::explorer::ext4::Ext4Explorer;
+
 use crate::explorer::ntfs::NtfsExplorer;
 use crate::config::SectionConfig;
 use crate::sector_reader::SectorReader;
-use crate::utils::{ get, split_path };
+use crate::utils::{get, split_path};
+use ntfs::{Ntfs, NtfsFile};
 use anyhow::Result;
 use glob::Pattern;
-use ntfs::Ntfs;
-use ntfs::NtfsFile;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::BufReader;
-use std::io::{Read, Seek};
+use std::io::{BufReader, Read, Seek};
 use std::u64;
 
 #[cfg(target_os = "windows")]
@@ -295,7 +295,13 @@ fn get_file_size(file: &NtfsFile, mut fs:  &mut BufReader<SectorReader<File>>) -
 
 /// Entry point for parsing the NTFS partition and applying glob matching
 fn explorer(path: &str, config_tree: &mut Node, destination_folder: &str, drive: &str) -> Result<()> {
-    let mut fs_explorer = create_explorer(FileSystemType::NTFS)?;
+    // TODO (Write logic for getting the type from given drive <EXT4> or <NTFS>)
+    let fs_type = if cfg!(target_os = "windows") {
+        FileSystemType::NTFS
+    } else {
+        FileSystemType::EXT4
+    };
+    let mut fs_explorer = create_explorer(fs_type)?;
     fs_explorer.initialize(&path)?;
     fs_explorer.collect(config_tree, destination_folder, drive)?;
 
@@ -305,11 +311,11 @@ fn explorer(path: &str, config_tree: &mut Node, destination_folder: &str, drive:
 // Define the structure for the file tree
 #[derive(Debug)]
 pub struct Node {
-    children: HashMap<String, Node>,
-    checked: bool,
-    all: bool, // if there is an **
-    encrypt: Option<String>,
-    max_size: Option<u64>,
+    pub children: HashMap<String, Node>,
+    pub checked: bool,
+    pub all: bool, // if there is an **
+    pub encrypt: Option<String>,
+    pub max_size: Option<u64>,
 }
 
 impl Node {
@@ -397,7 +403,7 @@ impl Node {
         }
     }
 
-    fn get_first_level_items(&mut self) -> Vec<(&String, &mut Node)> {
+    pub fn get_first_level_items(&mut self) -> Vec<(&String, &mut Node)> {
         self.children
             .iter_mut()
             .map(|(name, node)| (name, node))
@@ -555,6 +561,7 @@ pub trait FileSystemExplorer {
 
 pub enum FileSystemType {
     NTFS,
+    EXT4,
     // Other File Systems TODO
 }
 
@@ -564,6 +571,9 @@ pub fn create_explorer(
     match fs_type {
         FileSystemType::NTFS => {
             Ok(Box::new(NtfsExplorer::new()))
+        }
+        FileSystemType::EXT4 => {
+            Ok(Box::new(Ext4Explorer::new()))
         }
         // Other File Systems TODO
     }

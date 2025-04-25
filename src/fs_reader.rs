@@ -295,6 +295,7 @@ fn get_file_size(file: &NtfsFile, mut fs:  &mut BufReader<SectorReader<File>>) -
 
 /// Entry point for parsing the NTFS partition and applying glob matching
 fn explorer(path: &str, config_tree: &mut Node, destination_folder: &str, drive: &str) -> Result<()> {
+
     // TODO (Write logic for getting the type from given drive <EXT4> or <NTFS>)
     let fs_type = if cfg!(target_os = "windows") {
         FileSystemType::NTFS
@@ -302,6 +303,7 @@ fn explorer(path: &str, config_tree: &mut Node, destination_folder: &str, drive:
         FileSystemType::EXT4
     };
     let mut fs_explorer = create_explorer(fs_type)?;
+  
     fs_explorer.initialize(&path)?;
     fs_explorer.collect(config_tree, destination_folder, drive)?;
 

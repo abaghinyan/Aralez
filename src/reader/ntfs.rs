@@ -4,7 +4,6 @@ pub mod windows_os {
 
     pub use std::io;
     pub use std::path::Path;
-    pub use std::io::SeekFrom;
 }
 
 #[cfg(target_os = "windows")]
@@ -12,9 +11,6 @@ use windows_os::*;
 
 use crate::config::SectionConfig;
 use crate::reader::sector::SectorReader;
-use crate::utils::get;
-use ntfs::{Ntfs, NtfsFile};
-use anyhow::Result;
 use glob::Pattern;
 use std::collections::HashSet;
 use std::fs::File;
@@ -29,11 +25,10 @@ use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce}; // AES-GCM cipher
 use anyhow::{Error, Result};
 use chrono::{DateTime, Local};
-use std::fs::File;
 use std::fs::{create_dir_all, OpenOptions};
 use sha2::{Digest, Sha256};
 use filetime::{set_file_handle_times, FileTime};
-use ntfs::{NtfsAttribute, NtfsAttributeType, NtfsFile, NtfsReadSeek};
+use ntfs::{Ntfs, NtfsAttribute, NtfsAttributeType, NtfsFile, NtfsReadSeek};
 use rand::RngCore;
 
 use super::fs::Node;

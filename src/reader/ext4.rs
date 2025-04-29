@@ -1,3 +1,11 @@
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright © 2025 Aralez. All Rights Reserved.
+//
+// Author(s): Razmik Arshakyan
+//
+
 use std::collections::HashSet;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};

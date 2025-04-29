@@ -1,3 +1,11 @@
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright © 2025 Aralez. All Rights Reserved.
+//
+// Author(s): Razmik Arshakyan
+//
+
 use anyhow::Result;
 
 use crate::reader::fs::Node;

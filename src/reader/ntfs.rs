@@ -1,3 +1,11 @@
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright © 2025 Aralez. All Rights Reserved.
+//
+// Author(s): Areg Baghinyan
+//
+
 #[cfg(target_os = "windows")]
 pub mod windows_os {
     pub use crate::utils::ensure_directory_exists;

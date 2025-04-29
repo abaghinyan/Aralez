@@ -10,14 +10,13 @@
 pub mod windows_os {
     pub use crate::utils::ensure_directory_exists;
 
-    pub use std::io;
     pub use std::path::Path;
 }
 
 #[cfg(target_os = "windows")]
 use windows_os::*;
 
-use crate::reader::ntfs::is_ntfs_partition;
+use crate::reader::fs::is_ntfs_partition;
 use crate::config::SectionConfig;
 use crate::reader::sector::SectorReader;
 use glob::Pattern;
@@ -81,7 +80,7 @@ pub fn process_all_drives(section_config: &mut SectionConfig, root_output: &str)
 }
 
 #[cfg(target_os = "windows")]
-pub fn list_ntfs_drives() -> io::Result<Vec<String>> {
+pub fn list_ntfs_drives() -> Result<Vec<String>> {
     let mut ntfs_drives = Vec::new();
 
     // Loop through the drives from A to Z and check if they are NTFS

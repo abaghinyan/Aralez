@@ -14,6 +14,8 @@ pub mod resource;
 #[cfg(target_os = "windows")]
 mod explorer {
     pub mod ntfs;
+    pub mod fs;
+    //pub mod ext4;
 }
 
 #[cfg(target_os = "linux")]
@@ -22,10 +24,15 @@ mod explorer {
     pub mod ext4;
 }
 
+mod reader {
+    //pub mod ext4;
+    pub mod ntfs;
+    pub mod fs;
+    pub mod sector;
+}
+
 mod config;
 mod execute;
-mod fs_reader;
-mod sector_reader;
 mod utils;
 mod path;
 
@@ -33,7 +40,7 @@ mod path;
 pub mod windows_os {
     pub use crate::execute::{get_list_tools, run_internal, get_bin};
     pub use crate::resource::{add_resource, list_resources, remove_resource};
-    pub use crate::fs_reader::process_all_drives;
+    pub use crate::reader::ntfs::process_all_drives;
     pub use crate::resource::extract_resource;
 }
 
@@ -50,7 +57,7 @@ use clap::Parser;
 use clap::{Arg, Command};
 use config::{get_config, set_config, Config, Entries, ExecType, SearchConfig, SectionConfig};
 use indicatif::{ProgressBar, ProgressStyle};
-use fs_reader::process_drive_artifacts;
+use reader::fs::process_drive_artifacts;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::{HashMap, HashSet};
 use std::env;

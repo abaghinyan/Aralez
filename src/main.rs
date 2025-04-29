@@ -15,20 +15,25 @@ pub mod resource;
 mod explorer {
     pub mod ntfs;
     pub mod fs;
-    //pub mod ext4;
 }
 
 #[cfg(target_os = "linux")]
 mod explorer {
-    pub mod ntfs;
+    pub mod fs;
     pub mod ext4;
 }
 
+#[cfg(target_os = "windows")]
 mod reader {
-    //pub mod ext4;
     pub mod ntfs;
     pub mod fs;
     pub mod sector;
+}
+
+#[cfg(target_os = "linux")]
+mod reader {
+    pub mod ext4;
+    pub mod fs;
 }
 
 mod config;

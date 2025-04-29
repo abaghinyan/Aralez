@@ -6,15 +6,13 @@
 // Author(s): Razmik Arshakyan
 //
 
-use crate::fs_reader::*;
+use crate::reader::{ext4::process_directory, fs::*};
 use std::collections::HashSet;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
-use std::io::{BufWriter, Write};
-use std::fs::File;
+use ext4_view::Ext4;
 
-#[cfg(target_os = "linux")]
-use ext4_view::{Ext4, FileType};
+use super::fs::FileSystemExplorer;
 
 pub struct Ext4Explorer {
     parser: Option<Ext4>,

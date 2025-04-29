@@ -1,7 +1,12 @@
 use std::collections::HashSet;
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::fs::File;
+use anyhow::Result;
+use ext4_view::{Ext4, FileType};
+
+use super::fs::Node;
+
 
 // Function for getting file_data and pasting it's content into
 // destination folder, for forensic investigation
@@ -126,12 +131,11 @@ pub fn process_directory(
     let mut first_elements = config_tree.get_first_level_items();
 
     let entries = {
-        let path_str = path.to_string_lossy().into_owned();
+        let path_str = current_path.to_string_lossy().into_owned();
         ext4_parser.read_dir(&path_str)?.collect::<Result<Vec<_>, _>>()?
     };
 
     for entry in entries {
-        let entry = entry?;
         let path_buf = entry.path();
         let entry_str = path_buf.to_str().unwrap().to_string();
 

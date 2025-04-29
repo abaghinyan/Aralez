@@ -17,6 +17,7 @@ pub mod windows_os {
 #[cfg(target_os = "windows")]
 use windows_os::*;
 
+use crate::reader::ntfs::is_ntfs_partition;
 use crate::config::SectionConfig;
 use crate::reader::sector::SectorReader;
 use glob::Pattern;
@@ -40,18 +41,6 @@ use ntfs::{Ntfs, NtfsAttribute, NtfsAttributeType, NtfsFile, NtfsReadSeek};
 use rand::RngCore;
 
 use super::fs::Node;
-
-#[cfg(target_os = "windows")]
-/// Function to check if a partition is NTFS by looking for the NTFS signature
-fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> io::Result<bool> {
-    const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
-    let mut boot_sector = [0u8; 512];
-    reader.seek(SeekFrom::Start(0))?;
-    match reader.read_exact(&mut boot_sector) {
-        Ok(_) => Ok(&boot_sector[3..11] == NTFS_SIGNATURE),
-        Err(_) => Ok(false),
-    }
-}
 
 pub fn initialize_ntfs<T: Read + Seek>(fs: &mut T) -> Result<Ntfs> {
     match Ntfs::new(fs) {

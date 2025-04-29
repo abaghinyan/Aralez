@@ -12,17 +12,56 @@ use crate::utils::split_path;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::u64;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+
+pub fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> Result<bool> {
+    const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
+    let mut boot_sector = [0u8; 512];
+    reader.seek(SeekFrom::Start(0))?;
+    match reader.read_exact(&mut boot_sector) {
+        Ok(_) => Ok(&boot_sector[3..11] == NTFS_SIGNATURE),
+        Err(_) => Ok(false),
+    }
+}
+
+pub fn is_ext4_partition<T: Read + Seek>(
+    reader: &mut T) -> Result<bool>
+{
+    const SUPERBLOCK_OFFSET: u64 = 1024;
+    const EXT_SUPERBLOCK_SIZE: usize = 1024;
+    const EXT4_MAGIC_OFFSET: usize = 56;
+    const EXT4_MAGIC: [u8; 2] = [0x53, 0xEF];
+
+    let mut superblock = [0u8; EXT_SUPERBLOCK_SIZE];
+
+    reader.seek(SeekFrom::Start(SUPERBLOCK_OFFSET))?;
+    reader.read_exact(&mut superblock)?;
+
+    Ok(&superblock[EXT4_MAGIC_OFFSET..EXT4_MAGIC_OFFSET + 2] == EXT4_MAGIC)
+}
+
+fn get_fs_type(
+    drive_path: &str) -> Result<FileSystemType>
+{
+    if let Ok(mut file) = File::open(&drive_path) {
+        if is_ntfs_partition(&mut file)? {
+            Ok(FileSystemType::NTFS)
+        } else if is_ext4_partition(&mut file)? {
+            Ok(FileSystemType::EXT4)
+        } else {
+            Err(anyhow::anyhow!("Given File System is not supported"))
+        }
+    } else {
+        Err(anyhow::anyhow!("File Open Error"))
+    }
+}
 
 /// Entry point for parsing the FS partition and applying glob matching
-fn explorer(path: &str, config_tree: &mut Node, destination_folder: &str, drive: &str) -> Result<()> {
-    // TODO (Write logic for getting the type from given drive <EXT4> or <NTFS>)
-    let fs_type = if cfg!(target_os = "windows") {
-        FileSystemType::NTFS
-    } else {
-        FileSystemType::EXT4
-    };
+fn explorer(drive_path: &str, config_tree: &mut Node, destination_folder: &str, drive: &str) -> Result<()> {
+    let fs_type = get_fs_type(drive_path)?;
     let mut fs_explorer = create_explorer(fs_type)?;
-    fs_explorer.initialize(&path)?;
+    fs_explorer.initialize(&drive_path)?;
     fs_explorer.collect(config_tree, destination_folder, drive)?;
 
     Ok(())

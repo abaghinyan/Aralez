@@ -20,6 +20,7 @@ mod explorer {
 #[cfg(target_os = "linux")]
 mod explorer {
     pub mod fs;
+    pub mod ntfs;
     pub mod ext4;
 }
 
@@ -34,6 +35,8 @@ mod reader {
 mod reader {
     pub mod ext4;
     pub mod fs;
+    pub mod ntfs;
+    pub mod sector;
 }
 
 mod config;

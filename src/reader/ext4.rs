@@ -9,7 +9,7 @@
 use std::collections::HashSet;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::fs::File;
+use std::fs::{File, create_dir_all};
 use anyhow::Result;
 use ext4_view::{Ext4, FileType};
 use super::fs::Node;
@@ -22,10 +22,23 @@ fn get(
     file_name: &str,
     dest_folder: &Path) -> Result<bool>
 {
-    let path: PathBuf = dest_folder.join(file_name);
-    let file = File::create(&path)?;
-    let mut buf_writer = BufWriter::new(file);
-    buf_writer.write_all(&file_data)?;
+    let relative = file_name.trim_start_matches('/');
+    let out_path: PathBuf = dest_folder.join(relative);
+
+    if let Some(parent) = out_path.parent() {
+        create_dir_all(parent)?;
+    }
+
+    let file = File::create(&out_path)?;
+    let mut buf_writer = BufWriter::with_capacity(8 * 1024, file);
+
+    let mut offset = 0;
+    let total = file_data.len();
+    while offset < total {
+        let end = std::cmp::min(offset + 8 * 1024, total);
+        buf_writer.write_all(&file_data[offset..end])?;
+        offset = end;
+    }
     buf_writer.flush()?;
     Ok(true)
 }
@@ -100,20 +113,16 @@ fn process_all_directory(
             visited.extend(collected_files);
         } else if is_pattern_match(&entry_str, &obj_name) {
             if is_file_size_ok(metadata.len(), max_size) {
-                let file_name =Path::new(&entry_str)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("<no file name>");
                 let file_data = ext4_parser.read(path_buf.as_path())?;
                 match get(
                     file_data,
-                    file_name,
+                    &entry_str,
                     dest_folder)
                 {
                     Ok(written) => {
                         if written {
-                            dprintln!("Wrote {} bytes of data into \
-                                file {}", metadata.len(), file_name);
+                            dprintln!("[INFO] Wrote {} bytes of data",
+                                metadata.len());
                             visited.insert(entry_str.clone());
                             *success_files_count += 1;
                         }
@@ -185,21 +194,17 @@ pub fn process_directory(
                 } else if obj_node.children.is_empty()
                     && is_file_size_ok(metadata.len(), obj_node.max_size)
                 {
-                    let file_name =Path::new(&entry_str)
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .unwrap_or("<no file name>");
                     let file_data = ext4_parser.read(path_buf.as_path())?;
                     match get(
                         file_data,
-                        file_name,
+                        &entry_str,
                         dest_folder)
                     {
                         Ok(written) => {
                             if written {
                                 visited_files.insert(entry_str.clone());
-                                dprintln!("Wrote {} bytes of data into \
-                                    file {}", metadata.len(), file_name);
+                                dprintln!("[INFO] Wrote {} bytes of data",
+                                    metadata.len());
                                 *success_files_count += 1;
                             }
                         }

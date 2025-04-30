@@ -10,7 +10,6 @@ use anyhow::Result;
 
 use crate::reader::fs::Node;
 
-#[cfg(target_os = "windows")]
 use super::ntfs::NtfsExplorer;
 
 #[cfg(target_os = "linux")]
@@ -41,7 +40,7 @@ pub fn create_explorer(
         FileSystemType::NTFS => Ok(Box::new(NtfsExplorer::new())),
 
         #[cfg(not(target_os = "windows"))]
-        FileSystemType::NTFS => Err(anyhow::anyhow!("NTFS is only supported on Windows")),
+        FileSystemType::NTFS => Ok(Box::new(NtfsExplorer::new())),
 
         #[cfg(target_os = "linux")]
         FileSystemType::EXT4 => Ok(Box::new(Ext4Explorer::new())),

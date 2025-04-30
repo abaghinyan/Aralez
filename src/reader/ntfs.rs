@@ -9,15 +9,14 @@
 #[cfg(target_os = "windows")]
 pub mod windows_os {
     pub use crate::utils::ensure_directory_exists;
-
-    pub use std::path::Path;
+    pub use crate::reader::fs::is_ntfs_partition;
+    pub use crate::config::SectionConfig;
 }
 
 #[cfg(target_os = "windows")]
 use windows_os::*;
 
-use crate::reader::fs::is_ntfs_partition;
-use crate::config::SectionConfig;
+pub use std::path::Path;
 use crate::reader::sector::SectorReader;
 use glob::Pattern;
 use std::collections::HashSet;

@@ -12,8 +12,10 @@ use crate::utils::split_path;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::u64;
+use std::ffi::CString;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, BufRead, BufReader};
+use libc::statvfs;
 
 pub fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> Result<bool> {
     const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
@@ -39,6 +41,74 @@ pub fn is_ext4_partition<T: Read + Seek>(
     reader.read_exact(&mut superblock)?;
 
     Ok(&superblock[EXT4_MAGIC_OFFSET..EXT4_MAGIC_OFFSET + 2] == EXT4_MAGIC)
+}
+
+#[cfg(target_os = "linux")]
+fn get_used_space(mount_point: &str) -> Option<u64> {
+    let c_path = CString::new(mount_point).ok()?;
+    unsafe {
+        let mut stat: libc::statvfs = std::mem::zeroed();
+        if statvfs(c_path.as_ptr(), &mut stat) == 0 {
+            let block_size = stat.f_frsize as u64;
+            let total_blocks = stat.f_blocks as u64;
+            let free_blocks = stat.f_bfree as u64;
+            let used_blocks = total_blocks - free_blocks;
+            Some(used_blocks * block_size)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn get_default_ext4_drive() -> String
+{
+    let file = File::open("/proc/mounts").expect("Unable to open /proc/mounts");
+    let reader = BufReader::new(file);
+
+    let mut best_mount: Option<(String, String, u64)> = None;
+
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 3 {
+                let device = parts[0].to_string();
+                let mount_point = parts[1].to_string();
+                let fs_type = parts[2];
+
+                if "ext4" == fs_type {
+                    if let Some(used) = get_used_space(&mount_point) {
+                        match &best_mount {
+                            Some((_, _, current_used)) if used > *current_used => {
+                                best_mount = Some((device, mount_point, used));
+                            }
+                            None => {
+                                best_mount = Some((device, mount_point, used));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some((device, _, _)) = best_mount {
+        device
+    } else {
+        panic!("No ext4 devices found");
+    }
+}
+
+pub fn get_default_drive() -> String
+{
+    if cfg!(target_os = "windows") {
+        "C".to_string()
+    } else if cfg!(target_os = "linux") {
+        get_default_ext4_drive()
+    } else {
+        panic!("Unsupported OS");
+    }
 }
 
 fn get_fs_type(

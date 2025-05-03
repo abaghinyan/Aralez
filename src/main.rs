@@ -65,7 +65,7 @@ use clap::Parser;
 use clap::{Arg, Command};
 use config::{get_config, set_config, Config, Entries, ExecType, SearchConfig, SectionConfig};
 use indicatif::{ProgressBar, ProgressStyle};
-use reader::fs::process_drive_artifacts;
+use reader::fs::{process_drive_artifacts, get_default_drive};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -93,7 +93,7 @@ struct Cli {
     show_config: bool,
 
     /// Specify the default drive to process
-    #[arg(long, default_value = "C")]
+    #[arg(long)]
     default_drive: String,
 }
 
@@ -236,7 +236,7 @@ fn main() -> Result<(), anyhow::Error> {
                 .long("default_drive")
                 .help("Specify the mounted NTFS device to process (ex: /dev/loopX)")
                 .value_name("DRIVE")
-                .required_unless_present_any(["show_config", "check_config"]),
+                .required(false),
         );
     }
 
@@ -406,8 +406,7 @@ fn main() -> Result<(), anyhow::Error> {
     spinner.set_message("Starting tasks...");
 
     // Parse the default drive
-    let c_drive = "C".to_string();
-    let default_drive = matches.get_one::<String>("default_drive").unwrap_or(&c_drive);
+    let default_drive = get_default_drive();
 
     let sorted_tasks = config.get_tasks();
     for (section_name, mut section_config) in sorted_tasks {
@@ -577,7 +576,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                 match config.get_task(link_element.clone()) {
                                                     Some(task) => {
                                                         if let Some(res) = result {
-                                                            collect_exec_result(&section_config, res, task.clone(), root_output, default_drive);
+                                                            collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
                                                         }
                                                     },
                                                     None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),

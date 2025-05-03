@@ -20,7 +20,7 @@ use super::fs::Node;
 fn get(
     file_data: Vec<u8>,
     file_name: &str,
-    dest_folder: &Path) -> Result<bool>
+    dest_folder: &Path) -> Result<(bool, String)>
 {
     let relative = file_name.trim_start_matches('/');
     let out_path: PathBuf = dest_folder.join(relative);
@@ -40,7 +40,10 @@ fn get(
         offset = end;
     }
     buf_writer.flush()?;
-    Ok(true)
+    let file_location: String = out_path.to_string_lossy().into_owned();
+    dprintln!("[INFO] Saving {} bytes of data in {}",
+        file_data.len(), file_location);
+    Ok((true, file_location))
 }
 
 // Checks whether specified pattern in <objects> field
@@ -82,13 +85,12 @@ fn process_all_directory(
     ext4_parser: &Ext4,
     path: &Path,
     obj_name: String,
+    visited_files: &mut HashSet<String>,
     dest_folder: &Path,
     encrypt: Option<String>,
     max_size: Option<u64>,
-    success_files_count: &mut u32) -> Result<HashSet<String>>
+    success_files_count: &mut u32) -> Result<()>
 {
-    let mut visited = HashSet::new();
-
     let entries = {
         let path_str = path.to_string_lossy().into_owned();
         ext4_parser.read_dir(&path_str)?.collect::<Result<Vec<_>, _>>()?
@@ -103,14 +105,17 @@ fn process_all_directory(
             continue;
         }
 
+        if visited_files.contains(&entry_str) {
+            continue;
+        }
+
         let metadata = ext4_parser.metadata(&entry_str)?;
 
         if metadata.is_dir() {
-            let collected_files = process_all_directory(
-                ext4_parser, path_buf.as_path().into(), obj_name.clone(), dest_folder,
-                encrypt.clone(), max_size, success_files_count,
-            )?;
-            visited.extend(collected_files);
+            process_all_directory(
+                ext4_parser, path_buf.as_path().into(),
+                obj_name.clone(), visited_files, dest_folder,
+                encrypt.clone(), max_size, success_files_count)?;
         } else if is_pattern_match(&entry_str, &obj_name) {
             if is_file_size_ok(metadata.len(), max_size) {
                 let file_data = ext4_parser.read(path_buf.as_path())?;
@@ -119,11 +124,11 @@ fn process_all_directory(
                     &entry_str,
                     dest_folder)
                 {
-                    Ok(written) => {
+                    Ok((written, location)) => {
                         if written {
-                            dprintln!("[INFO] Wrote {} bytes of data",
-                                metadata.len());
-                            visited.insert(entry_str.clone());
+                            dprintln!("[INFO] Data successfully saved to {}",
+                                location);
+                            visited_files.insert(entry_str.clone());
                             *success_files_count += 1;
                         }
                     }
@@ -132,7 +137,7 @@ fn process_all_directory(
             }
         }
     }
-    Ok(visited)
+    Ok(())
 }
 
 // Main routine for traversing directories, for artifact extraction
@@ -160,21 +165,16 @@ pub fn process_directory(
             continue;
         }
 
+        if visited_files.contains(&entry_str) {
+            continue;
+        }
+
         for (obj_name, obj_node) in &mut first_elements {
             if obj_node.all {
-                let current_path_str = current_path.to_string_lossy().to_string();
-                if !visited_files.contains(&current_path_str) {
-                    let current_visited = process_all_directory(
-                        ext4_parser,
-                        current_path,
-                        obj_name.to_string(),
-                        dest_folder,
-                        obj_node.encrypt.clone(),
-                        obj_node.max_size,
-                        success_files_count,
-                    )?;
-                    visited_files.extend(current_visited);
-                }
+                process_all_directory(
+                    ext4_parser, current_path, obj_name.to_string(),
+                    visited_files, dest_folder, obj_node.encrypt.clone(),
+                    obj_node.max_size, success_files_count)?;
             } else if is_pattern_match(&entry_str, obj_name) {
                 if !obj_name.contains('*') {
                     obj_node.checked = true;
@@ -200,11 +200,11 @@ pub fn process_directory(
                         &entry_str,
                         dest_folder)
                     {
-                        Ok(written) => {
+                        Ok((written, location)) => {
                             if written {
                                 visited_files.insert(entry_str.clone());
-                                dprintln!("[INFO] Wrote {} bytes of data",
-                                    metadata.len());
+                                dprintln!("[INFO] Data successfully saved to {}",
+                                    location);
                                 *success_files_count += 1;
                             }
                         }
@@ -221,3 +221,5 @@ pub fn process_directory(
 
     Ok(*success_files_count)
 }
+
+//

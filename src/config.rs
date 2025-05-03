@@ -168,7 +168,8 @@ impl<'de> Deserialize<'de> for Entries {
                     for config in &configs {
                         // 1. Validate `root_path` if it's present
                         if let Some(root_path) = &config.root_path {
-                            if !root_path.starts_with("\\") && !root_path.starts_with('%') {
+                            if !root_path.starts_with("\\") && !root_path.starts_with('%')
+                                && !root_path.starts_with("/") {
                                 return Err(de::Error::custom(format!(
                                     "[ERROR] Config: root_path '{}' in entry '{}' should start with '\\\\' or '%'", 
                                     root_path, key

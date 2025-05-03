@@ -149,6 +149,7 @@ dependencies = [
  "hostname",
  "indexmap",
  "indicatif",
+ "libc",
  "md5",
  "ntfs",
  "once_cell",

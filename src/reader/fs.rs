@@ -12,10 +12,8 @@ use crate::utils::split_path;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::u64;
-use std::ffi::CString;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, BufRead, BufReader};
-use libc::statvfs;
+use std::io::{Read, Seek, SeekFrom};
 
 pub fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> Result<bool> {
     const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
@@ -45,6 +43,8 @@ pub fn is_ext4_partition<T: Read + Seek>(
 
 #[cfg(target_os = "linux")]
 fn get_used_space(mount_point: &str) -> Option<u64> {
+    use std::ffi::CString;
+    use libc::statvfs;
     let c_path = CString::new(mount_point).ok()?;
     unsafe {
         let mut stat: libc::statvfs = std::mem::zeroed();
@@ -63,6 +63,7 @@ fn get_used_space(mount_point: &str) -> Option<u64> {
 #[cfg(target_os = "linux")]
 fn get_default_ext4_drive() -> String
 {
+    use std::io::{BufRead, BufReader};
     let file = File::open("/proc/mounts").expect("Unable to open /proc/mounts");
     let reader = BufReader::new(file);
 
@@ -100,15 +101,14 @@ fn get_default_ext4_drive() -> String
     }
 }
 
-pub fn get_default_drive() -> String
-{
-    if cfg!(target_os = "windows") {
-        "C".to_string()
-    } else if cfg!(target_os = "linux") {
-        get_default_ext4_drive()
-    } else {
-        panic!("Unsupported OS");
-    }
+#[cfg(target_os = "linux")]
+pub fn get_default_drive() -> String {
+    get_default_ext4_drive()
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_default_drive() -> String {
+    "C".to_string()
 }
 
 fn get_fs_type(

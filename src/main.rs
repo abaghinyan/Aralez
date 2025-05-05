@@ -539,7 +539,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                         match config.get_task(link_element.clone()) {
                                                             Some(task) => {
                                                                 if let Some(res) = result {
-                                                                    collect_exec_result(&section_config, res, task.clone(), root_output, default_drive);
+                                                                    collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
                                                                 }
                                                             },
                                                             None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
@@ -556,7 +556,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                 match config.get_task(link_element.clone()) {
                                                     Some(task) => {
                                                         if let Some(res) = result {
-                                                            collect_exec_result(&section_config, res, task.clone(), root_output, default_drive);
+                                                            collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
                                                         }
                                                     },
                                                     None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),

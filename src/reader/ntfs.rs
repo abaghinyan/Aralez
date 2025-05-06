@@ -16,8 +16,8 @@ pub mod windows_os {
 #[cfg(target_os = "windows")]
 use windows_os::*;
 
-pub use std::path::Path;
 use crate::reader::sector::SectorReader;
+use std::path::Path;
 use glob::Pattern;
 use std::collections::HashSet;
 use std::fs::File;
@@ -37,7 +37,6 @@ use sha2::{Digest, Sha256};
 use filetime::{set_file_handle_times, FileTime};
 use ntfs::{Ntfs, NtfsAttribute, NtfsAttributeType, NtfsFile, NtfsReadSeek};
 use rand::RngCore;
-
 use super::fs::Node;
 
 pub fn initialize_ntfs<T: Read + Seek>(fs: &mut T) -> Result<Ntfs> {

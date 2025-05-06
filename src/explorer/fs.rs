@@ -6,10 +6,8 @@
 // Author(s): Razmik Arshakyan
 //
 
-use anyhow::Result;
-
 use crate::reader::fs::Node;
-
+use anyhow::Result;
 use super::ntfs::NtfsExplorer;
 
 #[cfg(target_os = "linux")]
@@ -36,17 +34,14 @@ pub fn create_explorer(
     fs_type: FileSystemType) -> Result<Box<dyn FileSystemExplorer>>
 {
     match fs_type {
-        #[cfg(target_os = "windows")]
-        FileSystemType::NTFS => Ok(Box::new(NtfsExplorer::new())),
-
-        #[cfg(not(target_os = "windows"))]
         FileSystemType::NTFS => Ok(Box::new(NtfsExplorer::new())),
 
         #[cfg(target_os = "linux")]
         FileSystemType::EXT4 => Ok(Box::new(Ext4Explorer::new())),
 
         #[cfg(not(target_os = "linux"))]
-        FileSystemType::EXT4 => Err(anyhow::anyhow!("EXT4 is only supported on Linux")),
+        FileSystemType::EXT4 => Err(anyhow::anyhow!(
+            "EXT4 is only supported on Linux")),
     }
     // Other File Systems TODO
 }

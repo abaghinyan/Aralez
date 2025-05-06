@@ -11,7 +11,6 @@ use std::collections::HashSet;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use ext4_view::Ext4;
-
 use super::fs::FileSystemExplorer;
 
 pub struct Ext4Explorer {

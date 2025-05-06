@@ -8,6 +8,8 @@
 #[macro_use]
 mod macros;
 
+// --------------------- Windows-specific ---------------------
+
 #[cfg(target_os = "windows")]
 pub mod resource;
 
@@ -17,32 +19,12 @@ mod explorer {
     pub mod fs;
 }
 
-#[cfg(target_os = "linux")]
-mod explorer {
-    pub mod fs;
-    pub mod ntfs;
-    pub mod ext4;
-}
-
 #[cfg(target_os = "windows")]
 mod reader {
     pub mod ntfs;
     pub mod fs;
     pub mod sector;
 }
-
-#[cfg(target_os = "linux")]
-mod reader {
-    pub mod ext4;
-    pub mod fs;
-    pub mod ntfs;
-    pub mod sector;
-}
-
-mod config;
-mod execute;
-mod utils;
-mod path;
 
 #[cfg(target_os = "windows")]
 pub mod windows_os {
@@ -55,8 +37,32 @@ pub mod windows_os {
 #[cfg(target_os = "windows")]
 use windows_os::*;
 
+// --------------------- Linux-specific ---------------------
+
+#[cfg(target_os = "linux")]
+mod explorer {
+    pub mod fs;
+    pub mod ntfs;
+    pub mod ext4;
+}
+
+#[cfg(target_os = "linux")]
+mod reader {
+    pub mod ext4;
+    pub mod fs;
+    pub mod ntfs;
+    pub mod sector;
+}
+
 #[cfg(target_os = "linux")]
 use users::get_effective_uid;
+
+// --------------------- OS-independent ---------------------
+
+mod config;
+mod execute;
+mod utils;
+mod path;
 
 use execute::run;
 use path::{insert_if_valid, remove_drive_letter};

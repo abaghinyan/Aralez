@@ -98,7 +98,11 @@ fn process_all_directory(
 
     for entry in entries {
         let path_buf = entry.path();
-        let entry_str = path_buf.to_str().unwrap().to_string();
+        let entry_str = match path_buf.to_str() {
+            Ok(s) => s.to_string(),
+            Err(e) => return Err(
+                anyhow::anyhow!("Non-UTF8 path: {:?}, error: {}", path_buf, e)),
+        };
 
         if entry.file_name() == "." || entry.file_name() == ".."
             || FileType::Symlink == entry.file_type()? {
@@ -158,10 +162,14 @@ pub fn process_directory(
 
     for entry in entries {
         let path_buf = entry.path();
-        let entry_str = path_buf.to_str().unwrap().to_string();
+        let entry_str = match path_buf.to_str() {
+            Ok(s) => s.to_string(),
+            Err(e) => return Err(
+                anyhow::anyhow!("Non-UTF8 path: {:?}, error: {}", path_buf, e)),
+        };
 
-        if entry.file_name() == "." || entry.file_name() == ".."
-            || FileType::Symlink == entry.file_type()? {
+        if matches!(entry.file_name().as_str(), Ok(".") | Ok(".."))
+            || matches!(entry.file_type()?, FileType::Symlink) {
             continue;
         }
 

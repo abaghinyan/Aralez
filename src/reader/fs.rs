@@ -47,8 +47,6 @@ pub fn get_default_drive() -> String {
     let file = File::open("/proc/mounts").expect("Unable to open /proc/mounts");
     let reader = BufReader::new(file);
 
-    let mut best_mount: Option<(String, String, u64)> = None;
-
     for line in reader.lines() {
         if let Ok(line) = line {
             let parts: Vec<&str> = line.split_whitespace().collect();

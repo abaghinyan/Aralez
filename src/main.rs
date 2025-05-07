@@ -447,8 +447,11 @@ fn main() -> Result<(), anyhow::Error> {
                         } else {
                             let output_collect_folder = match section_config.get_output_folder() {
                                 Some(o) => o.replace("{{root_output_path}}", root_output)
-                                                    .replace("{{drive}}", &drive),
+                                    .replace("{{drive}}", &drive),
+                                #[cfg(target_os = "windows")]
                                 None => format!("{}\\{}", root_output, drive),
+                                #[cfg(target_os = "linux")]
+                                None => format!("{}/{}", root_output, drive),
                             };
                             ensure_directory_exists(&output_collect_folder)?;
                             process_drive_artifacts(&drive, &mut section_config,
@@ -657,7 +660,10 @@ fn collect_exec_result(section_config: &SectionConfig, result: String, task: Sec
     let output_collect_folder = match sc.get_output_folder() {
         Some(o) => o.replace("{{root_output_path}}", root_output)
                             .replace("{{drive}}", &drive),
+        #[cfg(target_os = "windows")]
         None => format!("{}\\{}", root_output, drive),
+        #[cfg(target_os = "linux")]
+        None => format!("{}/{}", root_output, drive),
     };
     ensure_directory_exists(&output_collect_folder)
         .expect("Failed to create or access output directory");

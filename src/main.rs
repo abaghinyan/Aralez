@@ -8,32 +8,61 @@
 #[macro_use]
 mod macros;
 
+// --------------------- Windows-specific ---------------------
+
 #[cfg(target_os = "windows")]
 pub mod resource;
+
+#[cfg(target_os = "windows")]
 mod explorer {
     pub mod ntfs;
+    pub mod fs;
 }
 
-mod config;
-mod execute;
-mod fs_reader;
-mod sector_reader;
-mod utils;
-mod path;
+#[cfg(target_os = "windows")]
+mod reader {
+    pub mod ntfs;
+    pub mod fs;
+    pub mod sector;
+}
 
 #[cfg(target_os = "windows")]
 pub mod windows_os {
     pub use crate::execute::{get_list_tools, run_internal, get_bin};
     pub use crate::resource::{add_resource, list_resources, remove_resource};
-    pub use crate::fs_reader::process_all_drives;
+    pub use crate::reader::ntfs::process_all_drives;
     pub use crate::resource::extract_resource;
 }
 
 #[cfg(target_os = "windows")]
 use windows_os::*;
 
+// --------------------- Linux-specific ---------------------
+
+#[cfg(target_os = "linux")]
+mod explorer {
+    pub mod fs;
+    pub mod ntfs;
+    pub mod ext4;
+}
+
+#[cfg(target_os = "linux")]
+mod reader {
+    pub mod ext4;
+    pub mod fs;
+    pub mod ntfs;
+    pub mod sector;
+}
+
 #[cfg(target_os = "linux")]
 use users::get_effective_uid;
+
+// --------------------- OS-independent ---------------------
+
+mod config;
+mod execute;
+mod utils;
+mod path;
 
 use execute::run;
 use path::{insert_if_valid, remove_drive_letter};
@@ -42,7 +71,7 @@ use clap::Parser;
 use clap::{Arg, Command};
 use config::{get_config, set_config, Config, Entries, ExecType, SearchConfig, SectionConfig};
 use indicatif::{ProgressBar, ProgressStyle};
-use fs_reader::process_drive_artifacts;
+use reader::fs::{process_drive_artifacts, get_default_drive};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -70,7 +99,7 @@ struct Cli {
     show_config: bool,
 
     /// Specify the default drive to process
-    #[arg(long, default_value = "C")]
+    #[arg(long)]
     default_drive: String,
 }
 
@@ -213,7 +242,7 @@ fn main() -> Result<(), anyhow::Error> {
                 .long("default_drive")
                 .help("Specify the mounted NTFS device to process (ex: /dev/loopX)")
                 .value_name("DRIVE")
-                .required_unless_present_any(["show_config", "check_config"]),
+                .required(false),
         );
     }
 
@@ -383,8 +412,7 @@ fn main() -> Result<(), anyhow::Error> {
     spinner.set_message("Starting tasks...");
 
     // Parse the default drive
-    let c_drive = "C".to_string();
-    let default_drive = matches.get_one::<String>("default_drive").unwrap_or(&c_drive);
+    let default_drive = get_default_drive();
 
     let sorted_tasks = config.get_tasks();
     for (section_name, mut section_config) in sorted_tasks {
@@ -419,8 +447,11 @@ fn main() -> Result<(), anyhow::Error> {
                         } else {
                             let output_collect_folder = match section_config.get_output_folder() {
                                 Some(o) => o.replace("{{root_output_path}}", root_output)
-                                                    .replace("{{drive}}", &drive),
+                                    .replace("{{drive}}", &drive),
+                                #[cfg(target_os = "windows")]
                                 None => format!("{}\\{}", root_output, drive),
+                                #[cfg(target_os = "linux")]
+                                None => format!("{}/{}", root_output, drive),
                             };
                             ensure_directory_exists(&output_collect_folder)?;
                             process_drive_artifacts(&drive, &mut section_config,
@@ -517,7 +548,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                         match config.get_task(link_element.clone()) {
                                                             Some(task) => {
                                                                 if let Some(res) = result {
-                                                                    collect_exec_result(&section_config, res, task.clone(), root_output, default_drive);
+                                                                    collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
                                                                 }
                                                             },
                                                             None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
@@ -534,7 +565,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                 match config.get_task(link_element.clone()) {
                                                     Some(task) => {
                                                         if let Some(res) = result {
-                                                            collect_exec_result(&section_config, res, task.clone(), root_output, default_drive);
+                                                            collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
                                                         }
                                                     },
                                                     None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
@@ -554,7 +585,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                 match config.get_task(link_element.clone()) {
                                                     Some(task) => {
                                                         if let Some(res) = result {
-                                                            collect_exec_result(&section_config, res, task.clone(), root_output, default_drive);
+                                                            collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
                                                         }
                                                     },
                                                     None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
@@ -629,7 +660,10 @@ fn collect_exec_result(section_config: &SectionConfig, result: String, task: Sec
     let output_collect_folder = match sc.get_output_folder() {
         Some(o) => o.replace("{{root_output_path}}", root_output)
                             .replace("{{drive}}", &drive),
+        #[cfg(target_os = "windows")]
         None => format!("{}\\{}", root_output, drive),
+        #[cfg(target_os = "linux")]
+        None => format!("{}/{}", root_output, drive),
     };
     ensure_directory_exists(&output_collect_folder)
         .expect("Failed to create or access output directory");

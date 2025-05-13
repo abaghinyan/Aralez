@@ -6,13 +6,15 @@
 // Author(s): Razmik Arshakyan
 //
 
+use crate::reader::fs::*;
+use crate::reader::ntfs::{initialize_ntfs, process_directory, Entry};
+use crate::reader::sector::SectorReader;
 use std::io::BufReader;
-use crate::fs_reader::*;
-use crate::sector_reader::SectorReader;
 use ntfs::Ntfs;
 use std::collections::HashSet;
 use std::fs::File;
 use anyhow::Result;
+use super::fs::FileSystemExplorer;
 
 pub struct NtfsExplorer {
     fs_reader: Option<BufReader<SectorReader<File>>>,

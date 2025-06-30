@@ -6,14 +6,6 @@
 // Author(s): Areg Baghinyan
 //
 
-//
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright © 2025 Areg Baghinyan. All Rights Reserved.
-//
-// Author(s): Areg Baghinyan
-//
-
 #[macro_export]
 macro_rules! dprintln {
     ($($arg:tt)*) => {

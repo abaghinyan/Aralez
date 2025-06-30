@@ -128,7 +128,17 @@ pub fn run (
         }
     }; 
 
-    dprintln!("[INFO] > `{}` ({}) | Exit code: {:?}", display_name, pid, output.status.code().unwrap_or(-1));
+    let exit_code = output.status.code().unwrap_or(-1);
+    dprintln!("[INFO] > `{}` ({}) | Exit code: {}", display_name, pid, exit_code);
+
+    if exit_code != 0 {
+        let stderr_output = String::from_utf8_lossy(&output.stderr);
+        if !stderr_output.trim().is_empty() {
+            dprintln!("[ERROR] > `{}` ({}) | Stderr output:\n{}", display_name, pid, stderr_output);
+        } else {
+            dprintln!("[ERROR] > `{}` ({}) | Process failed with exit code {} but no stderr output", display_name, pid, exit_code);
+        }
+    }
 
     // Save the result to the specified output path
     if let Err(e) = save_output_to_file(&output.stdout, output_file) {

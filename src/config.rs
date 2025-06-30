@@ -1,4 +1,3 @@
-//
 // SPDX-License-Identifier: Apache-2.0
 //
 // Copyright © 2025 Areg Baghinyan. All Rights Reserved.
@@ -9,7 +8,6 @@
 #[cfg(target_os = "windows")]
 pub mod windows_os {
     pub use crate::resource::extract_resource;
-    pub use std::io::Read;
 }
 
 #[cfg(target_os = "windows")]
@@ -25,29 +23,31 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs::{create_dir_all, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::fmt;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
-// Global static config
+#[cfg(target_os = "linux")]
+pub const CONFIG_MARKER_START: &[u8] = b"===CONFIG_START===\n";
+#[cfg(target_os = "linux")]
+pub const CONFIG_MARKER_END: &[u8] = b"===CONFIG_END===\n";
+
 static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| Mutex::new(Config {
-    output_filename: "default.log".to_string(), // Placeholder
+    output_filename: "default.log".to_string(),
     tasks: IndexMap::new(),
     max_size: None,
     version: None,
     encrypt: None
 }));
 
-/// **Function to update the global config instance**
 pub fn set_config(new_config: Config) {
     let mut config = CONFIG.lock().unwrap();
     *config = new_config;
 }
 
-/// **Function to retrieve the current config**
 pub fn get_config() -> Config {
     CONFIG.lock().unwrap().clone()
 }
@@ -382,86 +382,95 @@ pub struct SearchConfig {
 }
 
 impl Config {
-    pub fn load_default() -> Result<Self, anyhow::Error> {
-        // Embed the YAML content directly into the binary
-        let yaml_data = include_str!("../config/.config.yml");
-        let config: Config = serde_yaml::from_str(yaml_data)?;
+    pub fn load_embedded_config() -> Result<String, anyhow::Error> {
+        #[cfg(target_os = "linux")]
+        {
+            use std::fs;
+            use std::env;
 
-        Ok(config)
+            let exe_path = env::current_exe()?;
+            let content = fs::read(&exe_path)?;
+
+            let start = content
+                .windows(CONFIG_MARKER_START.len())
+                .rposition(|w| w == CONFIG_MARKER_START)
+                .ok_or_else(|| anyhow::anyhow!("CONFIG_MARKER_START not found"))?;
+
+            let end = content
+                .windows(CONFIG_MARKER_END.len())
+                .rposition(|w| w == CONFIG_MARKER_END)
+                .ok_or_else(|| anyhow::anyhow!("CONFIG_MARKER_END not found"))?;
+
+            if end < start {
+                return Err(anyhow::anyhow!("CONFIG_MARKER_END found before CONFIG_MARKER_START"));
+            }
+
+            let config_bytes = &content[(start + CONFIG_MARKER_START.len())..end];
+            Ok(String::from_utf8_lossy(config_bytes).to_string())
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let config_data = extract_resource("config.yml")?;
+            let config_string = String::from_utf8(config_data)?;
+            return Ok(config_string);
+        }
     }
 
     pub fn load() -> Result<Self, anyhow::Error> {
-        // Load configuration: Try to load the embedded configuration first, then fallback to default
-        #[cfg(target_os = "windows")] {
-            let config_data = Config::load_embedded_config().unwrap_or(String::new());
-            if config_data.is_empty() {
-                return match Config::load_default() {
-                    Ok(conf) => Ok(conf),
-                    Err(e) => Err(e),
-                }
-            }
-            return match serde_yaml::from_str(&config_data) {
-                Ok(config) => Ok(config),
-                Err(e) => Err(anyhow::anyhow!(e.to_string()) ),
-            };
+        let embedded = Self::load_embedded_config();
+        if let Ok(data) = embedded {
+            return serde_yaml::from_str(&data).map_err(|e| anyhow::anyhow!(e.to_string()));
         }
-        #[cfg(target_os = "linux")]
-        match Config::load_default() {
-            Ok(conf) => Ok(conf),
-            Err(e) => Err(e),
-        }
+        Self::load_default()
     }
 
-    #[cfg(target_os = "windows")]
-    pub fn check_config_file(filepath: &String) -> Result<Self, anyhow::Error> {
+    pub fn check_config_file(filepath: &String) -> Result<Config, anyhow::Error> {
         let mut file = File::open(filepath)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
         let config_string = String::from_utf8_lossy(&buffer);
 
-        return match serde_yaml::from_str(&config_string) {
+        match serde_yaml::from_str(&config_string) {
             Ok(config) => Ok(config),
-            Err(e) => Err(anyhow::anyhow!(e.to_string()) ),
-        };
-    }
-    
-    // Function to load the embedded configuration at runtime
-    #[cfg(target_os = "windows")]
-    pub fn load_embedded_config() -> Result<String, anyhow::Error> {
-        let config_data = extract_resource("config.yml")?;
-        let config_string = String::from_utf8(config_data)?;
-
-        return Ok(config_string);
+            Err(e) => Err(anyhow::anyhow!(e.to_string())),
+        }
     }
 
-    /// Load the raw configuration as a plain string, choosing between embedded or default.
+    pub fn load_default() -> Result<Self, anyhow::Error> {
+        let yaml_data = include_str!("../config/.config.yml");
+        serde_yaml::from_str(yaml_data).map_err(|e| anyhow::anyhow!(e.to_string()))
+    }
+
     pub fn get_raw_data() -> Result<String> {
-        // Attempt to load the embedded configuration
         #[cfg(target_os = "windows")]
-        if let Ok(embedded_config) = Config::load_embedded_config() {
-            if !embedded_config.is_empty() {
-                return Ok(embedded_config);
+        {
+            if let Ok(embedded_config) = Self::load_embedded_config() {
+                if !embedded_config.is_empty() {
+                    return Ok(embedded_config);
+                }
             }
         }
-        // If embedded config is not found, fall back to loading the default config file
-        let yaml_data = include_str!("../config/.config.yml");
 
-        Ok(yaml_data.to_string())
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(embedded_config) = Self::load_embedded_config() {
+                if !embedded_config.is_empty() {
+                    return Ok(embedded_config);
+                }
+            }
+        }
+
+        Ok(include_str!("../config/.config.yml").to_string())
     }
 
     pub fn save(&self, output_dir: &str) -> Result<()> {
-        let data = Config::get_raw_data()?;
-
-        // Ensure the root_output folder exists
+        let data = Self::get_raw_data()?;
         let path = Path::new(output_dir);
         if !path.exists() {
             create_dir_all(path)?;
         }
-
-        // Define the output file path
         let config_file_path = path.join("config.yml");
-
-        // Write the YAML string to the file
         let mut file = File::create(config_file_path)?;
         file.write_all(data.as_bytes())?;
         Ok(())
@@ -483,19 +492,14 @@ impl Config {
         let mut output_filename_expand = self.output_filename.clone();
 
         for (key, value) in vars {
-            output_filename_expand =
-                output_filename_expand.replace(&format!("{{{{{}}}}}", key), value);
+            output_filename_expand = output_filename_expand.replace(&format!("{{{{{}}}}}", key), value);
         }
         output_filename_expand
     }
 
-    /// Function to return tasks sections ordered by priority
     pub fn get_tasks(&self) -> Vec<(String, SectionConfig)> {
         let mut tasks_vec: Vec<(String, SectionConfig)> = self.tasks.clone().into_iter().collect();
-
-        // Sort by priority
         tasks_vec.sort_by_key(|(_, section)| section.priority.unwrap_or(255));
-
         tasks_vec
     }
 
@@ -503,6 +507,7 @@ impl Config {
         self.tasks.get(&name)
     }
 }
+
 
 impl SearchConfig {
     // Function that return the min between the max size of the task and the entry

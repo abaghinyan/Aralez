@@ -87,6 +87,13 @@ use chrono::Utc;
 use zip::DateTime as ZipDateTime;
 use chrono::Datelike;
 use chrono::Timelike;
+#[cfg(target_os = "linux")]
+use std::io::Read;
+#[cfg(target_os = "linux")]
+use config::{CONFIG_MARKER_START, CONFIG_MARKER_END};
+#[cfg(target_os = "linux")]
+use std::fs::OpenOptions;
+
 
 #[derive(Parser)]
 struct Cli {
@@ -144,6 +151,60 @@ fn is_drive_accessible(drive: &str) -> bool {
     fs::metadata(&drive_path).is_ok()
 }
 
+fn update_embedded_config(config_path: &str, output_path: &str) -> std::io::Result<()> {
+    let current_exe = env::current_exe()?;
+    fs::copy(&current_exe, &output_path)?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let new_config_data = fs::read(config_path)?;
+        let mut file = OpenOptions::new().read(true).write(true).open(&output_path)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+
+        use std::io::SeekFrom;
+        let start_pos = buffer
+            .windows(CONFIG_MARKER_START.len())
+            .rposition(|w| w == CONFIG_MARKER_START);
+        let end_pos = buffer
+            .windows(CONFIG_MARKER_END.len())
+            .rposition(|w| w == CONFIG_MARKER_END)
+            .map(|p| p + CONFIG_MARKER_END.len());
+
+        match (start_pos, end_pos) {
+            (Some(start), Some(end)) if end > start && end - start > 36 => {
+                file.set_len(start as u64)?;
+                file.seek(SeekFrom::Start(start as u64))?;
+            }
+            _ => {
+                file.seek(SeekFrom::End(0))?;
+            }
+        }
+
+        let config_start_offset = file.stream_position()?;
+        file.write_all(CONFIG_MARKER_START)?;
+        file.write_all(&new_config_data)?;
+        file.write_all(CONFIG_MARKER_END)?;
+        file.flush()?;
+        file.sync_all()?;
+
+        let config_end_offset = config_start_offset
+            + CONFIG_MARKER_START.len() as u64
+            + new_config_data.len() as u64
+            + CONFIG_MARKER_END.len() as u64;
+
+        file.set_len(config_end_offset)?; 
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        add_resource(config_path, "config.yml", output_path)?;
+    }
+
+    println!("[INFO] Embedded configuration updated in `{}`", output_path);
+    Ok(())
+}
+
 fn main() -> Result<(), anyhow::Error> {
     #[cfg(target_os = "linux")]
     if get_effective_uid() != 0 {
@@ -162,6 +223,16 @@ fn main() -> Result<(), anyhow::Error> {
                 .long("verbos")
                 .help("Activate verbos mode")
                 .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("change_config")
+                .short('c')
+                .long("change_config")
+                .help("Change the embedded configuration file")
+                .value_names(&["CONFIG_FILE", "OUTPUT_FILE"])
+                .value_hint(clap::ValueHint::FilePath)
+                .num_args(2)
+                .required(false),
         )
         .arg(
             Arg::new("show_config")
@@ -188,16 +259,6 @@ fn main() -> Result<(), anyhow::Error> {
     #[cfg(target_os = "windows")]
     {
         cmd = cmd.arg(
-            Arg::new("change_config")
-                .short('c')
-                .long("change_config")
-                .help("Change the embedded configuration file")
-                .value_names(&["CONFIG_FILE", "OUTPUT_FILE"])
-                .value_hint(clap::ValueHint::FilePath)
-                .num_args(2)
-                .required(false),
-        )
-        .arg(
             Arg::new("default_drive")
                 .short('d')
                 .long("default_drive")
@@ -249,7 +310,6 @@ fn main() -> Result<(), anyhow::Error> {
     let matches = cmd.get_matches();
 
     // Handle changing the embedded configuration
-    #[cfg(target_os = "windows")]
     if let Some(values) = matches.get_many::<String>("change_config") {
         let args: Vec<_> = values.collect();
         let config_path = args[0];
@@ -257,9 +317,10 @@ fn main() -> Result<(), anyhow::Error> {
         match Config::check_config_file(&config_path) {
             Ok(_) => {
                 if !output_path.is_empty() {
-                    match add_resource(config_path, "config.yml", output_path) {
+                    
+                    match update_embedded_config(config_path, output_path) {
                         Ok(_) => println!("[INFO] The config `{}` was successfully added to `{}`.",config_path, output_path),
-                        Err(_) => println!("[ERROR] Problem to add the config {} in the resource.", config_path),
+                        Err(e) => println!("[ERROR] Problem to add the config {} in the resource. Error: {}", config_path, e),
                     }
                 } else {
                     return Err(anyhow::anyhow!(

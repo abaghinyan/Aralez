@@ -11,6 +11,7 @@ use std::fs::{self, File};
 use std::io::{self, Write, Read, Seek, SeekFrom};
 use std::path::Path;
 use std::process::Command;
+#[cfg(target_os = "windows")]
 use winres::WindowsResource;
 use zip::ZipArchive;
 
@@ -68,13 +69,16 @@ fn main() -> io::Result<()> {
 
             println!("cargo:rustc-link-arg-bin=aralez=app.res");
         } else if host_os == "windows" {
-            let mut res = WindowsResource::new();
-            res.set_manifest_file("app.manifest");
-            res.set_icon("assets/aralez.ico").compile()?;
+            #[cfg(target_os = "windows")]
+            {
+                let mut res = WindowsResource::new();
+                res.set_manifest_file("app.manifest");
+                res.set_icon("assets/aralez.ico").compile()?;
 
-            if let Err(e) = res.compile() {
-                eprintln!("Failed to compile Windows resources: {}", e);
-                std::process::exit(1);
+                if let Err(e) = res.compile() {
+                    eprintln!("Failed to compile Windows resources: {}", e);
+                    std::process::exit(1);
+                }
             }
         }
     }

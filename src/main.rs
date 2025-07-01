@@ -7,25 +7,19 @@
 
 #[macro_use]
 mod macros;
-
 mod config;
 mod execute;
-mod ntfs_reader;
-mod sector_reader;
 mod utils;
-mod resource;
 mod path;
 
-use execute::get_list_tools;
+use execute::run;
 use path::{insert_if_valid, remove_drive_letter};
-use resource::{add_resource, list_resources, remove_resource};
 use anyhow::Result;
 use clap::Parser;
 use clap::{Arg, Command};
 use config::{get_config, set_config, Config, Entries, ExecType, SearchConfig, SectionConfig};
-use execute::{get_bin, run, run_internal};
 use indicatif::{ProgressBar, ProgressStyle};
-use ntfs_reader::{process_all_drives, process_drive_artifacts};
+use reader::fs::{process_drive_artifacts, get_default_drive};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -42,6 +36,59 @@ use zip::DateTime as ZipDateTime;
 use chrono::Datelike;
 use chrono::Timelike;
 
+#[cfg(target_os = "windows")]
+pub mod resource;
+
+#[cfg(target_os = "windows")]
+mod explorer {
+    pub mod ntfs;
+    pub mod fs;
+}
+
+#[cfg(target_os = "windows")]
+mod reader {
+    pub mod ntfs;
+    pub mod fs;
+    pub mod sector;
+}
+
+#[cfg(target_os = "windows")]
+pub mod windows_imports {
+    pub use crate::execute::{get_list_tools, run_internal, get_bin};
+    pub use crate::resource::{add_resource, list_resources, remove_resource};
+    pub use crate::reader::ntfs::process_all_drives;
+    pub use crate::resource::extract_resource;
+}
+
+#[cfg(target_os = "windows")]
+use windows_imports::*;
+
+#[cfg(target_os = "linux")]
+mod explorer {
+    pub mod fs;
+    pub mod ntfs;
+    pub mod ext4;
+}
+
+#[cfg(target_os = "linux")]
+mod reader {
+    pub mod ext4;
+    pub mod fs;
+    pub mod ntfs;
+    pub mod sector;
+}
+
+#[cfg(target_os = "linux")]
+pub mod linux_imports {
+    pub use std::io::Read;
+    pub use super::config::{CONFIG_MARKER_START, CONFIG_MARKER_END};
+    pub use std::fs::OpenOptions;
+    pub use users::get_effective_uid;
+}
+
+#[cfg(target_os = "linux")]
+use linux_imports::*;
+
 #[derive(Parser)]
 struct Cli {
     /// Activate debug mode even in release builds
@@ -53,7 +100,7 @@ struct Cli {
     show_config: bool,
 
     /// Specify the default drive to process
-    #[arg(long, default_value = "C")]
+    #[arg(long)]
     default_drive: String,
 }
 
@@ -90,12 +137,77 @@ fn check_config() -> Result<Config, anyhow::Error> {
 
 /// Helper function to check if the drive exists
 fn is_drive_accessible(drive: &str) -> bool {
-    let drive_path = format!("{}:\\", drive);
+    let drive_path = if cfg!(target_os = "windows") {
+        format!("{}:\\", drive)
+    } else {
+        drive.to_string()
+    };
     fs::metadata(&drive_path).is_ok()
 }
 
+fn update_embedded_config(config_path: &str, output_path: &str) -> std::io::Result<()> {
+    let current_exe = env::current_exe()?;
+    fs::copy(&current_exe, &output_path)?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let new_config_data = fs::read(config_path)?;
+        let mut file = OpenOptions::new().read(true).write(true).open(&output_path)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+
+        use std::io::SeekFrom;
+        let start_pos = buffer
+            .windows(CONFIG_MARKER_START.len())
+            .rposition(|w| w == CONFIG_MARKER_START);
+        let end_pos = buffer
+            .windows(CONFIG_MARKER_END.len())
+            .rposition(|w| w == CONFIG_MARKER_END)
+            .map(|p| p + CONFIG_MARKER_END.len());
+
+        match (start_pos, end_pos) {
+            (Some(start), Some(end)) if end > start && end - start > 36 => {
+                file.set_len(start as u64)?;
+                file.seek(SeekFrom::Start(start as u64))?;
+            }
+            _ => {
+                file.seek(SeekFrom::End(0))?;
+            }
+        }
+
+        let config_start_offset = file.stream_position()?;
+        file.write_all(CONFIG_MARKER_START)?;
+        file.write_all(&new_config_data)?;
+        file.write_all(CONFIG_MARKER_END)?;
+        file.flush()?;
+        file.sync_all()?;
+
+        let config_end_offset = config_start_offset
+            + CONFIG_MARKER_START.len() as u64
+            + new_config_data.len() as u64
+            + CONFIG_MARKER_END.len() as u64;
+
+        file.set_len(config_end_offset)?; 
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        add_resource(config_path, "config.yml", output_path)?;
+    }
+
+    println!("[INFO] Embedded configuration updated in `{}`", output_path);
+    Ok(())
+}
+
 fn main() -> Result<(), anyhow::Error> {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
+    #[cfg(target_os = "linux")]
+    if get_effective_uid() != 0 {
+        eprintln!("[WARN] Aralez must be run as root/administrator.");
+        eprintln!("Try: sudo ./aralez");
+        std::process::exit(1);
+    }
+
+    let mut cmd = Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
@@ -107,12 +219,14 @@ fn main() -> Result<(), anyhow::Error> {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("default_drive")
-                .short('d')
-                .long("default_drive")
-                .help("Specify the default drive to process")
-                .value_name("DRIVE")
-                .default_value("C"),
+            Arg::new("change_config")
+                .short('c')
+                .long("change_config")
+                .help("Change the embedded configuration file")
+                .value_names(&["CONFIG_FILE", "OUTPUT_FILE"])
+                .value_hint(clap::ValueHint::FilePath)
+                .num_args(2)
+                .required(false),
         )
         .arg(
             Arg::new("show_config")
@@ -129,14 +243,22 @@ fn main() -> Result<(), anyhow::Error> {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("change_config")
-                .short('c')
-                .long("change_config")
-                .help("Change the embedded configuration file")
-                .value_names(&["CONFIG_FILE", "OUTPUT_FILE"])
-                .value_hint(clap::ValueHint::FilePath)
-                .num_args(2)
-                .required(false),
+            Arg::new("encrypt")
+                .short('e')
+                .long("encrypt")
+                .help("Encrypt the archive with a password by using AES256")
+                .value_name("PASSWORD")
+        )
+        .help_template(HELP_TEMPLATE);
+    #[cfg(target_os = "windows")]
+    {
+        cmd = cmd.arg(
+            Arg::new("default_drive")
+                .short('d')
+                .long("default_drive")
+                .help("Specify the default drive to process")
+                .value_name("DRIVE")
+                .default_value("C"),
         )
         .arg(
             Arg::new("add_tool")
@@ -164,16 +286,22 @@ fn main() -> Result<(), anyhow::Error> {
                 .long("list_tools")
                 .help("List all external tools")
                 .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("encrypt")
-                .short('e')
-                .long("encrypt")
-                .help("Encrypt the archive with a password by using AES256")
-                .value_name("PASSWORD")
-        )
-        .help_template(HELP_TEMPLATE)
-        .get_matches();
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        cmd = cmd.arg(
+            Arg::new("default_drive")
+                .short('d')
+                .long("default_drive")
+                .help("Specify the mounted NTFS device to process (ex: /dev/loopX)")
+                .value_name("DRIVE")
+                .required(false),
+        );
+    }
+
+    let matches = cmd.get_matches();
 
     // Handle changing the embedded configuration
     if let Some(values) = matches.get_many::<String>("change_config") {
@@ -183,9 +311,10 @@ fn main() -> Result<(), anyhow::Error> {
         match Config::check_config_file(&config_path) {
             Ok(_) => {
                 if !output_path.is_empty() {
-                    match add_resource(config_path, "config.yml", output_path) {
+                    
+                    match update_embedded_config(config_path, output_path) {
                         Ok(_) => println!("[INFO] The config `{}` was successfully added to `{}`.",config_path, output_path),
-                        Err(_) => println!("[ERROR] Problem to add the config {} in the resource.", config_path),
+                        Err(e) => println!("[ERROR] Problem to add the config {} in the resource. Error: {}", config_path, e),
                     }
                 } else {
                     return Err(anyhow::anyhow!(
@@ -200,6 +329,7 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Add new tool
+    #[cfg(target_os = "windows")]
     if let Some(values) = matches.get_many::<String>("add_tool") {
         let args: Vec<_> = values.collect();
         let tool_path = args[0];
@@ -226,6 +356,7 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Remove tool
+    #[cfg(target_os = "windows")]
     if let Some(values) = matches.get_many::<String>("remove_tool") {
         let args: Vec<_> = values.collect();
         let tool_name = args[0];
@@ -246,12 +377,16 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // list all tools
+    #[cfg(target_os = "windows")]
     if matches.get_flag("list_tools") {
         println!("== External tools ==");
-        let ext_list = get_list_tools();
-        for tool in ext_list {
-            println!("(static) {}",tool);
+        #[cfg(target_os = "windows")] {
+            let ext_list = get_list_tools();
+            for tool in ext_list {
+                println!("(static) {}",tool);
+            }
         }
+
         match list_resources(10) {
             Ok(list_resources_array) => {
                 for resource_element in list_resources_array {
@@ -332,8 +467,7 @@ fn main() -> Result<(), anyhow::Error> {
     spinner.set_message("Starting tasks...");
 
     // Parse the default drive
-    let c_drive = "C".to_string();
-    let default_drive = matches.get_one::<String>("default_drive").unwrap_or(&c_drive);
+    let default_drive = get_default_drive();
 
     let sorted_tasks = config.get_tasks();
     for (section_name, mut section_config) in sorted_tasks {
@@ -354,20 +488,25 @@ fn main() -> Result<(), anyhow::Error> {
                     spinner.set_message(format!("Processing: `{}` drive", drive));
 
                     if drive == "*" {
-                        let output_collect_folder = match section_config.output_folder.clone(){
-                            Some(o) => o.replace("{{root_output_path}}", root_output),
-                            None => root_output.to_string(),
-                        };
-                        process_all_drives(&mut section_config, &output_collect_folder)?;
+                        #[cfg(target_os = "windows")] {
+                            let output_collect_folder = match section_config.get_output_folder(){
+                                Some(o) => o.replace("{{root_output_path}}", root_output),
+                                None => root_output.to_string(),
+                            };
+                            process_all_drives(&mut section_config, &output_collect_folder)?;
+                        }
                     } else {
                         // Check if the drive exists
                         if !is_drive_accessible(&drive) {
                             dprintln!("[ERROR] Drive `{}` is not accessible or does not exist", drive);
                         } else {
-                            let output_collect_folder = match section_config.output_folder.clone(){
+                            let output_collect_folder = match section_config.get_output_folder() {
                                 Some(o) => o.replace("{{root_output_path}}", root_output)
-                                                    .replace("{{drive}}", &drive),
+                                    .replace("{{drive}}", &drive),
+                                #[cfg(target_os = "windows")]
                                 None => format!("{}\\{}", root_output, drive),
+                                #[cfg(target_os = "linux")]
+                                None => format!("{}/{}", root_output, drive),
                             };
                             ensure_directory_exists(&output_collect_folder)?;
                             process_drive_artifacts(&drive, &mut section_config,
@@ -432,15 +571,20 @@ fn main() -> Result<(), anyhow::Error> {
                                         None => executor_name.clone().replace(".exe", ".txt").to_string(),
                                     };
                                     let output_file = updated_output_file.as_str();
-                                    let output_exec_folder = match section_config.output_folder.clone(){
+                                    let output_exec_folder = match section_config.get_output_folder(){
                                         Some(o) => o.replace("{{root_output_path}}", root_output),
                                         None => format!("{}\\{}", root_output, "tools"),
                                     };
                                     ensure_directory_exists(&output_exec_folder)
                                         .expect("Failed to create or access output directory");
-                                    let output_fullpath = format!("{}\\{}",output_exec_folder,output_file);
+                                    let output_fullpath: String = if cfg!(target_os = "windows") {
+                                        format!("{}\\{}",output_exec_folder,output_file)
+                                    } else {
+                                        format!("{}/{}",output_exec_folder,output_file)
+                                    };
 
                                     match exec_type {
+                                        #[cfg(target_os = "windows")] 
                                         config::TypeExec::External => {
                                             match get_bin(executor_name) {
                                                 Ok(bin) => {
@@ -461,7 +605,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                         match config.get_task(link_element.clone()) {
                                                             Some(task) => {
                                                                 if let Some(res) = result {
-                                                                    collect_exec_result(&section_config, res, task.clone(), root_output, default_drive);
+                                                                    collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
                                                                 }
                                                             },
                                                             None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
@@ -471,13 +615,14 @@ fn main() -> Result<(), anyhow::Error> {
                                                 Err(e) => dprintln!("{}", e),
                                             }
                                         }
+                                        #[cfg(target_os = "windows")] 
                                         config::TypeExec::Internal => {
                                             let result = run_internal(&executor_name, &output_fullpath);
                                             if let Some(link_element) = executor.link {
                                                 match config.get_task(link_element.clone()) {
                                                     Some(task) => {
                                                         if let Some(res) = result {
-                                                            collect_exec_result(&section_config, res, task.clone(), root_output, default_drive);
+                                                            collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
                                                         }
                                                     },
                                                     None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
@@ -499,7 +644,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                 match config.get_task(link_element.clone()) {
                                                     Some(task) => {
                                                         if let Some(res) = result {
-                                                            collect_exec_result(&section_config, res, task.clone(), root_output, default_drive);
+                                                            collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
                                                         }
                                                     },
                                                     None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
@@ -512,6 +657,7 @@ fn main() -> Result<(), anyhow::Error> {
                             }
                         });
                     });
+                    
                 }
             }
         }
@@ -570,10 +716,13 @@ fn collect_exec_result(section_config: &SectionConfig, result: String, task: Sec
     .clone()
     .unwrap_or_else(|| default_drive.to_string());
 
-    let output_collect_folder = match sc.output_folder.clone(){
+    let output_collect_folder = match sc.get_output_folder() {
         Some(o) => o.replace("{{root_output_path}}", root_output)
                             .replace("{{drive}}", &drive),
+        #[cfg(target_os = "windows")]
         None => format!("{}\\{}", root_output, drive),
+        #[cfg(target_os = "linux")]
+        None => format!("{}/{}", root_output, drive),
     };
     ensure_directory_exists(&output_collect_folder)
         .expect("Failed to create or access output directory");

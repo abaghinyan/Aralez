@@ -6,29 +6,39 @@
 // Author(s): Areg Baghinyan
 //
 
-mod network_info;
-mod process;
-mod process_details;
+#[cfg(target_os = "windows")]
+#[path = "execute/windows"]
+pub mod windows_internal {
+    pub mod network_info;
+    pub mod process;
+    pub mod process_details;
+}
 
 use crate::config::ExecType;
-use crate::resource::extract_resource;
-
 use std::process::{Command, Stdio};
 use std::io::{self, Write};
 use std::fs::{File, remove_file};
 use std::path::{Path, PathBuf};
+
 use wait_timeout::ChildExt;
 use std::time::Duration;
 
-#[cfg(target_family = "windows")]
-use windows::Win32::System::JobObjects::*;
-#[cfg(target_family = "windows")]
-use windows::Win32::System::Threading::*;
-#[cfg(target_family = "windows")]
-use windows::Win32::Foundation::*;
-#[cfg(target_family = "windows")]
-use windows::core::PCWSTR;
+#[cfg(target_os = "windows")]
+mod windows_imports {
+    pub use windows::Win32::System::JobObjects::*;
+    pub use windows::Win32::System::Threading::*;
+    pub use windows::Win32::Foundation::*;
+    pub use windows::core::PCWSTR;
+    pub use crate::resource::extract_resource;
+    pub use super::windows_internal::*;
+}
 
+// Bring into scope at top-level
+#[cfg(target_os = "windows")]
+use windows_imports::*;
+
+
+#[cfg(target_os = "windows")] 
 pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
     dprintln!("[INFO] > `{}` | Starting execution", tool_name);
 
@@ -111,10 +121,10 @@ pub fn run(
                 child.id(),
                 args
             );
-            if let Some(mem_l) = memory_limit {
+            if let Some(_mem_l) = memory_limit {
                 #[cfg(target_family = "windows")]
                 {
-                    let memory_limit_value = mem_l * 1024 * 1024; 
+                    let memory_limit_value = _mem_l * 1024 * 1024; 
                     if let Some(job) = create_memory_limited_job(memory_limit_value) {
                         assign_to_job(job, &child);
                         dprintln!(
@@ -213,6 +223,7 @@ pub fn run(
     Some(String::from_utf8(output.stdout).unwrap_or_else(|_| "".to_string()))
 }
 
+#[cfg(target_os = "windows")] 
 pub fn get_list_tools() -> Vec<&'static str> {
     vec![
         "autorunsc.exe",
@@ -226,6 +237,7 @@ pub fn get_list_tools() -> Vec<&'static str> {
     ]
 }
 
+#[cfg(target_os = "windows")] 
 pub fn get_bin(name: String) -> Result<Vec<u8>, anyhow::Error> {
     let exe_bytes: Vec<u8> = match name.as_str() {
         "autorunsc.exe" => include_bytes!("../tools/autorunsc.exe").to_vec(),

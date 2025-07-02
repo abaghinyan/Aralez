@@ -316,7 +316,6 @@ impl<'de> Deserialize<'de> for TypeTasks {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeExec {
     System,
-    #[cfg(target_os = "windows")]
     Internal,
     #[cfg(target_os = "windows")]
     External,
@@ -330,7 +329,6 @@ impl Serialize for TypeExec {
         match *self {
             #[cfg(target_os = "windows")]
             TypeExec::External => serializer.serialize_str("external"),
-            #[cfg(target_os = "windows")] 
             TypeExec::Internal => serializer.serialize_str("internal"),
             TypeExec::System => serializer.serialize_str("system"),
         }
@@ -358,7 +356,6 @@ impl<'de> Deserialize<'de> for TypeExec {
                 match value {
                     #[cfg(target_os = "windows")] 
                     "external" => Ok(TypeExec::External),
-                    #[cfg(target_os = "windows")]
                     "internal" => Ok(TypeExec::Internal),
                     "system" => Ok(TypeExec::System),
                     _ => Err(de::Error::unknown_variant(
@@ -426,7 +423,9 @@ impl Config {
     pub fn load() -> Result<Self, anyhow::Error> {
         let embedded = Self::load_embedded_config();
         if let Ok(data) = embedded {
-            return serde_yaml::from_str(&data).map_err(|e| anyhow::anyhow!(e.to_string()));
+            if !data.is_empty() {
+                return serde_yaml::from_str(&data).map_err(|e| anyhow::anyhow!(e.to_string()));
+            }
         }
         Self::load_default()
     }

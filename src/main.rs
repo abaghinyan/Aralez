@@ -84,6 +84,7 @@ pub mod linux_imports {
     pub use super::config::{CONFIG_MARKER_START, CONFIG_MARKER_END};
     pub use std::fs::OpenOptions;
     pub use users::get_effective_uid;
+    pub use crate::execute::{run_internal};
 }
 
 #[cfg(target_os = "linux")]
@@ -468,7 +469,7 @@ fn main() -> Result<(), anyhow::Error> {
 
     // Parse the default drive
     let default_drive = get_default_drive();
-
+    
     let sorted_tasks = config.get_tasks();
     for (section_name, mut section_config) in sorted_tasks {
         if let Some(disabled_task) = section_config.disabled {
@@ -616,6 +617,20 @@ fn main() -> Result<(), anyhow::Error> {
                                             }
                                         }
                                         #[cfg(target_os = "windows")] 
+                                        config::TypeExec::Internal => {
+                                            let result = run_internal(&executor_name, &output_fullpath);
+                                            if let Some(link_element) = executor.link {
+                                                match config.get_task(link_element.clone()) {
+                                                    Some(task) => {
+                                                        if let Some(res) = result {
+                                                            collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
+                                                        }
+                                                    },
+                                                    None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
+                                                }
+                                            }
+                                        }
+                                        #[cfg(target_os = "linux")] 
                                         config::TypeExec::Internal => {
                                             let result = run_internal(&executor_name, &output_fullpath);
                                             if let Some(link_element) = executor.link {

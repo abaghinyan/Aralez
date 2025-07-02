@@ -18,6 +18,7 @@ pub mod windows_internal {
 #[path = "execute/linux"]
 pub mod linux_internal {
     pub mod process;
+    pub mod network;
 }
 
 use crate::config::ExecType;
@@ -91,6 +92,9 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
     match tool_name {
         "ProcInfo" => {
             process::run(&output_file_path)
+        },
+        "Network" => {
+            network::run(&output_file_path)
         },
         &_ => {
             dprintln!("[ERROR] > `{}` | Internal tool not found", tool_name);

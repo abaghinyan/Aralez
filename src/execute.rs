@@ -21,6 +21,7 @@ pub mod linux_internal {
     pub mod network;
     pub mod memory;
     pub mod system;
+    pub mod package;
 }
 
 use crate::config::ExecType;
@@ -103,6 +104,9 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
         },
         "SystemInfo" => {
             system::run(&output_file_path)
+        },
+        "PackageManager" => {
+            package::run(&output_file_path)
         },
         &_ => {
             dprintln!("[ERROR] > `{}` | Internal tool not found", tool_name);

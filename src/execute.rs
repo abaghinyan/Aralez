@@ -9,7 +9,7 @@
 #[cfg(target_os = "windows")]
 #[path = "execute/windows"]
 pub mod windows_internal {
-    pub mod network_info;
+    pub mod network;
     pub mod process;
     pub mod process_details;
 }
@@ -71,7 +71,7 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
             process_details::run(&output_file_path)
         }
         "PortsInfo" => {
-            network_info::run_network_info(&output_file_path);
+            network::run(&output_file_path);
         }
         &_ => {
             dprintln!("[ERROR] > `{}` | Internal tool not found", tool_name);

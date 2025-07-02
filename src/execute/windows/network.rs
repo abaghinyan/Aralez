@@ -74,7 +74,7 @@ pub fn get_tcp_connections() -> Vec<(Ipv4Addr, u16, Ipv4Addr, u16, &'static str)
     tcp_connections
 }
 
-pub fn run_network_info(full_path: &Path) {
+pub fn run(full_path: &Path) {
     // Get TCP connections
     let tcp_connections = get_tcp_connections();
 

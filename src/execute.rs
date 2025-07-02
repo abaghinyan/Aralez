@@ -14,6 +14,12 @@ pub mod windows_internal {
     pub mod process_details;
 }
 
+#[cfg(target_os = "linux")]
+#[path = "execute/linux"]
+pub mod linux_internal {
+    pub mod process;
+}
+
 use crate::config::ExecType;
 use std::process::{Command, Stdio};
 use std::io::{self, Write};
@@ -37,6 +43,15 @@ mod windows_imports {
 #[cfg(target_os = "windows")]
 use windows_imports::*;
 
+#[cfg(target_os = "linux")]
+mod linux_imports {
+    pub use super::linux_internal::*;
+}
+
+// Bring into scope at top-level
+#[cfg(target_os = "linux")]
+use linux_imports::*;
+
 
 #[cfg(target_os = "windows")] 
 pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
@@ -55,6 +70,28 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
         "PortsInfo" => {
             network_info::run_network_info(&output_file_path);
         }
+        &_ => {
+            dprintln!("[ERROR] > `{}` | Internal tool not found", tool_name);
+            return None;
+        }
+    }
+    dprintln!("[INFO] > `{}` | The output has been saved to: {}", tool_name, output_filename);
+    dprintln!("[INFO] > `{}` | Execution completed", tool_name);
+
+    return output;
+}
+
+#[cfg(target_os = "linux")] 
+pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
+    dprintln!("[INFO] > `{}` | Starting execution", tool_name);
+
+    let output_file_path = Path::new(output_filename);
+    let output: Option<String> = None;
+
+    match tool_name {
+        "ProcInfo" => {
+            process::run(&output_file_path)
+        },
         &_ => {
             dprintln!("[ERROR] > `{}` | Internal tool not found", tool_name);
             return None;

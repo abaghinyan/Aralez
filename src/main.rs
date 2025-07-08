@@ -507,9 +507,11 @@ fn main() -> Result<(), anyhow::Error> {
 
         // Check the disk space before starting the task
         if !should_continue_collection(&config, &root_output) {
-            dprintln!("[WARN] Stopping collection to prevent exceeding disk limits.");
+            eprintln!("[WARN] Remaining disk space too low. Stopping collection to prevent exceeding disk limits. Collection process terminated before completion.");
+            dprintln!("[WARN] Remaining disk space too low. Stopping collection to prevent exceeding disk limits. Collection process terminated before completion.");
             break;
         }
+        
         match section_config.r#type {
             config::TypeTasks::Collect => {
                 if let Some(_) = section_config.entries {
@@ -703,7 +705,6 @@ fn main() -> Result<(), anyhow::Error> {
                             }
                         });
                     });
-                    
                 }
             }
         }

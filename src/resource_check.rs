@@ -140,12 +140,7 @@ pub fn should_continue_collection(config: &Config, collection_path: &str) -> boo
         Some(total_disk_mb) => {
             let free_disk_mb = total_disk_mb.saturating_sub(collected_size_mb);
 
-            if free_disk_mb < min_disk_space_mb {
-                eprintln!(
-                    "[WARN] Remaining disk space too low: {} MB left (minimum required: {} MB). \
-                    Collection process terminated before completion.",
-                    free_disk_mb, min_disk_space_mb
-                );                
+            if free_disk_mb < min_disk_space_mb {              
                 dprintln!(
                     "[WARN] Remaining disk space too low: {} MB left (minimum required: {} MB)",
                     free_disk_mb, min_disk_space_mb

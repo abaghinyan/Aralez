@@ -466,21 +466,22 @@ fn main() -> Result<(), anyhow::Error> {
     // Machine resources check
     let global_memory_limit = config.get_global_memory_limit();
     if !check_memory(global_memory_limit as u64) {
-        eprintln!(
-            "[ERROR] Not enough available RAM. Required at least: {} MB",
+        eprintln!("[WARN] Not enough available RAM.");
+        dprintln!(
+            "[WARN] Not enough available RAM. Required at least: {} MB",
             global_memory_limit
         );
         std::process::exit(1);
     }
 
     if !should_continue_collection(&config, &root_output) {
-        eprintln!("[ERROR] Disk usage constraints prevent safe collection. Aborting.");
+        eprintln!("[WARN] Disk space too low");
+
         std::process::exit(1);
     }
 
     config.save(root_output)?;
     
-    // Create a spinner
     let spinner = ProgressBar::new_spinner();
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
     spinner.set_style(

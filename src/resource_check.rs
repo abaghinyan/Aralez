@@ -150,7 +150,7 @@ pub fn should_continue_collection(config: &Config, collection_path: &str) -> boo
                     "[WARN] Collection size exceeds max usage: {:.2}% used (limit: {}%)",
                     used_pct, max_disk_usage_pct
                 );
-                eprintln!("[WARN] Disk space too low");
+
                 return false;
             }
 
@@ -159,7 +159,7 @@ pub fn should_continue_collection(config: &Config, collection_path: &str) -> boo
                     "[WARN] Remaining disk space too low: {} MB left (minimum: {}, or {}% of {} MB)",
                     free_disk_mb, min_disk_space_mb, required_min_free_pct, total_disk_mb
                 );
-                eprintln!("[WARN] Disk space too low");
+                
                 return false;
             }
 
@@ -170,7 +170,7 @@ pub fn should_continue_collection(config: &Config, collection_path: &str) -> boo
                 "[WARN] Unable to retrieve disk stats for '{}'. Stopping collection as a precaution.",
                 disk_check_path
             );
-            eprintln!("[WARN] Disk space too low");
+
             false
         }
     }

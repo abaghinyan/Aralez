@@ -546,10 +546,6 @@ impl Config {
             }
         }
     }
-
-    pub fn get_max_disk_usage_pct(&self) -> u8 {
-        self.max_disk_usage_pct.unwrap_or(50) // Default: 50%
-    }
 }
 
 

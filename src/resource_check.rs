@@ -126,9 +126,8 @@ pub fn get_total_disk_space(path: &str) -> Option<u64> {
 }
 
 pub fn should_continue_collection(config: &Config, collection_path: &str) -> bool {
-    let min_disk_space_mb = config.get_global_disk_limit();
-    let max_disk_usage_pct = config.get_max_disk_usage_pct();
-    let disk_check_path = config.get_disk_check_path(); // e.g., "/" or "C:\\"
+    let min_disk_space_mb = config.get_global_disk_limit(); // Now the only constraint
+    let disk_check_path = config.get_disk_check_path();     // e.g., "/" or "C:\\"
 
     // Convert collected size to MB only if path exists
     let collected_size_mb = if std::path::Path::new(collection_path).exists() {
@@ -137,29 +136,20 @@ pub fn should_continue_collection(config: &Config, collection_path: &str) -> boo
         0
     };
 
-    // Always perform disk check on reliable root path
     match get_total_disk_space(&disk_check_path) {
         Some(total_disk_mb) => {
-            let used_pct = (collected_size_mb as f64 / total_disk_mb as f64) * 100.0;
             let free_disk_mb = total_disk_mb.saturating_sub(collected_size_mb);
-            let required_min_free_pct = 100 - max_disk_usage_pct;
-            let required_min_free_mb = (total_disk_mb as f64 * required_min_free_pct as f64 / 100.0).ceil() as u64;
 
-            if collected_size_mb > 0 && used_pct > max_disk_usage_pct as f64 {
+            if free_disk_mb < min_disk_space_mb {
+                eprintln!(
+                    "[WARN] Remaining disk space too low: {} MB left (minimum required: {} MB). \
+                    Collection process terminated before completion.",
+                    free_disk_mb, min_disk_space_mb
+                );                
                 dprintln!(
-                    "[WARN] Collection size exceeds max usage: {:.2}% used (limit: {}%)",
-                    used_pct, max_disk_usage_pct
+                    "[WARN] Remaining disk space too low: {} MB left (minimum required: {} MB)",
+                    free_disk_mb, min_disk_space_mb
                 );
-
-                return false;
-            }
-
-            if free_disk_mb < min_disk_space_mb || free_disk_mb < required_min_free_mb {
-                dprintln!(
-                    "[WARN] Remaining disk space too low: {} MB left (minimum: {}, or {}% of {} MB)",
-                    free_disk_mb, min_disk_space_mb, required_min_free_pct, total_disk_mb
-                );
-                
                 return false;
             }
 
@@ -170,7 +160,6 @@ pub fn should_continue_collection(config: &Config, collection_path: &str) -> boo
                 "[WARN] Unable to retrieve disk stats for '{}'. Stopping collection as a precaution.",
                 disk_check_path
             );
-
             false
         }
     }

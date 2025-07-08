@@ -27,8 +27,8 @@ pub fn get_mem_available_from_proc() -> Option<u64> {
 #[cfg(target_os = "linux")]
 pub fn check_memory(required_mb: u64) -> bool {
     if let Some(available_mb) = get_mem_available_from_proc() {
-        dprintln!("[INFO] Available RAM: {} MB", available_mb);
-        dprintln!("[INFO] Required RAM: {} MB", required_mb);
+        dprintln!("[INFO] Available memory (RAM): {} MB", available_mb);
+        dprintln!("[INFO] Required memory (RAM): {} MB", required_mb);
 
         return available_mb >= required_mb;
     }
@@ -47,8 +47,8 @@ pub fn check_memory(required_mb: u64) -> bool {
             let status = mem_status.assume_init();
             let available_mb = status.ullAvailPhys / (1024 * 1024);
 
-            dprintln!("[INFO] Available RAM: {} MB", available_mb);
-            dprintln!("[INFO] Required RAM:  {} MB", required_mb);
+            dprintln!("[INFO] Available memory (RAM): {} MB", available_mb);
+            dprintln!("[INFO] Required memory (RAM):  {} MB", required_mb);
 
             return available_mb >= required_mb;
         }

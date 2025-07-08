@@ -466,9 +466,9 @@ fn main() -> Result<(), anyhow::Error> {
     // Machine resources check
     let global_memory_limit = config.get_global_memory_limit();
     if !check_memory(global_memory_limit as u64) {
-        eprintln!("[WARN] Not enough available RAM.");
+        eprintln!("[WARN] Not enough available memory (RAM).");
         dprintln!(
-            "[WARN] Not enough available RAM. Required at least: {} MB",
+            "[WARN] Not enough available memory (RAM). Required at least: {} MB",
             global_memory_limit
         );
         std::process::exit(1);
@@ -511,7 +511,7 @@ fn main() -> Result<(), anyhow::Error> {
             dprintln!("[WARN] Remaining disk space too low. Stopping collection to prevent exceeding disk limits. Collection process terminated before completion.");
             break;
         }
-        
+
         match section_config.r#type {
             config::TypeTasks::Collect => {
                 if let Some(_) = section_config.entries {

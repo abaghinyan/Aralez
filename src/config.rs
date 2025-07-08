@@ -44,7 +44,12 @@ static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| Mutex::new(Config {
     tasks: IndexMap::new(),
     max_size: None,
     version: None,
-    encrypt: None
+    encrypt: None,
+    memory_limit: None,
+    disk_limit: None, 
+    disk_path: None,
+    max_disk_usage_pct: None, 
+    min_disk_space: None
 }));
 
 pub fn set_config(new_config: Config) {
@@ -63,6 +68,11 @@ pub struct Config {
     pub max_size: Option<u64>,
     pub version: Option<String>,
     pub encrypt: Option<String>,
+    pub memory_limit: Option<usize>,
+    pub disk_limit: Option<u64>,
+    pub disk_path: Option<String>,
+    pub min_disk_space: Option<u64>, 
+    pub max_disk_usage_pct: Option<u8>,     // e.g., 50 means 50%
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -510,6 +520,35 @@ impl Config {
 
     pub fn get_task(&self, name: String) -> Option<&SectionConfig> {
         self.tasks.get(&name)
+    }
+
+    pub fn get_global_memory_limit(&self) -> usize {
+        // Default: 2 GB if not set
+        self.memory_limit
+            .unwrap_or(2 * 1024)
+    }
+
+    pub fn get_global_disk_limit(&self) -> u64 {
+        self.disk_limit.unwrap_or(2048) // Default to 2GB
+    }
+
+    pub fn get_disk_check_path(&self) -> String {
+        if let Some(ref path) = self.disk_path {
+            path.clone()
+        } else {
+            #[cfg(target_os = "windows")]
+            {
+                "C:\\".to_string()
+            }
+            #[cfg(target_os = "linux")]
+            {
+                "/".to_string()
+            }
+        }
+    }
+
+    pub fn get_max_disk_usage_pct(&self) -> u8 {
+        self.max_disk_usage_pct.unwrap_or(50) // Default: 50%
     }
 }
 

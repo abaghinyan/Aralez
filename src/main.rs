@@ -11,6 +11,7 @@ mod config;
 mod execute;
 mod utils;
 mod path;
+mod resource_check;
 
 use execute::run;
 use path::{insert_if_valid, remove_drive_letter};
@@ -35,6 +36,7 @@ use chrono::Utc;
 use zip::DateTime as ZipDateTime;
 use chrono::Datelike;
 use chrono::Timelike;
+use resource_check::check_memory;
 
 #[cfg(target_os = "windows")]
 pub mod resource;
@@ -89,6 +91,8 @@ pub mod linux_imports {
 
 #[cfg(target_os = "linux")]
 use linux_imports::*;
+
+use crate::resource_check::should_continue_collection;
 
 #[derive(Parser)]
 struct Cli {
@@ -430,6 +434,11 @@ fn main() -> Result<(), anyhow::Error> {
         max_size: config.max_size,
         version: config.version.clone(),
         encrypt: archive_encrypt.clone(),
+        memory_limit: config.memory_limit,
+        disk_limit: config.disk_limit,
+        disk_path: config.disk_path.clone(),
+        max_disk_usage_pct: config.max_disk_usage_pct,
+        min_disk_space: config.min_disk_space
     });
 
     // Check if the --debug flag was provided
@@ -437,6 +446,8 @@ fn main() -> Result<(), anyhow::Error> {
         env::set_var("DEBUG_MODE", "true");
         println!("Debug mode activated!");
     }
+
+    let root_output = &config.get_output_filename();
 
     // Print the welcome message
     println!(
@@ -449,13 +460,26 @@ fn main() -> Result<(), anyhow::Error> {
     println!("Developed by: {}", env!("CARGO_PKG_AUTHORS"));
     println!();
 
-    let root_output = &config.get_output_filename();
-
-    config.save(root_output)?;
-
     dprintln!("Aralez version: {} ({})", env!("CARGO_PKG_VERSION"), TARGET_ARCH);
     dprintln!("Configuration version: {} ", &config.version.clone().unwrap_or("unknown".to_string()));
 
+    // Machine resources check
+    let global_memory_limit = config.get_global_memory_limit();
+    if !check_memory(global_memory_limit as u64) {
+        eprintln!(
+            "[ERROR] Not enough available RAM. Required at least: {} MB",
+            global_memory_limit
+        );
+        std::process::exit(1);
+    }
+
+    if !should_continue_collection(&config, &root_output) {
+        eprintln!("[ERROR] Disk usage constraints prevent safe collection. Aborting.");
+        std::process::exit(1);
+    }
+
+    config.save(root_output)?;
+    
     // Create a spinner
     let spinner = ProgressBar::new_spinner();
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
@@ -479,6 +503,12 @@ fn main() -> Result<(), anyhow::Error> {
         }
         dprintln!("[INFO] == Starting task `{}` ==", section_name);
         spinner.set_message(format!("Processing: `{}` task", section_name));
+
+        // Check the disk space before starting the task
+        if !should_continue_collection(&config, &root_output) {
+            dprintln!("[WARN] Stopping collection to prevent exceeding disk limits.");
+            break;
+        }
         match section_config.r#type {
             config::TypeTasks::Collect => {
                 if let Some(_) = section_config.entries {

@@ -122,21 +122,25 @@ fn process_all_directory(
                 encrypt.clone(), max_size, success_files_count)?;
         } else if is_pattern_match(&entry_str, &obj_name) {
             if is_file_size_ok(metadata.len(), max_size) {
-                let file_data = ext4_parser.read(path_buf.as_path())?;
-                match get(
-                    file_data,
-                    &entry_str,
-                    dest_folder)
-                {
-                    Ok((written, location)) => {
-                        if written {
-                            dprintln!("[INFO] Data successfully saved to {}",
-                                location);
-                            visited_files.insert(entry_str.clone());
-                            *success_files_count += 1;
+                match ext4_parser.read(path_buf.as_path()) {
+                    Ok(file_data) => {
+                        match get(file_data, &entry_str, dest_folder) {
+                            Ok((written, location)) => {
+                                if written {
+                                    dprintln!("[INFO] Data successfully saved to {}", location);
+                                    visited_files.insert(entry_str.clone());
+                                    *success_files_count += 1;
+                                }
+                            }
+                            Err(e) => {
+                                dprintln!("[ERROR] Failed to save {}: {}", entry_str, e);
+                            }
                         }
                     }
-                    Err(e) => eprintln!("{}", e.to_string())
+                    Err(e) => {
+                        dprintln!("[WARN] Skipping unreadable or special file {}: {}", entry_str, e);
+                        continue;
+                    }
                 }
             }
         }
@@ -161,6 +165,7 @@ pub fn process_directory(
     };
 
     for entry in entries {
+
         let path_buf = entry.path();
         let entry_str = match path_buf.to_str() {
             Ok(s) => s.to_string(),
@@ -176,6 +181,7 @@ pub fn process_directory(
         if visited_files.contains(&entry_str) {
             continue;
         }
+
 
         for (obj_name, obj_node) in &mut first_elements {
             if obj_node.all {
@@ -218,6 +224,7 @@ pub fn process_directory(
                         }
                         Err(e) => eprintln!("{}", e.to_string())
                     }
+
                 }
             }
         }
@@ -229,5 +236,3 @@ pub fn process_directory(
 
     Ok(*success_files_count)
 }
-
-//

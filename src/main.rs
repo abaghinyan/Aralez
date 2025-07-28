@@ -492,8 +492,15 @@ fn main() -> Result<(), anyhow::Error> {
 
     spinner.set_message("Starting tasks...");
 
-    // Parse the default drive
-    let default_drive = get_default_drive();
+    let default_drive_value;
+    let default_drive: &String = match matches.get_one::<String>("default_drive") {
+        Some(val) => val,
+        None => {
+            default_drive_value = get_default_drive();
+            &default_drive_value
+        }
+    };
+
     
     let sorted_tasks = config.get_tasks();
     for (section_name, mut section_config) in sorted_tasks {

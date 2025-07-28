@@ -61,7 +61,7 @@ pub fn get_default_drive() -> String {
             }
         }
     }
-    panic!("No ext4 device mounted at '/' found");
+    panic!("[WARN] No ext4 device mounted at '/' found");
 }
 
 #[cfg(target_os = "windows")]

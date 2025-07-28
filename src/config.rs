@@ -523,13 +523,14 @@ impl Config {
     }
 
     pub fn get_global_memory_limit(&self) -> usize {
-        // Default: 2 GB if not set
+        // Default: 1 GB if not set
         self.memory_limit
-            .unwrap_or(2 * 1024)
+            .unwrap_or(1 * 1024)
     }
 
     pub fn get_global_disk_limit(&self) -> u64 {
-        self.disk_limit.unwrap_or(2048) // Default to 2GB
+        // Default to 8GB
+        self.disk_limit.unwrap_or(8192) 
     }
 
     pub fn get_disk_check_path(&self) -> String {

@@ -17,30 +17,29 @@ pub mod windows_internal {
 #[cfg(target_os = "linux")]
 #[path = "execute/linux"]
 pub mod linux_internal {
-    pub mod process;
-    pub mod network;
     pub mod memory;
-    pub mod system;
+    pub mod network;
     pub mod package;
+    pub mod process;
+    pub mod system;
 }
 
 use crate::config::ExecType;
-use std::process::{Command, Stdio};
+use std::fs::{remove_file, File};
 use std::io::{self, Write};
-use std::fs::{File, remove_file};
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
-use wait_timeout::ChildExt;
-use std::time::Duration;
-
+use std::{sync::mpsc, thread, time::Duration};
 #[cfg(target_os = "windows")]
 mod windows_imports {
+    pub use super::windows_internal::*;
+    pub use crate::resource::extract_resource;
+    pub use windows::core::PCWSTR;
+    pub use windows::Win32::Foundation::*;
     pub use windows::Win32::System::JobObjects::*;
     pub use windows::Win32::System::Threading::*;
-    pub use windows::Win32::Foundation::*;
-    pub use windows::core::PCWSTR;
-    pub use crate::resource::extract_resource;
-    pub use super::windows_internal::*;
 }
 
 // Bring into scope at top-level
@@ -56,8 +55,7 @@ mod linux_imports {
 #[cfg(target_os = "linux")]
 use linux_imports::*;
 
-
-#[cfg(target_os = "windows")] 
+#[cfg(target_os = "windows")]
 pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
     dprintln!("[INFO] > `{}` | Starting execution", tool_name);
 
@@ -68,9 +66,7 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
         "ProcInfo" => {
             process::run(&output_file_path);
         }
-        "ProcDetailsInfo" => {
-            process_details::run(&output_file_path)
-        }
+        "ProcDetailsInfo" => process_details::run(&output_file_path),
         "PortsInfo" => {
             network::run(&output_file_path);
         }
@@ -79,13 +75,17 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
             return None;
         }
     }
-    dprintln!("[INFO] > `{}` | The output has been saved to: {}", tool_name, output_filename);
+    dprintln!(
+        "[INFO] > `{}` | The output has been saved to: {}",
+        tool_name,
+        output_filename
+    );
     dprintln!("[INFO] > `{}` | Execution completed", tool_name);
 
     return output;
 }
 
-#[cfg(target_os = "linux")] 
+#[cfg(target_os = "linux")]
 pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
     dprintln!("[INFO] > `{}` | Starting execution", tool_name);
 
@@ -93,27 +93,21 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
     let output: Option<String> = None;
 
     match tool_name {
-        "ProcInfo" => {
-            process::run(&output_file_path)
-        },
-        "Network" => {
-            network::run(&output_file_path)
-        },
-        "Memory" => {
-            memory::run(&output_file_path)
-        },
-        "SystemInfo" => {
-            system::run(&output_file_path)
-        },
-        "PackageManager" => {
-            package::run(&output_file_path)
-        },
+        "ProcInfo" => process::run(&output_file_path),
+        "Network" => network::run(&output_file_path),
+        "Memory" => memory::run(&output_file_path),
+        "SystemInfo" => system::run(&output_file_path),
+        "PackageManager" => package::run(&output_file_path),
         &_ => {
             dprintln!("[ERROR] > `{}` | Internal tool not found", tool_name);
             return None;
         }
     }
-    dprintln!("[INFO] > `{}` | The output has been saved to: {}", tool_name, output_filename);
+    dprintln!(
+        "[INFO] > `{}` | The output has been saved to: {}",
+        tool_name,
+        output_filename
+    );
     dprintln!("[INFO] > `{}` | Execution completed", tool_name);
 
     return output;
@@ -127,21 +121,27 @@ pub fn run(
     output_path: Option<&str>,
     output_file: &str,
     memory_limit: Option<usize>,
-    timeout: Option<u64>
+    timeout: Option<u64>,
 ) -> Option<String> {
     let mut display_name = name.clone();
     if exec_type == ExecType::External {
         let buffer = match exe_bytes {
             Some(bytes) => bytes,
             None => {
-                dprintln!("[ERROR] > `{}` | Content of the external file not found", name);
+                dprintln!(
+                    "[ERROR] > `{}` | Content of the external file not found",
+                    name
+                );
                 return None;
             }
         };
         let path = match output_path {
             Some(p) => p,
             None => {
-                dprintln!("[ERROR] > `{}` | The output path for the executable not found", name);
+                dprintln!(
+                    "[ERROR] > `{}` | The output path for the executable not found",
+                    name
+                );
                 return None;
             }
         };
@@ -177,7 +177,7 @@ pub fn run(
             if let Some(_mem_l) = memory_limit {
                 #[cfg(target_family = "windows")]
                 {
-                    let memory_limit_value = _mem_l * 1024 * 1024; 
+                    let memory_limit_value = _mem_l * 1024 * 1024;
                     if let Some(job) = create_memory_limited_job(memory_limit_value) {
                         assign_to_job(job, &child);
                         dprintln!(
@@ -187,7 +187,7 @@ pub fn run(
                         );
                     }
                 }
-            } 
+            }
 
             child
         }
@@ -200,52 +200,58 @@ pub fn run(
             return None;
         }
     };
-    if let Some(timeout_value) = timeout {
-        let one_sec = Duration::from_secs(timeout_value);
-        let _status_code = match child.wait_timeout(one_sec).unwrap() {
-            Some(status) => status.code(),
-            None => {
-                dprintln!("[WARN] > `{}` | Execution timed out", display_name);
-                child.kill().unwrap();
-                child.wait().unwrap().code()
-            }
-        };
-    }
 
     let pid = child.id();
 
-    let output = match child.wait_with_output() {
-        Ok(output) => {
-            if !output.status.success() {
-                let stderr_msg = String::from_utf8_lossy(&output.stderr);
-                dprintln!(
-                    "[ERROR] > `{}` ({}) | Command failed: {}",
-                    display_name,
-                    pid,
-                    stderr_msg.trim()
-                );
+    let stdout = child.stdout.take().expect("Failed to take stdout");
+    child.stderr.take();
+    let (reader_tx, reader_rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut buffer = Vec::new();
+        let mut reader = BufReader::new(stdout);
+        let _ = reader.read_to_end(&mut buffer);
+        let content = String::from_utf8_lossy(&buffer).to_string();
+        let _ = reader_tx.send(content);
+    });
+
+    if let Some(timeout_secs) = timeout {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_secs(timeout_secs));
+            let _ = tx.send(());
+        });
+
+        loop {
+            match child.try_wait() {
+                Ok(Some(_status)) => break false, // finished normally
+                Ok(None) => {
+                    if rx.try_recv().is_ok() {
+                        dprintln!(
+                            "[WARN] > `{}` (pid: {}) | Execution timed out",
+                            display_name,
+                            pid
+                        );
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        dprintln!("[DEBUG] Kill sent to pid {}", pid);
+                        break true;
+                    }
+                    thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => {
+                    dprintln!("[ERROR] Failed to check process status: {}", e);
+                    break true;
+                }
             }
-            output
         }
-        Err(e) => {
-            dprintln!(
-                "[ERROR] > `{}` ({}) | Failed to execute: {}",
-                display_name,
-                pid,
-                e
-            );
-            return None;
-        }
+    } else {
+        let _ = child.wait();
+        false
     };
 
-    dprintln!(
-        "[INFO] > `{}` ({}) | Exit code: {:?}",
-        display_name,
-        pid,
-        output.status.code().unwrap_or(-1)
-    );
+    let output_content = reader_rx.recv().unwrap_or_default();
 
-    if let Err(e) = save_output_to_file(&output.stdout, output_file) {
+    if let Err(e) = save_output_to_file(output_content.as_bytes(), output_file) {
         dprintln!(
             "[ERROR] > `{}` ({}) | Failed to save output to file: {}",
             display_name,
@@ -264,19 +270,22 @@ pub fn run(
             );
         }
     }
-
     dprintln!(
         "[INFO] > `{}` ({}) | The output has been saved to: {}",
         display_name,
         pid,
         output_file
     );
-    dprintln!("[INFO] > `{}` ({}) | Execution completed", display_name, pid);
+    dprintln!(
+        "[INFO] > `{}` ({}) | Execution completed",
+        display_name,
+        pid
+    );
 
-    Some(String::from_utf8(output.stdout).unwrap_or_else(|_| "".to_string()))
+    return Some(output_content);
 }
 
-#[cfg(target_os = "windows")] 
+#[cfg(target_os = "windows")]
 pub fn get_list_tools() -> Vec<&'static str> {
     vec![
         "autorunsc.exe",
@@ -290,7 +299,7 @@ pub fn get_list_tools() -> Vec<&'static str> {
     ]
 }
 
-#[cfg(target_os = "windows")] 
+#[cfg(target_os = "windows")]
 pub fn get_bin(name: String) -> Result<Vec<u8>, anyhow::Error> {
     let exe_bytes: Vec<u8> = match name.as_str() {
         "autorunsc.exe" => include_bytes!("../tools/autorunsc.exe").to_vec(),
@@ -310,7 +319,11 @@ pub fn get_bin(name: String) -> Result<Vec<u8>, anyhow::Error> {
     Ok(exe_bytes)
 }
 
-fn save_to_temp_file(_filename: &String, exe_bytes: &[u8], output_path: &str) -> io::Result<PathBuf> {
+fn save_to_temp_file(
+    _filename: &String,
+    exe_bytes: &[u8],
+    output_path: &str,
+) -> io::Result<PathBuf> {
     let output_file_path = Path::new(output_path).join(_filename);
     let mut file = File::create(&output_file_path)?;
     file.write_all(exe_bytes)?;
@@ -373,7 +386,9 @@ fn create_memory_limited_job(limit_bytes: usize) -> Option<HANDLE> {
 #[cfg(target_family = "windows")]
 fn assign_to_job(job: HANDLE, child: &std::process::Child) {
     unsafe {
-        if let Ok(proc_handle) = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, false, child.id()) {
+        if let Ok(proc_handle) =
+            OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, false, child.id())
+        {
             if !AssignProcessToJobObject(job, proc_handle).is_ok() {
                 eprintln!("[ERROR] Failed to assign process to Job Object");
             }

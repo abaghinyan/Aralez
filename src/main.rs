@@ -37,6 +37,7 @@ use zip::DateTime as ZipDateTime;
 use chrono::Datelike;
 use chrono::Timelike;
 use resource_check::check_memory;
+use chrono::Local;
 
 #[cfg(target_os = "windows")]
 pub mod resource;
@@ -460,6 +461,7 @@ fn main() -> Result<(), anyhow::Error> {
     println!("Developed by: {}", env!("CARGO_PKG_AUTHORS"));
     println!();
 
+    let globalstarttime = Local::now();
     dprintln!("Aralez version: {} ({})", env!("CARGO_PKG_VERSION"), TARGET_ARCH);
     dprintln!("Configuration version: {} ", &config.version.clone().unwrap_or("unknown".to_string()));
 
@@ -717,7 +719,8 @@ fn main() -> Result<(), anyhow::Error> {
         }
     }
 
-    dprintln!("[INFO] All tasks completed");
+    let globalelapsed = Local::now() - globalstarttime;
+    dprintln!("[INFO] All tasks completed in around {:?} sec", globalelapsed.num_seconds());
 
     let src_log_file = format!("{}.log", root_output);
     // Move the logfile into the root folder

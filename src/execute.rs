@@ -30,6 +30,7 @@ use std::io::{self, Write};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use chrono::Local;
 
 use std::{sync::mpsc, thread, time::Duration};
 #[cfg(target_os = "windows")]
@@ -57,6 +58,7 @@ use linux_imports::*;
 
 #[cfg(target_os = "windows")]
 pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
+    let internal_starttime = Local::now();
     dprintln!("[INFO] > `{}` | Starting execution", tool_name);
 
     let output_file_path = Path::new(output_filename);
@@ -80,13 +82,20 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
         tool_name,
         output_filename
     );
-    dprintln!("[INFO] > `{}` | Execution completed", tool_name);
+    let internal_elapsed = Local::now() - internal_starttime;
+    dprintln!(
+		"[INFO] > `{}` | Execution completed in {:?}.{:?} sec", 
+        tool_name,
+        internal_elapsed.num_seconds(),
+        internal_elapsed.num_milliseconds()-internal_elapsed.num_seconds(),
+    );
 
     return output;
 }
 
 #[cfg(target_os = "linux")]
 pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
+    let internal_starttime = Local::now();
     dprintln!("[INFO] > `{}` | Starting execution", tool_name);
 
     let output_file_path = Path::new(output_filename);
@@ -108,7 +117,13 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
         tool_name,
         output_filename
     );
-    dprintln!("[INFO] > `{}` | Execution completed", tool_name);
+    let internal_elapsed = Local::now() - internal_starttime;
+    dprintln!(
+		"[INFO] > `{}` | Execution completed in {:?}.{:?} sec", 
+        tool_name,
+        internal_elapsed.num_seconds(),
+        internal_elapsed.num_milliseconds()-internal_elapsed.num_seconds(),
+    );
 
     return output;
 }
@@ -123,6 +138,7 @@ pub fn run(
     memory_limit: Option<usize>,
     timeout: Option<u64>,
 ) -> Option<String> {
+    let task_starttime = Local::now();
     let mut display_name = name.clone();
     if exec_type == ExecType::External {
         let buffer = match exe_bytes {
@@ -227,7 +243,7 @@ pub fn run(
                 Ok(None) => {
                     if rx.try_recv().is_ok() {
                         dprintln!(
-                            "[WARN] > `{}` (pid: {}) | Execution timed out",
+                            "[WARN] > `{}` ({}) | Execution timed out",
                             display_name,
                             pid
                         );
@@ -276,10 +292,13 @@ pub fn run(
         pid,
         output_file
     );
+    let task_elapsed = Local::now() - task_starttime;
     dprintln!(
-        "[INFO] > `{}` ({}) | Execution completed",
+        "[INFO] > `{}` ({}) | Execution completed in {:?}.{:?} sec",
         display_name,
-        pid
+        pid,
+        task_elapsed.num_seconds(),
+        task_elapsed.num_milliseconds()-task_elapsed.num_seconds(), 
     );
 
     return Some(output_content);

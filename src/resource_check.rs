@@ -8,17 +8,36 @@ use crate::config::Config;
 
 #[cfg(target_os = "linux")]
 pub fn get_mem_available_from_proc() -> Option<u64> {
-    use std::fs;
-
     if let Ok(meminfo) = fs::read_to_string("/proc/meminfo") {
+        let mut mem_free_kb: Option<u64> = None;
+        let mut buffers_kb: Option<u64> = None;
+        let mut cached_kb: Option<u64> = None;
+
         for line in meminfo.lines() {
             if line.starts_with("MemAvailable:") {
                 if let Some(kb_str) = line.split_whitespace().nth(1) {
                     if let Ok(kb) = kb_str.parse::<u64>() {
-                        return Some(kb / 1024); // Convert to MB
+                        return Some(kb / 1024); // Found modern field, return MB
                     }
                 }
+            } else if line.starts_with("MemFree:") {
+                if let Some(kb_str) = line.split_whitespace().nth(1) {
+                    mem_free_kb = kb_str.parse::<u64>().ok();
+                }
+            } else if line.starts_with("Buffers:") {
+                if let Some(kb_str) = line.split_whitespace().nth(1) {
+                    buffers_kb = kb_str.parse::<u64>().ok();
+                }
+            } else if line.starts_with("Cached:") {
+                if let Some(kb_str) = line.split_whitespace().nth(1) {
+                    cached_kb = kb_str.parse::<u64>().ok();
+                }
             }
+        }
+
+        // Fallback for older kernels: MemFree + Buffers + Cached
+        if let (Some(free), Some(buffers), Some(cached)) = (mem_free_kb, buffers_kb, cached_kb) {
+            return Some((free + buffers + cached) / 1024);
         }
     }
     None

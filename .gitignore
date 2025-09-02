@@ -1,6 +1,7 @@
 /target
 tools/*
 config/*
-!config/config.yml.template
+!config/config_linux.yml.template
+!config/config_windows.yml.template
 app.res 
 !tools/.gitkeep 

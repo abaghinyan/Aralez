@@ -1,0 +1,232 @@
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# Copyright © 2025 Areg Baghinyan. All Rights Reserved.
+#
+# Author(s): Areg Baghinyan
+#
+max_size: 5000000000
+memory_limit: 512
+disk_limit: 2000
+tasks:
+  artifacts:
+    type: "collect"
+    priority: 1
+    entries:
+      root_bash:
+        - root_path: "/root/"
+          objects: [".bashrc", ".bash_history", ".profile", ".zshrc", ".zsh_history"]
+      root_ssh:
+        - root_path: "/root/.ssh"
+          objects: ["authorized_keys", "known_hosts", "config", "id_rsa", "id_ed25519"]
+      users_bash:
+        - root_path: "/home/*/"
+          objects: [".bashrc", ".bash_history", ".profile", ".zshrc", ".zsh_history", ".bash_aliases"]
+      users_profiles:
+        - root_path: "/etc/"
+          objects: ["profile", "profile.d/**"]
+      pam_configs:
+        - root_path: "/etc/pam.d/"
+          objects: ["*"]
+      login_defs:
+        - root_path: "/etc/"
+          objects: ["login.defs"]
+      autostart:
+        - root_path: "/home/*/.config/autostart/"
+          objects: ["*"]
+      systemd_user_autostart:
+        - root_path: "/home/*/.config/systemd/user/"
+          objects: ["**"]
+      rc_local:
+        - root_path: "/etc/"
+          objects: ["rc.local"]
+      persistence_etc:
+        - root_path: "/etc/"
+          objects: ["rc*.d", "rc*.d/*", "cron.d/*", "crontab"]
+      persistence_var:
+        - root_path: "/var/spool/"
+          objects: ["at/*", "cron/crontabs/*", "cron/*"]
+      auditd_rules:
+        - root_path: "/etc/audit/"
+          objects: ["audit.rules", "audit.rules.prev", "rules.d/*"]
+      ssh_config:
+        - root_path: "/etc/ssh/"
+          objects: ["*"]
+      nginx_config:
+        - root_path: "/etc/nginx/"
+          objects: ["nginx.conf", "conf.d/*", "sites-available/*", "sites-enabled/*"]
+      apache_config:
+        - root_path: "/etc/apache2/"
+          objects: ["apache2.conf", "conf-available/*", "conf-enabled/*", "sites-available/*", "sites-enabled/*"]
+      apache_httpd:
+        - root_path: "/etc/httpd/"
+          objects: ["conf/httpd.conf", "conf.d/*"]
+      system_info:
+        - root_path: "/etc"
+          objects: ["os-release", "lsb-release", "hostname", "hosts", "passwd", "group", "shadow", "sudoers", "fstab"]
+      logs:
+        - root_path: "/var/log"
+          objects: ["auth.log", "syslog", "messages", "dmesg", "boot.log", "kern.log", "apt/history.log", "yum.log", "wtmp", "btmp", "lastlog", "faillog", "cron", "journal/**"]
+      proc_state:
+        - root_path: "/proc"
+          objects: ["cpuinfo", "meminfo", "cmdline", "uptime", "loadavg", "swaps"]
+      mail_spool:
+        - root_path: "/var/spool/mail/"
+          objects: ["*"]
+      dconf_data:
+        - root_path: "/home/*/.config/dconf/"
+          objects: ["user"]
+      gnome_sessions:
+        - root_path: "/home/*/.cache/"
+          objects: ["session/*"]
+      ssh_data:
+        - root_path: "/home/*/.ssh"
+          objects: ["authorized_keys", "known_hosts", "config", "id_rsa", "id_ed25519"]
+      persistence:
+        - root_path: "/var/spool/cron"
+          objects: ["**"]
+        - root_path: "/etc/systemd/system"
+          objects: ["**"]
+        - root_path: "/etc/init.d"
+          objects: ["**"]
+      tmp_data:
+        - root_path: "/tmp"
+          objects: ["**"]
+        - root_path: "/var/tmp"
+          objects: ["**"]
+        - root_path: "/dev/shm"
+          objects: ["**"]
+      network:
+        - root_path: "/etc"
+          objects: ["resolv.conf", "hosts"]
+      container_artifacts:
+        - root_path: "/proc/1"
+          objects: ["cgroup"]
+        - root_path: "/etc/"
+          objects: ["docker/", "containerd/"]
+      cloud_configs:
+        - root_path: "/home/*"
+          objects: [".aws/credentials", ".kube/config", ".docker/config.json"]
+      suspicious_files:
+        - root_path: "/home/*/Downloads"
+          objects: ["*.sh", "*.py", "*.elf", "*.so", "*.bin", "*.jar", "*.pl", ".*"]
+          max_size: 5242880
+          encrypt: "infected"
+        - root_path: "/home/*/Desktop"
+          objects: ["*.sh", "*.py", "*.elf", "*.so", "*.bin", "*.jar", "*.pl", ".*"]
+          max_size: 5242880
+          encrypt: "infected"
+
+  tools:
+    priority: 2
+    type: "execute"
+    output_folder: "{{root_output_path}}/tools/"
+    entries:
+      system:
+        - name: "/bin/ps"
+          args: ["-aux"]
+          output_file: "ps.txt"
+          exec_type: "system"
+        - name: "/usr/bin/find"
+          args: ["/", "-not", "(", "-path", "/proc", "-prune", ")", "-not", "(", "-path", "/run", "-prune", ")", "-not", "(", "-path", "/sys", "-prune", ")", "-not", "(", "-path", "/mnt", "-prune", ")", "-printf", "%p|%h|%f|%D|%l|%s|%y|%m|%n|%i|%G|%U|%A@|%T@|%C@\n"]
+          output_file: "file_list.txt"
+          exec_type: "system"
+        - name: "/bin/uname"
+          args: ["-a"]
+          output_file: "uname.txt"
+          exec_type: "system"
+        - name: "/usr/bin/hostnamectl"
+          args: []
+          output_file: "hostnamectl.txt"
+          exec_type: "system"
+        - name: "/usr/bin/timedatectl"
+          args: []
+          output_file: "timedatectl.txt"
+          exec_type: "system"
+        - name: "/bin/netstat"
+          args: ["-tulnp"]
+          output_file: "netstat.txt"
+          exec_type: "system"
+        - name: "/usr/sbin/ss"
+          args: ["-tulnp"]
+          output_file: "ss.txt"
+          exec_type: "system"
+        - name: "/usr/bin/lsof"
+          args: ["-i"]
+          output_file: "lsof.txt"
+          exec_type: "system"
+        - name: "/bin/df"
+          args: ["-h"]
+          output_file: "df.txt"
+          exec_type: "system"
+        - name: "/bin/mount"
+          args: []
+          output_file: "mount.txt"
+          exec_type: "system"
+        - name: "/usr/sbin/ip"
+          args: ["a"]
+          output_file: "ip_a.txt"
+          exec_type: "system"
+        - name: "/usr/sbin/ip"
+          args: ["r"]
+          output_file: "ip_r.txt"
+          exec_type: "system"
+        - name: "/sbin/iptables"
+          args: ["-L", "-v", "-n"]
+          output_file: "iptables.txt"
+          exec_type: "system"
+        - name: "/usr/sbin/nft"
+          args: ["list", "ruleset"]
+          output_file: "nftables.txt"
+          exec_type: "system"
+        - name: "/usr/bin/getent"
+          args: ["passwd"]
+          output_file: "users.txt"
+          exec_type: "system"
+        - name: "/usr/bin/getent"
+          args: ["group"]
+          output_file: "groups.txt"
+          exec_type: "system"
+        - name: "/usr/bin/last"
+          args: []
+          output_file: "last.txt"
+          exec_type: "system"
+        - name: "/usr/bin/who"
+          args: []
+          output_file: "who.txt"
+          exec_type: "system"
+        - name: "/usr/bin/w"
+          args: []
+          output_file: "w.txt"
+          exec_type: "system"
+        - name: "/usr/bin/env"
+          args: []
+          output_file: "env.txt"
+          exec_type: "system"
+        - name: "/usr/bin/alias"
+          args: []
+          output_file: "aliases.txt"
+          exec_type: "system"
+        - name: "/usr/bin/journalctl"
+          args: ["--no-pager"]
+          output_file: "journalctl.txt"
+          exec_type: "system"
+
+      internal:
+        - name: "ProcInfo"
+          output_file: "ProcInfo.csv"
+          exec_type: "internal"
+        - name: "Network"
+          output_file: "Network.csv"
+          exec_type: "internal"
+        - name: "Memory"
+          output_file: "Memory.txt"
+          exec_type: "internal"
+        - name: "SystemInfo"
+          output_file: "SystemInfo.txt"
+          exec_type: "internal"
+        - name: "PackageManager"
+          output_file: "PackageManager.txt"
+          exec_type: "internal"
+
+output_filename: "Aralez_{{hostname}}_{{datetime}}"

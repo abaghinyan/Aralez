@@ -70,6 +70,7 @@ mod explorer {
     pub mod fs;
     pub mod ntfs;
     pub mod ext4;
+    pub mod native;
 }
 
 #[cfg(target_os = "linux")]

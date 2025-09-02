@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::u64;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
+use std::path::Path;
 
 pub fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> Result<bool> {
     const NTFS_SIGNATURE: &[u8] = b"NTFS    ";
@@ -25,8 +26,7 @@ pub fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> Result<bool> {
     }
 }
 
-pub fn is_ext4_partition<T: Read + Seek>(
-    reader: &mut T) -> Result<bool>
+pub fn is_ext4_partition<T: Read + Seek>(reader: &mut T) -> Result<bool>
 {
     const SUPERBLOCK_OFFSET: u64 = 1024;
     const EXT_SUPERBLOCK_SIZE: usize = 1024;
@@ -35,8 +35,13 @@ pub fn is_ext4_partition<T: Read + Seek>(
 
     let mut superblock = [0u8; EXT_SUPERBLOCK_SIZE];
 
-    reader.seek(SeekFrom::Start(SUPERBLOCK_OFFSET))?;
-    reader.read_exact(&mut superblock)?;
+    // Any failure to seek/read means "not ext4" instead of bubbling an error.
+    if reader.seek(SeekFrom::Start(SUPERBLOCK_OFFSET)).is_err() {
+        return Ok(false);
+    }
+    if reader.read_exact(&mut superblock).is_err() {
+        return Ok(false);
+    }
 
     Ok(&superblock[EXT4_MAGIC_OFFSET..EXT4_MAGIC_OFFSET + 2] == EXT4_MAGIC)
 }
@@ -44,24 +49,64 @@ pub fn is_ext4_partition<T: Read + Seek>(
 #[cfg(target_os = "linux")]
 pub fn get_default_drive() -> String {
     use std::io::{BufRead, BufReader};
-    let file = File::open("/proc/mounts").expect("Unable to open /proc/mounts");
-    let reader = BufReader::new(file);
 
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 3 {
-                let device = parts[0].to_string();
-                let mount_point = parts[1].to_string();
-                let fs_type = parts[2];
+    // 1) Try /proc/self/mountinfo (most informative)
+    if let Ok(file) = File::open("/proc/self/mountinfo") {
+        let reader = BufReader::new(file);
+        for line in reader.lines().flatten() {
+            // Format: ... mount_point ... - fstype source superopts
+            // Split at the " - " separator
+            if let Some(sep) = line.find(" - ") {
+                let (pre, post) = line.split_at(sep);
+                // pre: fields where 5th whitespace-separated field is mount point
+                let mut pre_fields = pre.split_whitespace();
+                // fields: 0:id 1:parent 2:major:minor 3:root 4:mount_point ...
+                let mount_point = pre_fields.nth(4).unwrap_or("");
 
-                if "ext4" == fs_type && "/" == mount_point {
-                    return device.to_string();
+                if mount_point == "/" {
+                    let mut post_fields = post.trim_start_matches(" - ").split_whitespace();
+                    let _fstype = post_fields.next().unwrap_or("");
+                    let source = post_fields.next().unwrap_or("");
+
+                    // If it’s a real block device, use it
+                    if source.starts_with("/dev/") {
+                        return source.to_string();
+                    }
+                    // Some distros expose /dev/root → real device symlink
+                    if Path::new("/dev/root").exists() {
+                        return "/dev/root".to_string();
+                    }
+                    // Fall back to returning the mount point itself; our fallback explorer handles dirs
+                    return "/".to_string();
                 }
             }
         }
     }
-    panic!("[WARN] No ext4 device mounted at '/' found");
+
+    // 2) Fallback: /proc/mounts
+    if let Ok(file) = File::open("/proc/mounts") {
+        use std::io::{BufRead, BufReader};
+        let reader = BufReader::new(file);
+        for line in reader.lines().flatten() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let device = parts[0];
+                let mount_point = parts[1];
+                if mount_point == "/" {
+                    if device.starts_with("/dev/") {
+                        return device.to_string();
+                    }
+                    if Path::new("/dev/root").exists() {
+                        return "/dev/root".to_string();
+                    }
+                    return "/".to_string();
+                }
+            }
+        }
+    }
+
+    // 3) Last resort: the root mount point
+    "/".to_string()
 }
 
 #[cfg(target_os = "windows")]
@@ -69,29 +114,48 @@ pub fn get_default_drive() -> String {
     "C".to_string()
 }
 
-fn get_fs_type(
-    drive_path: &str) -> Result<FileSystemType>
-{
+fn get_fs_type(drive_path: &str) -> Result<FileSystemType> {
     if let Ok(mut file) = File::open(&drive_path) {
         if is_ntfs_partition(&mut file)? {
-            Ok(FileSystemType::NTFS)
-        } else if is_ext4_partition(&mut file)? {
-            Ok(FileSystemType::EXT4)
-        } else {
-            Err(anyhow::anyhow!("Given File System is not supported"))
+            return Ok(FileSystemType::NTFS);
         }
-    } else {
-        Err(anyhow::anyhow!("File Open Error"))
+        if is_ext4_partition(&mut file)? {
+            // Prefer PosixFallback when not a real block device path
+            #[cfg(target_os = "linux")]
+            if !drive_path.starts_with("/dev/") {
+                return Ok(FileSystemType::PosixFallback);
+            }
+            return Ok(FileSystemType::EXT4);
+        }
+        #[cfg(target_os = "linux")]
+        return Ok(FileSystemType::PosixFallback);
+        #[cfg(not(target_os = "linux"))]
+        return Err(anyhow::anyhow!("Given File System is not supported"));
     }
+    Err(anyhow::anyhow!("File Open Error"))
 }
 
 /// Entry point for parsing the FS partition and applying glob matching
 fn explorer(drive_path: &str, config_tree: &mut Node, destination_folder: &str, drive: &str) -> Result<()> {
     let fs_type = get_fs_type(drive_path)?;
     let mut fs_explorer = create_explorer(fs_type)?;
-    fs_explorer.initialize(&drive_path)?;
-    fs_explorer.collect(config_tree, destination_folder, drive)?;
-
+    if let Err(e) = (|| -> Result<()> {
+        fs_explorer.initialize(&drive_path)?;
+        fs_explorer.collect(config_tree, destination_folder, drive)?;
+        Ok(())
+    })() {
+        // If we hit a journal-feature incompatibility, fall back on Linux.
+        #[cfg(target_os = "linux")]
+        {
+            if e.to_string().contains("incompatible filesystem: missing required journal features") {
+                let mut fallback = create_explorer(FileSystemType::PosixFallback)?;
+                fallback.initialize(&drive_path)?;
+                fallback.collect(config_tree, destination_folder, drive)?;
+                return Ok(())
+            }
+        }
+        return Err(e);
+    }
     Ok(())
 }
 

@@ -27,6 +27,7 @@ pub trait FileSystemExplorer {
         drive: &str) -> Result<()>;
 }
 
+#[allow(dead_code)]
 pub enum FileSystemType {
     NTFS,
     EXT4,
@@ -45,7 +46,7 @@ pub fn create_explorer(fs_type: FileSystemType) -> Result<Box<dyn FileSystemExpl
         FileSystemType::EXT4 => Err(anyhow::anyhow!("EXT4 is only supported on Linux")),
 
         #[cfg(target_os = "linux")]
-        FileSystemType::PosixFallback => Ok(Box::new(NativeExplorer::new())), // NEW
+        FileSystemType::PosixFallback => Ok(Box::new(NativeExplorer::new())),
 
         #[cfg(not(target_os = "linux"))]
         FileSystemType::PosixFallback => Err(anyhow::anyhow!("POSIX fallback is Linux-only")),

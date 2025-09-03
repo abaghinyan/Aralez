@@ -5,8 +5,6 @@
 // Author(s): Areg Baghinyan
 //
 
-#![cfg(target_os = "linux")]
-
 use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::fs::{self, File};

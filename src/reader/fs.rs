@@ -14,6 +14,8 @@ use std::collections::HashMap;
 use std::u64;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
+
+#[cfg(target_os = "linux")]
 use std::path::Path;
 
 pub fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> Result<bool> {

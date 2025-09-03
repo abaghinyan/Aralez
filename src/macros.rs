@@ -25,7 +25,7 @@ macro_rules! dprintln {
 
             // Get current timestamp
             let now = Local::now();
-            let timestamp = now.format("%Y-%m-%d %H:%M:%S").to_string();
+            let timestamp = now.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
 
             // Write log to file
             writeln!(file, "[{}] {}", timestamp, format!($($arg)*)).expect(&format!("Unable to write to {}", tmp_logfile).as_str());

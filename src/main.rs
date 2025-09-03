@@ -37,6 +37,7 @@ use zip::DateTime as ZipDateTime;
 use chrono::Datelike;
 use chrono::Timelike;
 use resource_check::check_memory;
+use std::time::Instant;
 
 #[cfg(target_os = "windows")]
 pub mod resource;
@@ -463,6 +464,7 @@ fn main() -> Result<(), anyhow::Error> {
 
     dprintln!("Aralez version: {} ({})", env!("CARGO_PKG_VERSION"), TARGET_ARCH);
     dprintln!("Configuration version: {} ", &config.version.clone().unwrap_or("unknown".to_string()));
+    let global_start_time = Instant::now();
 
     // Machine resources check
     let global_memory_limit = config.get_global_memory_limit();
@@ -718,7 +720,8 @@ fn main() -> Result<(), anyhow::Error> {
         }
     }
 
-    dprintln!("[INFO] All tasks completed");
+    let global_elapsed = global_start_time.elapsed();
+    dprintln!("[INFO] All tasks completed in {:?} sec", global_elapsed.as_secs());
 
     let src_log_file = format!("{}.log", root_output);
     // Move the logfile into the root folder

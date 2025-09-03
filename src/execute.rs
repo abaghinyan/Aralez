@@ -30,6 +30,7 @@ use std::io::{self, Write};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Instant;
 
 use std::{sync::mpsc, thread, time::Duration};
 #[cfg(target_os = "windows")]
@@ -57,6 +58,7 @@ use linux_imports::*;
 
 #[cfg(target_os = "windows")]
 pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
+    let start_time = Instant::now();
     dprintln!("[INFO] > `{}` | Starting execution", tool_name);
 
     let output_file_path = Path::new(output_filename);
@@ -80,13 +82,20 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
         tool_name,
         output_filename
     );
-    dprintln!("[INFO] > `{}` | Execution completed", tool_name);
+    let elapsed = start_time.elapsed();
+    dprintln!(
+        "[INFO] > `{}` | Execution completed in {:?}.{:?} sec",
+        tool_name, 
+        elapsed.as_secs(),
+        elapsed.subsec_millis()
+    );
 
     return output;
 }
 
 #[cfg(target_os = "linux")]
 pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
+    let start_time = Instant::now();
     dprintln!("[INFO] > `{}` | Starting execution", tool_name);
 
     let output_file_path = Path::new(output_filename);
@@ -108,7 +117,13 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
         tool_name,
         output_filename
     );
-    dprintln!("[INFO] > `{}` | Execution completed", tool_name);
+    let elapsed = start_time.elapsed();
+    dprintln!(
+        "[INFO] > `{}` | Execution completed in {:?}.{:?} sec",
+        tool_name, 
+        elapsed.as_secs(),
+        elapsed.subsec_millis()
+    );
 
     return output;
 }
@@ -123,6 +138,7 @@ pub fn run(
     memory_limit: Option<usize>,
     timeout: Option<u64>,
 ) -> Option<String> {
+    let task_start_time = Instant::now();
     let mut display_name = name.clone();
     if exec_type == ExecType::External {
         let buffer = match exe_bytes {
@@ -181,8 +197,9 @@ pub fn run(
                     if let Some(job) = create_memory_limited_job(memory_limit_value) {
                         assign_to_job(job, &child);
                         dprintln!(
-                            "[INFO] > `{}` | Assigned to memory-limited Job Object ({} MB)",
+                            "[INFO] > `{}` ({}) | Assigned to memory-limited Job Object ({} MB)",
                             display_name,
+                            child.id(),
                             memory_limit_value / 1024 / 1024
                         );
                     }
@@ -221,13 +238,20 @@ pub fn run(
             let _ = tx.send(());
         });
 
+        dprintln!(
+            "[INFO] > {} ({}) | Assigned timeout ({} sec)",
+            display_name,
+            pid,
+            timeout_secs
+        );
+
         loop {
             match child.try_wait() {
                 Ok(Some(_status)) => break false, // finished normally
                 Ok(None) => {
                     if rx.try_recv().is_ok() {
                         dprintln!(
-                            "[WARN] > `{}` (pid: {}) | Execution timed out",
+                            "[WARN] > `{}` ({}) | Execution timed out",
                             display_name,
                             pid
                         );
@@ -239,7 +263,7 @@ pub fn run(
                     thread::sleep(Duration::from_millis(100));
                 }
                 Err(e) => {
-                    dprintln!("[ERROR] Failed to check process status: {}", e);
+                    dprintln!("[ERROR] Failed to check process pid {} status: {}", pid, e);
                     break true;
                 }
             }
@@ -276,10 +300,14 @@ pub fn run(
         pid,
         output_file
     );
+    
+    let task_elapsed = task_start_time.elapsed();
     dprintln!(
-        "[INFO] > `{}` ({}) | Execution completed",
+        "[INFO] > `{}` ({}) | Execution completed in {:?}.{:?} sec",
         display_name,
-        pid
+        pid,
+        task_elapsed.as_secs(),
+        task_elapsed.subsec_millis()
     );
 
     return Some(output_content);

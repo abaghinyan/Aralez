@@ -134,7 +134,7 @@ impl NativeExplorer {
     /// Size cap identical to ext4 path.
     fn is_file_size_ok(file_len: u64, max_size: Option<u64>) -> bool {
         if let Some(limit) = max_size {
-            if file_len > limit { return false; }
+            if file_len > limit * 1024 * 1024 { return false; }
         }
         true
     }

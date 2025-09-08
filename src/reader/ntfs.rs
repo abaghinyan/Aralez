@@ -182,7 +182,7 @@ fn process_all_directory(
                     let mut size_ok = true;
                     let file_size = get_file_size(&sub_file, fs);
                     if let Some(msize) = max_size {
-                        if file_size as u64 > msize {
+                        if file_size as u64 > msize * 1024 * 1024 {
                             dprintln!("[WARN] Skip {} because the size {} exceeds {} bytes", &new_path, file_size, &max_size.unwrap_or(0));
                             size_ok = false;
                         }
@@ -741,7 +741,7 @@ where
     let attr_path = format!("{}%3A{}.idx", output_file_name, &attr_name);
     let mut attr_value = attr.value(fs)?;
     if let Some(m_size) = max_size {
-        if attr_value.len() > m_size {
+        if attr_value.len() > m_size * 1024 * 1024 {
             dprintln!("[WARN] Skip {} because the size {} exceeds {} bytes", &attr_path, attr_value.len(), m_size);
 
             return Ok(());

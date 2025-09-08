@@ -66,7 +66,7 @@ fn is_pattern_match(file_path: &str, obj_name: &str) -> bool {
 // Check whether file size is consistent with max size specified in config.yml
 fn is_file_size_ok(file_len: u64, max_size: Option<u64>) -> bool {
     if let Some(limit) = max_size {
-        if file_len > limit {
+        if file_len > limit * 1024 * 1024  {
             return false;
         }
     }

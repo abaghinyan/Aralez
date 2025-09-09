@@ -512,6 +512,7 @@ fn main() -> Result<(), anyhow::Error> {
                 continue;
             }
         }
+        let task_start_time = Instant::now();
         dprintln!("[INFO] == Starting task `{}` ==", section_name);
         spinner.set_message(format!("Processing: `{}` task", section_name));
 
@@ -730,10 +731,16 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
         }
+        let task_elapsed = task_start_time.elapsed();
+        dprintln!("[INFO] == Task `{}` completed in {:?}.{:?} secs ==",
+            section_name,
+            task_elapsed.as_secs(),
+            task_elapsed.subsec_millis()
+        );    
     }
 
     let global_elapsed = global_start_time.elapsed();
-    dprintln!("[INFO] All tasks completed in {:?} sec", global_elapsed.as_secs());
+    dprintln!("[INFO] == All tasks completed in {:?} sec", global_elapsed.as_secs());
 
     let src_log_file = format!("{}.log", root_output);
     // Move the logfile into the root folder

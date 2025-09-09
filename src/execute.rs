@@ -64,7 +64,7 @@ use linux_imports::*;
 
 #[cfg(target_os = "windows")]
 pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
-    let start_time = Instant::now();
+    let run_internal_start_time = Instant::now();
     dprintln!("[INFO] > {} | Starting execution", tool_name);
 
     let output_file_path = Path::new(output_filename);
@@ -88,12 +88,12 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
         tool_name,
         output_filename
     );
-    let elapsed = start_time.elapsed();
+    let run_internal_elapsed = run_internal_start_time.elapsed();
     dprintln!(
         "[INFO] > {} | Execution completed in {:?}.{:?} sec",
         tool_name, 
-        elapsed.as_secs(),
-        elapsed.subsec_millis()
+        run_internal_elapsed.as_secs(),
+        run_internal_elapsed.subsec_millis()
     );
 
     output
@@ -101,7 +101,7 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
 
 #[cfg(target_os = "linux")]
 pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
-    let start_time = Instant::now();
+    let run_internal_start_time = Instant::now();
     dprintln!("[INFO] > {} | Starting execution", tool_name);
 
     let output_file_path = Path::new(output_filename);
@@ -123,12 +123,12 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
         tool_name,
         output_filename
     );
-    let elapsed = start_time.elapsed();
+    let run_internal_elapsed = run_internal_start_time.elapsed();
     dprintln!(
         "[INFO] > {} | Execution completed in {:?}.{:?} sec",
         tool_name, 
-        elapsed.as_secs(),
-        elapsed.subsec_millis()
+        run_internal_elapsed.as_secs(),
+        run_internal_elapsed.subsec_millis()
     );
 
     output
@@ -147,7 +147,7 @@ pub fn run(
     // STRICT cap in BYTES (not MB!)
     max_size_bytes: Option<u64>,
 ) -> Option<String> {
-    let task_start_time = Instant::now();
+    let run_start_time = Instant::now();
     let mut display_name = name.clone();
 
     // Prepare external executable (write bytes to temp path)
@@ -439,13 +439,13 @@ pub fn run(
         if let Some(limit) = max_bytes { format!(", cap={} bytes", limit) } else { "".to_string() }
     );
 
-    let task_elapsed = task_start_time.elapsed();
+    let run_elapsed = run_start_time.elapsed();
     dprintln!(
         "[INFO] > {} ({}) | Execution completed in {:?}.{:?} sec",
         display_name,
         pid,
-        task_elapsed.as_secs(),
-        task_elapsed.subsec_millis()
+        run_elapsed.as_secs(),
+        run_elapsed.subsec_millis()
     );
 
     Some(String::from_utf8_lossy(&mirrored).to_string())

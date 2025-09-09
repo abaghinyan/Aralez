@@ -5,9 +5,10 @@
 #
 # Author(s): Areg Baghinyan
 #
-max_size: 5000000000
+version: "Aralez_config_v1.0"
+max_size: 5000
 memory_limit: 512
-disk_limit: 2000
+disk_limit: 8000
 tasks:
   artifacts:
     type: "collect"

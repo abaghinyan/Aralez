@@ -632,7 +632,7 @@ fn main() -> Result<(), anyhow::Error> {
                                         config::TypeExec::External => {
                                             match get_bin(executor_name) {
                                                 Ok(bin) => {
-                                                    let result = run (
+                                                    let result = run(
                                                         executor
                                                             .name
                                                             .clone()
@@ -643,7 +643,9 @@ fn main() -> Result<(), anyhow::Error> {
                                                         Some(&output_path),
                                                         &output_fullpath,
                                                         section_config.memory_limit,
-                                                        section_config.timeout
+                                                        section_config.timeout,
+                                                        // convert MB -> bytes
+                                                        section_config.get_max_size().map(|mb| (mb as u64).saturating_mul(1024 * 1024)),
                                                     );
                                                     if let Some(link_element) = executor.link {
                                                         match config.get_task(link_element.clone()) {
@@ -669,7 +671,11 @@ fn main() -> Result<(), anyhow::Error> {
                                                             collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
                                                         }
                                                     },
-                                                    None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
+                                                    None => dprintln!(
+                                                        "[WARN] Specified link {} for {}, not found",
+                                                        &link_element,
+                                                        executor.name.clone().expect(MSG_ERROR_CONFIG)
+                                                    ),
                                                 }
                                             }
                                         }
@@ -683,12 +689,16 @@ fn main() -> Result<(), anyhow::Error> {
                                                             collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
                                                         }
                                                     },
-                                                    None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
+                                                    None => dprintln!(
+                                                        "[WARN] Specified link {} for {}, not found",
+                                                        &link_element,
+                                                        executor.name.clone().expect(MSG_ERROR_CONFIG)
+                                                    ),
                                                 }
                                             }
                                         }
                                         config::TypeExec::System => {
-                                            let result = run (
+                                            let result = run(
                                                 executor_name,
                                                 &args,
                                                 ExecType::System,
@@ -696,7 +706,9 @@ fn main() -> Result<(), anyhow::Error> {
                                                 None,
                                                 &output_fullpath,
                                                 section_config.memory_limit,
-                                                section_config.timeout
+                                                section_config.timeout,
+                                                // convert MB -> bytes
+                                                section_config.get_max_size().map(|mb| (mb as u64).saturating_mul(1024 * 1024)),
                                             );
                                             if let Some(link_element) = executor.link {
                                                 match config.get_task(link_element.clone()) {

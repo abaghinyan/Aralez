@@ -114,6 +114,23 @@ impl SectionConfig {
             self.output_folder.clone()
         }
     }
+        // Function that return the min between the max size of the task and the entry
+    pub fn get_max_size(&self) -> Option<u64> {
+        let config = CONFIG.lock().unwrap(); 
+        let config_max_size = config.max_size;
+        match (self.max_size, self.max_size, config_max_size) {
+            (Some(search_max), Some(section_max), Some(config_max)) => {
+                Some(search_max.min(section_max).min(config_max))
+            }
+            (Some(search_max), Some(section_max), None) => Some(search_max.min(section_max)),
+            (Some(search_max), None, Some(config_max)) => Some(search_max.min(config_max)),
+            (None, Some(section_max), Some(config_max)) => Some(section_max.min(config_max)),
+            (Some(search_max), None, None) => Some(search_max),
+            (None, Some(section_max), None) => Some(section_max),
+            (None, None, Some(config_max)) => Some(config_max),
+            (None, None, None) => None,
+        }
+    }
 }
 
 // Implement IntoIterator for `&Entries`

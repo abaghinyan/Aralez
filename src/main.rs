@@ -740,7 +740,7 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     let global_elapsed = global_start_time.elapsed();
-    dprintln!("[INFO] == All tasks completed in {:?} sec", global_elapsed.as_secs());
+    dprintln!("[INFO] == All tasks completed in {:?} secs ==", global_elapsed.as_secs());
 
     let src_log_file = format!("{}.log", root_output);
     // Move the logfile into the root folder

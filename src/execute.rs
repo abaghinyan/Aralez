@@ -25,7 +25,9 @@ pub mod linux_internal {
 }
 
 use crate::config::ExecType;
-use std::fs::{remove_file, File};
+use std::fs::File;
+#[cfg(target_os = "windows")]
+use std::fs::remove_file;
 use std::io::{self, Write};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -181,8 +183,6 @@ pub fn run(
             .unwrap_or(name.as_str())
             .to_string();
     }
-
-    // ===== Spawn child (with process-group / job object isolation) =====
 
     #[cfg(unix)]
     let mut cmd = Command::new(&name);
@@ -418,7 +418,7 @@ pub fn run(
         );
     }
 
-    // Remove temp exe if we created it
+    #[cfg(target_os = "windows")]
     if exec_type == ExecType::External {
         if let Err(e) = cleanup_temp_file(&name) {
             dprintln!(
@@ -496,6 +496,7 @@ fn save_to_temp_file(
     Ok(output_file_path)
 }
 
+#[cfg(target_os = "windows")]
 fn cleanup_temp_file(temp_exe_path: &str) -> io::Result<()> {
     dprintln!("[INFO] > {:?} : Remove the temporary file", temp_exe_path);
     let exec_path = Path::new(temp_exe_path);

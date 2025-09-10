@@ -372,8 +372,8 @@ impl<'de> Deserialize<'de> for TypeExec {
         impl<'de> Visitor<'de> for TypeExecVisitor {
             type Value = TypeExec;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a string containing 'external', 'internal' or 'system")
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a string containing 'external', 'internal' or 'system'")
             }
 
             fn visit_str<E>(self, value: &str) -> Result<TypeExec, E>
@@ -381,14 +381,19 @@ impl<'de> Deserialize<'de> for TypeExec {
                 E: de::Error,
             {
                 match value {
-                    #[cfg(target_os = "windows")] 
-                    "external" => Ok(TypeExec::External),
                     "internal" => Ok(TypeExec::Internal),
-                    "system" => Ok(TypeExec::System),
-                    _ => Err(de::Error::unknown_variant(
-                        value,
-                        &["external", "internal", "system"],
-                    )),
+                    "system"   => Ok(TypeExec::System),
+                    "external" => {
+                        #[cfg(target_os = "linux")]
+                        return Err(de::Error::custom(
+                            "`exec_type: external` is not available on Linux. \
+                                Use `internal` or `system`.",
+                        ));
+                        #[cfg(target_os = "windows")]
+                        Ok(TypeExec::External)
+                    }
+
+                    _ => Err(de::Error::unknown_variant(value, &["external", "internal", "system"])),
                 }
             }
         }

@@ -1,4 +1,3 @@
-# Aralez
 <p align="center">
   <img src="./assets/logo.png" alt="Aralez Logo" width="274" height="256"/>
 </p>

@@ -13,8 +13,8 @@ It automates the secure collection of critical system data, enabling investigato
 
 > ⚡ **Note**:
 >
-> * On **Windows**, use `aralez_x64.exe` or `aralez_x86.exe` (requires administrative privileges).
-> * On **Linux**, use the `aralez` binary (requires root privileges).
+> * On **Windows**, use `aralez_x64_windows.exe` or `aralez_x86_windows.exe` (requires administrative privileges).
+> * On **Linux**, use `aralez_x64_linux` or `aralez_x86_linux` binary (requires root privileges).
 
 ---
 
@@ -33,9 +33,10 @@ It automates the secure collection of critical system data, enabling investigato
 1. **Download**
    Clone the repository or grab a precompiled binary:
 
-   * **Windows (64-bit):** `aralez_x64.exe`
-   * **Windows (32-bit):** `aralez_x86.exe`
-   * **Linux (x86\_64):** `aralez`
+   * **Windows (64-bit):** `aralez_x64_windows.exe`
+   * **Windows (32-bit):** `aralez_x86_windows.exe`
+   * **Linux (64-bit):** `aralez_x64_linux`
+   * **Linux (32-bit):** `aralez_x86_linux`
 
 2. **Execute**
 

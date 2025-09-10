@@ -812,12 +812,21 @@ fn add_timezone_offset_to_system_time(system_time: SystemTime, offset_seconds: i
     }
 }
 
-fn get_boot(drive_letter: &str) -> Result<Vec<u8>, Error> {
-    let drive_path = format!("\\\\.\\{}:", drive_letter); // Raw access to the drive
+fn get_boot(drive: &str) -> Result<Vec<u8>, Error> {
+    let drive_path = if cfg!(target_os = "windows") {
+        format!("{}:\\", drive)
+    } else {
+        drive.to_string()
+    };
+    let drive_path_ext = if cfg!(target_os = "windows") {
+        format!("\\\\.\\{}:", drive)
+    } else {
+        drive.to_string()
+    };
 
     // Check if the drive exists before attempting to open it
-    if Path::new(&format!("{}:\\", drive_letter)).exists() {
-        let mut file = File::open(&drive_path).unwrap();
+    if Path::new(&drive_path).exists() {
+        let mut file = File::open(&drive_path_ext).unwrap();
         let mut boot_sector = vec![0u8; 8192];
 
         file.seek(SeekFrom::Start(0))?;
@@ -828,6 +837,6 @@ fn get_boot(drive_letter: &str) -> Result<Vec<u8>, Error> {
 
     Err(anyhow::anyhow!(
         "[ERROR] Drive {} does not exist",
-        drive_letter
+        drive_path
     ))
 }

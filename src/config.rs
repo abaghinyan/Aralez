@@ -10,16 +10,15 @@ use anyhow::Result;
 use chrono::prelude::*;
 use hostname::get;
 use indexmap::IndexMap;
+use once_cell::sync::Lazy;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
-use std::fmt;
-use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
 #[cfg(target_os = "windows")]
@@ -39,18 +38,20 @@ pub mod linux_imports {
 #[cfg(target_os = "linux")]
 pub use linux_imports::*;
 
-static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| Mutex::new(Config {
-    output_filename: "default.log".to_string(),
-    tasks: IndexMap::new(),
-    max_size: None,
-    version: None,
-    encrypt: None,
-    memory_limit: None,
-    disk_limit: None, 
-    disk_path: None,
-    max_disk_usage_pct: None, 
-    min_disk_space: None
-}));
+static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| {
+    Mutex::new(Config {
+        output_filename: "default.log".to_string(),
+        tasks: IndexMap::new(),
+        max_size: None,
+        version: None,
+        encrypt: None,
+        memory_limit: None,
+        disk_limit: None,
+        disk_path: None,
+        max_disk_usage_pct: None,
+        min_disk_space: None,
+    })
+});
 
 pub fn set_config(new_config: Config) {
     let mut config = CONFIG.lock().unwrap();
@@ -68,11 +69,11 @@ pub struct Config {
     pub max_size: Option<u64>,
     pub version: Option<String>,
     pub encrypt: Option<String>,
-    pub memory_limit: Option<usize>,
-    pub disk_limit: Option<u64>,
+    pub memory_limit: Option<usize>, // in MB
+    pub disk_limit: Option<u64>,     // in MB
     pub disk_path: Option<String>,
-    pub min_disk_space: Option<u64>, 
-    pub max_disk_usage_pct: Option<u8>,     // e.g., 50 means 50%
+    pub min_disk_space: Option<u64>, // in MB
+    pub max_disk_usage_pct: Option<u8>, // e.g. 50 means 50%
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -89,7 +90,7 @@ pub struct SectionConfig {
     pub entries: Option<Entries>,
     pub disabled: Option<bool>,
     pub memory_limit: Option<usize>,
-    pub timeout: Option<u64>
+    pub timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,35 +101,32 @@ pub enum TypeConfig {
 #[derive(PartialEq)]
 pub enum ExecType {
     External,
-    System
+    System,
 }
 
 impl SectionConfig {
     pub fn get_output_folder(&self) -> Option<String> {
         #[cfg(target_os = "linux")]
         {
-            self.output_folder.as_ref().map(|folder| folder.replace("\\", "/"))
+            self.output_folder
+                .as_ref()
+                .map(|folder| folder.replace('\\', "/"))
         }
         #[cfg(target_os = "windows")]
         {
             self.output_folder.clone()
         }
     }
-        // Function that return the min between the max size of the task and the entry
+
+    /// Returns the min between section max_size and global max_size
     pub fn get_max_size(&self) -> Option<u64> {
-        let config = CONFIG.lock().unwrap(); 
+        let config = CONFIG.lock().unwrap();
         let config_max_size = config.max_size;
-        match (self.max_size, self.max_size, config_max_size) {
-            (Some(search_max), Some(section_max), Some(config_max)) => {
-                Some(search_max.min(section_max).min(config_max))
-            }
-            (Some(search_max), Some(section_max), None) => Some(search_max.min(section_max)),
-            (Some(search_max), None, Some(config_max)) => Some(search_max.min(config_max)),
-            (None, Some(section_max), Some(config_max)) => Some(section_max.min(config_max)),
-            (Some(search_max), None, None) => Some(search_max),
-            (None, Some(section_max), None) => Some(section_max),
-            (None, None, Some(config_max)) => Some(config_max),
-            (None, None, None) => None,
+        match (self.max_size, config_max_size) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
         }
     }
 }
@@ -189,7 +187,6 @@ impl<'de> Deserialize<'de> for Entries {
                 let mut entry_names = HashSet::new(); // Track duplicate keys
 
                 while let Some((key, configs)) = access.next_entry::<String, Vec<SearchConfig>>()? {
-                    // Check for duplicate keys
                     if !entry_names.insert(key.clone()) {
                         return Err(de::Error::custom(format!(
                             "[ERROR] Config: Duplicate entry name '{}' found",
@@ -197,45 +194,46 @@ impl<'de> Deserialize<'de> for Entries {
                         )));
                     }
 
-                    // Iterate over each config in the entry to validate fields
                     for config in &configs {
-                        // 1. Validate `root_path` if it's present
+                        // 1. Validate `root_path` if present
                         if let Some(root_path) = &config.root_path {
-                            if !root_path.starts_with("\\") && !root_path.starts_with('%')
-                                && !root_path.starts_with("/") {
+                            if !root_path.starts_with('\\')
+                                && !root_path.starts_with('%')
+                                && !root_path.starts_with('/')
+                            {
                                 return Err(de::Error::custom(format!(
-                                    "[ERROR] Config: root_path '{}' in entry '{}' should start with '\\\\' or '%'", 
+                                    "[ERROR] Config: root_path '{}' in entry '{}' should start with '\\\\', '/', or '%'",
                                     root_path, key
                                 )));
                             }
                         }
 
-                        // 2. If entry type is "collect", ensure `root_path` and `objects` are present
+                        // 2. If entry type is "glob", ensure root_path and objects are present
                         if let Some(type_config) = &config.r#type {
                             if *type_config == TypeConfig::Glob {
                                 if config.root_path.is_none() || config.objects.is_none() {
                                     return Err(de::Error::custom(format!(
-                                        "[ERROR] Config: Entry '{}' with type 'collect' must have `root_path` and `objects`", 
+                                        "[ERROR] Config: Entry '{}' with type 'glob' must have `root_path` and `objects`",
                                         key
                                     )));
                                 }
                             }
                         }
 
-                        // Additional validations for other fields, e.g., `max_size`, `encrypt`
+                        // 3. max_size must be > 0 if present
                         if let Some(max_size) = config.max_size {
-                            if max_size <= 0 {
+                            if max_size == 0 {
                                 return Err(de::Error::custom(
                                     "[ERROR] Config: `max_size` should be greater than zero",
                                 ));
                             }
                         }
 
-                        // encryp shouldn't be empty
+                        // 4. encrypt shouldn't be empty string
                         if let Some(password) = &config.encrypt {
-                            if password.is_empty() || *password == "".to_string() {
+                            if password.is_empty() {
                                 return Err(de::Error::custom(
-                                    "[ERROR] Config: `encrypt` should be empty",
+                                    "[ERROR] Config: `encrypt` should not be empty",
                                 ));
                             }
                         }
@@ -382,18 +380,21 @@ impl<'de> Deserialize<'de> for TypeExec {
             {
                 match value {
                     "internal" => Ok(TypeExec::Internal),
-                    "system"   => Ok(TypeExec::System),
+                    "system" => Ok(TypeExec::System),
                     "external" => {
                         #[cfg(target_os = "linux")]
                         return Err(de::Error::custom(
-                            "`exec_type: external` is not available on Linux. \
-                                Use `internal` or `system`.",
+                            "`exec_type: external` is not available on Linux. Use `internal` or `system`.",
                         ));
                         #[cfg(target_os = "windows")]
-                        Ok(TypeExec::External)
+                        {
+                            Ok(TypeExec::External)
+                        }
                     }
-
-                    _ => Err(de::Error::unknown_variant(value, &["external", "internal", "system"])),
+                    _ => Err(de::Error::unknown_variant(
+                        value,
+                        &["external", "internal", "system"],
+                    )),
                 }
             }
         }
@@ -417,39 +418,88 @@ pub struct SearchConfig {
 }
 
 impl Config {
-    pub fn load_embedded_config() -> Result<String, anyhow::Error> {
-        #[cfg(target_os = "linux")]
-        {
-            use std::fs;
-            use std::env;
+    fn normalize_newlines(mut s: String) -> String {
+        if s.contains("\r\n") {
+            s = s.replace("\r\n", "\n");
+        }
+        s
+    }
 
-            let exe_path = env::current_exe()?;
-            let content = fs::read(&exe_path)?;
-
-            let start = content
-                .windows(CONFIG_MARKER_START.len())
-                .rposition(|w| w == CONFIG_MARKER_START)
-                .ok_or_else(|| anyhow::anyhow!("CONFIG_MARKER_START not found"))?;
-
-            let end = content
-                .windows(CONFIG_MARKER_END.len())
-                .rposition(|w| w == CONFIG_MARKER_END)
-                .ok_or_else(|| anyhow::anyhow!("CONFIG_MARKER_END not found"))?;
-
-            if end < start {
-                return Err(anyhow::anyhow!("CONFIG_MARKER_END found before CONFIG_MARKER_START"));
-            }
-
-            let config_bytes = &content[(start + CONFIG_MARKER_START.len())..end];
-            Ok(String::from_utf8_lossy(config_bytes).to_string())
+    fn decode_text(bytes: &[u8]) -> Result<String> {
+        // UTF-16LE BOM
+        if bytes.starts_with(&[0xFF, 0xFE]) {
+            let u16s: Vec<u16> = bytes[2..]
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            let s = String::from_utf16(&u16s)?;
+            return Ok(Self::normalize_newlines(s));
         }
 
-        #[cfg(target_os = "windows")]
-        {
-            let config_data = extract_resource("config.yml")?;
-            let config_string = String::from_utf8(config_data)?;
-            return Ok(config_string);
+        // UTF-16BE BOM
+        if bytes.starts_with(&[0xFE, 0xFF]) {
+            let u16s: Vec<u16> = bytes[2..]
+                .chunks_exact(2)
+                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                .collect();
+            let s = String::from_utf16(&u16s)?;
+            return Ok(Self::normalize_newlines(s));
         }
+
+        // Heuristic: BOM-less UTF-16LE (NUL in every odd byte)
+        let looks_like_utf16le =
+            bytes.len() > 1 && bytes.iter().skip(1).step_by(2).all(|&b| b == 0);
+
+        if looks_like_utf16le {
+            let u16s: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            let s = String::from_utf16(&u16s)?;
+            return Ok(Self::normalize_newlines(s));
+        }
+
+        // Assume UTF-8
+        let s = String::from_utf8(bytes.to_vec())?;
+        Ok(Self::normalize_newlines(s))
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn load_embedded_config() -> Result<String> {
+        use std::{env, fs};
+
+        let exe_path = env::current_exe()?;
+        let content = fs::read(&exe_path)?;
+
+        let start = content
+            .windows(CONFIG_MARKER_START.len())
+            .rposition(|w| w == CONFIG_MARKER_START)
+            .ok_or_else(|| anyhow::anyhow!("CONFIG_MARKER_START not found"))?;
+
+        let end = content
+            .windows(CONFIG_MARKER_END.len())
+            .rposition(|w| w == CONFIG_MARKER_END)
+            .ok_or_else(|| anyhow::anyhow!("CONFIG_MARKER_END not found"))?;
+
+        if end < start {
+            anyhow::bail!("CONFIG_MARKER_END found before CONFIG_MARKER_START");
+        }
+
+        let config_bytes = &content[(start + CONFIG_MARKER_START.len())..end];
+        let cfg = Self::decode_text(config_bytes)?;
+        Ok(cfg)
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn load_embedded_config() -> Result<String> {
+        let data = extract_resource("config.yml")?; // from crate::resource
+        let cfg = Self::decode_text(&data)?;
+        Ok(cfg)
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    pub fn load_embedded_config() -> Result<String> {
+        anyhow::bail!("Embedded config not supported on this platform")
     }
 
     pub fn load() -> Result<Self, anyhow::Error> {
@@ -466,39 +516,28 @@ impl Config {
         let mut file = File::open(filepath)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
-        let config_string = String::from_utf8_lossy(&buffer);
-
-        match serde_yaml::from_str(&config_string) {
-            Ok(config) => Ok(config),
-            Err(e) => Err(anyhow::anyhow!(e.to_string())),
-        }
+        let config_string = Self::decode_text(&buffer)?;
+        serde_yaml::from_str(&config_string).map_err(|e| anyhow::anyhow!(e.to_string()))
     }
 
     pub fn load_default() -> Result<Self, anyhow::Error> {
+        // NOTE: include_str! requires UTF-8 at compile time.
         let yaml_data = include_str!("../config/.config.yml");
         serde_yaml::from_str(yaml_data).map_err(|e| anyhow::anyhow!(e.to_string()))
     }
 
     pub fn get_raw_data() -> Result<String> {
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(embedded_config) = Self::load_embedded_config() {
-                if !embedded_config.is_empty() {
-                    return Ok(embedded_config);
-                }
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        if let Ok(embedded_config) = Self::load_embedded_config() {
+            if !embedded_config.is_empty() {
+                return Ok(embedded_config);
             }
         }
 
-        #[cfg(target_os = "linux")]
-        {
-            if let Ok(embedded_config) = Self::load_embedded_config() {
-                if !embedded_config.is_empty() {
-                    return Ok(embedded_config);
-                }
-            }
-        }
-
-        Ok(include_str!("../config/.config.yml").to_string())
+        // Fallback to bundled file (decode defensively in case it's not UTF-8)
+        let raw: &[u8] = include_bytes!("../config/.config.yml");
+        let decoded = Self::decode_text(raw)?;
+        Ok(decoded)
     }
 
     pub fn save(&self, output_dir: &str) -> Result<()> {
@@ -529,7 +568,8 @@ impl Config {
         let mut output_filename_expand = self.output_filename.clone();
 
         for (key, value) in vars {
-            output_filename_expand = output_filename_expand.replace(&format!("{{{{{}}}}}", key), value);
+            output_filename_expand =
+                output_filename_expand.replace(&format!("{{{{{}}}}}", key), value);
         }
         output_filename_expand
     }
@@ -545,14 +585,13 @@ impl Config {
     }
 
     pub fn get_global_memory_limit(&self) -> usize {
-        // Default: 1 GB if not set
-        self.memory_limit
-            .unwrap_or(1 * 1024)
+        // Default: 1 GB if not set (value in MB)
+        self.memory_limit.unwrap_or(1 * 1024)
     }
 
     pub fn get_global_disk_limit(&self) -> u64 {
-        // Default to 8GB
-        self.disk_limit.unwrap_or(8192) 
+        // Default to 8 GB (value in MB)
+        self.disk_limit.unwrap_or(8 * 1024)
     }
 
     pub fn get_disk_check_path(&self) -> String {
@@ -571,11 +610,10 @@ impl Config {
     }
 }
 
-
 impl SearchConfig {
-    // Function that return the min between the max size of the task and the entry
+    /// Return the min between the entry max size, the section max size, and the global max size
     pub fn get_max_size(&self, section_config_max_size: Option<u64>) -> Option<u64> {
-        let config = CONFIG.lock().unwrap(); 
+        let config = CONFIG.lock().unwrap();
         let config_max_size = config.max_size;
         match (self.max_size, section_config_max_size, config_max_size) {
             (Some(search_max), Some(section_max), Some(config_max)) => {
@@ -591,34 +629,35 @@ impl SearchConfig {
         }
     }
 
-    // Method to get root_path with environment variables replaced
+    /// Expand environment variables in root_path
     pub fn get_expanded_root_path(&self) -> String {
         replace_env_vars(&self.root_path.clone().unwrap_or_default())
     }
 
-    // Method to sanitize root_path and objects based on metacharacters
+    /// Sanitize root_path and objects based on glob metacharacters
     pub fn sanitize(&mut self) -> Result<(), String> {
         let root_path_item = &self.get_expanded_root_path();
-        let mut root_path = root_path_item.replace("\\", "/");
+        let mut root_path = root_path_item.replace('\\', "/");
         root_path = remove_trailing_slash(root_path);
-        // Check if the root_path contains a glob element (*, **, ?, or bracketed expressions)
-        if root_path.contains("*")
-            || root_path.contains("?")
-            || root_path.contains("[")
-            || root_path.contains("]")
-        {
-            let parts: Vec<&str> = root_path.split("/").collect();
 
-            // Extract the common part (before any glob or metacharacter)
+        // Check for glob elements (*, **, ?, [ ])
+        if root_path.contains('*')
+            || root_path.contains('?')
+            || root_path.contains('[')
+            || root_path.contains(']')
+        {
+            let parts: Vec<&str> = root_path.split('/').collect();
+
+            // Extract common part (before any glob)
             let mut new_root_path = String::new();
             let mut remaining_path = Vec::new();
 
             for part in parts.iter() {
-                if part.contains("*")
+                if part.contains('*')
                     || part.contains("**")
-                    || part.contains("?")
-                    || part.contains("[")
-                    || part.contains("]")
+                    || part.contains('?')
+                    || part.contains('[')
+                    || part.contains(']')
                 {
                     remaining_path.push(part.to_string());
                 } else {
@@ -626,28 +665,28 @@ impl SearchConfig {
                         remaining_path.push(part.to_string());
                     } else {
                         if !new_root_path.is_empty() {
-                            new_root_path.push_str("/");
+                            new_root_path.push('/');
                         }
                         new_root_path.push_str(part);
                     }
                 }
             }
 
-            // If there's no remaining path, assume it's for the current directory
+            // If there's no remaining path, assume current directory
             let remaining_path_str = if !remaining_path.is_empty() {
                 remaining_path.join("/")
             } else {
-                "*".to_string() // A wildcard to match anything in the current directory
+                "*".to_string()
             };
 
-            // Update objects by prepending the remaining path to each object pattern
+            // Prepend remaining path to each object pattern
             if let Some(ref mut objects) = self.objects {
                 for object in objects.iter_mut() {
                     *object = format!("{}/{}", remaining_path_str, object);
                 }
             }
 
-            // Update the root_path with the new common part
+            // Update root_path with the new common part
             self.root_path = Some(new_root_path);
         } else {
             self.root_path = Some(root_path);
@@ -655,4 +694,10 @@ impl SearchConfig {
 
         Ok(())
     }
+}
+
+#[allow(dead_code)]
+impl ExecType {
+    pub const EXTERNAL: ExecType = ExecType::External;
+    pub const SYSTEM: ExecType = ExecType::System;
 }

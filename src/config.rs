@@ -69,11 +69,11 @@ pub struct Config {
     pub max_size: Option<u64>,
     pub version: Option<String>,
     pub encrypt: Option<String>,
-    pub memory_limit: Option<usize>, // in MB
-    pub disk_limit: Option<u64>,     // in MB
+    pub memory_limit: Option<usize>,     // in MB
+    pub disk_limit: Option<u64>,         // in MB
     pub disk_path: Option<String>,
-    pub min_disk_space: Option<u64>, // in MB
-    pub max_disk_usage_pct: Option<u8>, // e.g. 50 means 50%
+    pub min_disk_space: Option<u64>,     // in MB
+    pub max_disk_usage_pct: Option<u8>,  // e.g. 50 means 50%
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -91,6 +91,9 @@ pub struct SectionConfig {
     pub disabled: Option<bool>,
     pub memory_limit: Option<usize>,
     pub timeout: Option<u64>,
+
+    #[serde(default)]
+    pub credentials: Option<IndexMap<String, String>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -128,6 +131,21 @@ impl SectionConfig {
             (None, Some(b)) => Some(b),
             (None, None) => None,
         }
+    }
+
+    /// Get a credential by key as &str
+    pub fn cred(&self, key: &str) -> Option<&str> {
+        self.credentials
+            .as_ref()
+            .and_then(|m| m.get(key).map(|s| s.as_str()))
+    }
+
+    /// Render credentials as vec of "KEY=VALUE" strings (useful to forward to tools).
+    pub fn credentials_env_vec(&self) -> Vec<String> {
+        self.credentials
+            .as_ref()
+            .map(|m| m.iter().map(|(k, v)| format!("{k}={v}")).collect())
+            .unwrap_or_default()
     }
 }
 
@@ -184,7 +202,7 @@ impl<'de> Deserialize<'de> for Entries {
                 M: MapAccess<'de>,
             {
                 let mut map = HashMap::new();
-                let mut entry_names = HashSet::new(); // Track duplicate keys
+                let mut entry_names = HashSet::new();
 
                 while let Some((key, configs)) = access.next_entry::<String, Vec<SearchConfig>>()? {
                     if !entry_names.insert(key.clone()) {
@@ -195,7 +213,7 @@ impl<'de> Deserialize<'de> for Entries {
                     }
 
                     for config in &configs {
-                        // 1. Validate `root_path` if present
+                        // 1) Validate `root_path` if present
                         if let Some(root_path) = &config.root_path {
                             if !root_path.starts_with('\\')
                                 && !root_path.starts_with('%')
@@ -208,7 +226,7 @@ impl<'de> Deserialize<'de> for Entries {
                             }
                         }
 
-                        // 2. If entry type is "glob", ensure root_path and objects are present
+                        // 2) If entry type is "glob", ensure root_path and objects are present
                         if let Some(type_config) = &config.r#type {
                             if *type_config == TypeConfig::Glob {
                                 if config.root_path.is_none() || config.objects.is_none() {
@@ -220,7 +238,7 @@ impl<'de> Deserialize<'de> for Entries {
                             }
                         }
 
-                        // 3. max_size must be > 0 if present
+                        // 3) max_size must be > 0 if present
                         if let Some(max_size) = config.max_size {
                             if max_size == 0 {
                                 return Err(de::Error::custom(
@@ -229,7 +247,7 @@ impl<'de> Deserialize<'de> for Entries {
                             }
                         }
 
-                        // 4. encrypt shouldn't be empty string
+                        // 4) encrypt shouldn't be empty string
                         if let Some(password) = &config.encrypt {
                             if password.is_empty() {
                                 return Err(de::Error::custom(
@@ -294,6 +312,7 @@ impl<'de> Deserialize<'de> for TypeConfig {
 pub enum TypeTasks {
     Execute,
     Collect,
+    Cloud
 }
 
 impl Serialize for TypeTasks {
@@ -304,6 +323,7 @@ impl Serialize for TypeTasks {
         match *self {
             TypeTasks::Execute => serializer.serialize_str("execute"),
             TypeTasks::Collect => serializer.serialize_str("collect"),
+            TypeTasks::Cloud => serializer.serialize_str("cloud"),
         }
     }
 }
@@ -319,7 +339,7 @@ impl<'de> Deserialize<'de> for TypeTasks {
             type Value = TypeTasks;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a string containing 'execute' or 'collect'")
+                formatter.write_str("a string containing 'execute', 'collect' or 'cloud'")
             }
 
             fn visit_str<E>(self, value: &str) -> Result<TypeTasks, E>
@@ -329,7 +349,8 @@ impl<'de> Deserialize<'de> for TypeTasks {
                 match value {
                     "execute" => Ok(TypeTasks::Execute),
                     "collect" => Ok(TypeTasks::Collect),
-                    _ => Err(de::Error::unknown_variant(value, &["execute", "collect"])),
+                    "cloud" => Ok(TypeTasks::Cloud),
+                    _ => Err(de::Error::unknown_variant(value, &["execute", "collect", "cloud"])),
                 }
             }
         }

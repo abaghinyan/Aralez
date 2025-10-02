@@ -12,12 +12,13 @@ mod execute;
 mod utils;
 mod path;
 mod resource_check;
+pub mod cloud;
 
 use execute::run;
 use path::{insert_if_valid, remove_drive_letter};
 use anyhow::Result;
 use clap::Parser;
-use clap::{Arg, Command};
+use clap::{Arg, Command, ArgMatches};
 use config::{get_config, set_config, Config, Entries, ExecType, SearchConfig, SectionConfig};
 use indicatif::{ProgressBar, ProgressStyle};
 use reader::fs::{process_drive_artifacts, get_default_drive};
@@ -99,16 +100,27 @@ use crate::resource_check::should_continue_collection;
 #[derive(Parser)]
 struct Cli {
     /// Activate debug mode even in release builds
-    #[arg(long)]
-    debug: bool,
+    #[arg(long)] debug: bool,
 
     /// Show the configuration file and exit
-    #[arg(long)]
-    show_config: bool,
+    #[arg(long)] show_config: bool,
 
     /// Specify the default drive to process
-    #[arg(long)]
-    default_drive: String,
+    #[arg(long)] default_drive: String,
+
+    /// override credentials from YAML for cloud task(s)
+    #[arg(long)] aws_access_key_id: Option<String>,
+    #[arg(long)] aws_secret_access_key: Option<String>,
+    #[arg(long)] aws_session_token: Option<String>,
+    #[arg(long)] aws_region: Option<String>,
+
+    #[arg(long)] azure_tenant_id: Option<String>,
+    #[arg(long)] azure_client_id: Option<String>,
+    #[arg(long)] azure_client_secret: Option<String>,
+    #[arg(long)] azure_subscription_id: Option<String>,
+
+    #[arg(long)] gcp_service_account_json: Option<String>,
+    #[arg(long)] gcp_project_id: Option<String>,
 }
 
 const MSG_ERROR_CONFIG: &str = "[ERROR] Config error";
@@ -150,6 +162,32 @@ fn is_drive_accessible(drive: &str) -> bool {
         drive.to_string()
     };
     fs::metadata(&drive_path).is_ok()
+}
+
+fn merged_credentials_from_cli(
+    section: &SectionConfig,
+    matches: &ArgMatches
+) -> indexmap::IndexMap<String, String> {
+    use indexmap::IndexMap;
+    let mut out: IndexMap<String, String> = section.credentials.clone().unwrap_or_default();
+
+    // AWS (overrides if provided)
+    if let Some(v) = matches.get_one::<String>("aws_access_key_id")       { out.insert("AWS_ACCESS_KEY_ID".into(), v.clone()); }
+    if let Some(v) = matches.get_one::<String>("aws_secret_access_key")   { out.insert("AWS_SECRET_ACCESS_KEY".into(), v.clone()); }
+    if let Some(v) = matches.get_one::<String>("aws_session_token")       { out.insert("AWS_SESSION_TOKEN".into(), v.clone()); }
+    if let Some(v) = matches.get_one::<String>("aws_region")              { out.insert("AWS_REGION".into(), v.clone()); }
+
+    // Azure
+    if let Some(v) = matches.get_one::<String>("azure_tenant_id")         { out.insert("AZURE_TENANT_ID".into(), v.clone()); }
+    if let Some(v) = matches.get_one::<String>("azure_client_id")         { out.insert("AZURE_CLIENT_ID".into(), v.clone()); }
+    if let Some(v) = matches.get_one::<String>("azure_client_secret")     { out.insert("AZURE_CLIENT_SECRET".into(), v.clone()); }
+    if let Some(v) = matches.get_one::<String>("azure_subscription_id")   { out.insert("AZURE_SUBSCRIPTION_ID".into(), v.clone()); }
+
+    // GCP
+    if let Some(v) = matches.get_one::<String>("gcp_service_account_json"){ out.insert("GCP_SERVICE_ACCOUNT_JSON".into(), v.clone()); }
+    if let Some(v) = matches.get_one::<String>("gcp_project_id")          { out.insert("GCP_PROJECT".into(), v.clone()); }
+
+    out
 }
 
 fn update_embedded_config(config_path: &str, output_path: &str) -> std::io::Result<()> {
@@ -554,11 +592,37 @@ fn main() -> Result<(), anyhow::Error> {
                                 None => format!("{}/{}", root_output, drive),
                             };
                             ensure_directory_exists(&output_collect_folder)?;
-                            process_drive_artifacts(&drive, &mut section_config,
-                                &output_collect_folder)?;
+                            process_drive_artifacts(&drive, &mut section_config, &output_collect_folder)?;
                         }
                     }
                 }
+            }
+            config::TypeTasks::Cloud => {
+                let output_collect_folder = match section_config.get_output_folder() {
+                    Some(o) => o.replace("{{root_output_path}}", root_output),
+                    #[cfg(target_os = "windows")]
+                    None => format!("{}\\{}", root_output, "cloud"),
+                    #[cfg(target_os = "linux")]
+                    None => format!("{}/{}", root_output, "cloud"),
+                };
+                ensure_directory_exists(&output_collect_folder)?;
+
+                let merged_creds = merged_credentials_from_cli(&section_config, &matches);
+
+                let rt = tokio::runtime::Runtime::new()?;
+                let results = rt.block_on(cloud::collect_section(
+                    &section_name,
+                    &section_config,
+                    &output_collect_folder,
+                    &merged_creds
+                ))?;
+
+                dprintln!(
+                    "[INFO] Cloud section '{}' collected {} artifacts into {}",
+                    section_name,
+                    results.len(),
+                    output_collect_folder
+                );
             }
             config::TypeTasks::Execute => {
                 if let Some(entries) =  &section_config.entries {

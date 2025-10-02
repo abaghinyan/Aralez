@@ -1,6 +1,6 @@
 [package]
 name = "aralez"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 description = "Aralez is a triage collector tool."
 authors = ["Areg Baghinyan <areg@baghinyan.com>"]
@@ -9,27 +9,46 @@ repository = "https://github.com/abaghinyan/aralez"
 build = "build.rs"
 
 [dependencies]
+# --- Core ---
 ntfs = "0.4"
 winapi = { version = "0.3", features = ["fileapi", "handleapi", "winnt"] }
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
+serde_json = "1.0"
 indicatif = "0.17"
 clap = { version = "4.0", features = ["derive"] }
-windows = { version = "0.59", features = ["Win32_System_LibraryLoader", "Win32_System_SystemServices", "Win32_System_Environment", "Win32_System_ProcessStatus", "Win32_System_JobObjects", "Win32_Security", "Win32_System_WindowsProgramming", "Win32_System_Console", "Win32_System_Threading", "Win32_System_Memory", "Win32_Storage_FileSystem", "Win32_System_Registry", "Win32_System_Diagnostics_Debug", "Win32_Foundation", "Win32_System_SystemInformation", "Win32_Networking_WinSock", "Win32_NetworkManagement_IpHelper", "Win32_System_Diagnostics_ToolHelp"] }
+windows = { version = "0.59", features = [
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemServices",
+    "Win32_System_Environment",
+    "Win32_System_ProcessStatus",
+    "Win32_System_JobObjects",
+    "Win32_Security",
+    "Win32_System_WindowsProgramming",
+    "Win32_System_Console",
+    "Win32_System_Threading",
+    "Win32_System_Memory",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Registry",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_Foundation",
+    "Win32_System_SystemInformation",
+    "Win32_Networking_WinSock",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_System_Diagnostics_ToolHelp"
+] }
 windows-core = "0.59"
+widestring = "1"
+hostname = "0.4"
 csv = "1.3"
 chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.35"
-
-widestring = "1"
-hostname = "0.4"
 zip  = { version = "2.4", features = ["aes-crypto"] }
-aes-gcm = "0.10" 
+aes-gcm = "0.10"
 aes = "0.8"
-rand = "0.8" 
+rand = "0.8"
 sha2 = "0.10"
-serde_json = "1.0"
 md5 = "0.7.0"
 regex = "1"
 indexmap = { version = "2.5", features = ["serde"] }
@@ -39,23 +58,63 @@ rayon = "1.10"
 filetime = "0.2"
 once_cell = "1.20"
 
-[target.'cfg(not(windows))'.dependencies]
-users = "0.11"
-libc = "0.2"
+# --- Async/runtime ---
+futures = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "time"] }
+async-trait = "0.1"
+urlencoding = "2"
 
-[target.'cfg(windows)'.build-dependencies]
-winres = "0.1"
+# Reqwest (runtime) — Rustls only (no OpenSSL)
+reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "brotli", "deflate", "rustls-tls"] }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-ext4-view = { version = "0.9.1", features = ["std"] }
+# --- Cloud SDKs ---
+# AWS (Rustls par défaut)
+aws-config = "1"
+aws-credential-types = "1"
+aws-sdk-cloudtrail = "1"
+aws-sdk-cloudwatchlogs = "1"
+aws-sdk-sts = "1"
+pem = "3"
+aws-sdk-guardduty = "1"
+aws-sdk-s3 = "1"
+# Additional AWS services for comprehensive log collection
+aws-sdk-config = "1"
+aws-sdk-securityhub = "1"
+aws-sdk-iam = "1"
+aws-sdk-ec2 = "1"
+aws-sdk-rds = "1"
+aws-sdk-lambda = "1"
+aws-sdk-elasticloadbalancingv2 = "1"
+aws-sdk-elasticloadbalancing = "1"
+aws-sdk-route53 = "1"
+aws-sdk-route53resolver = "1"
+aws-sdk-wafv2 = "1"
+aws-sdk-waf = "1"
+aws-sdk-shield = "1"
+aws-sdk-inspector2 = "1"
+aws-sdk-macie2 = "1"
+aws-sdk-accessanalyzer = "1"
+aws-sdk-detective = "1"
+aws-sdk-securitylake = "1"
+aws-sdk-organizations = "1"
+aws-sdk-cloudformation = "1"
+aws-sdk-ssm = "1"
+aws-sdk-ssmincidents = "1"
+aws-sdk-ssmcontacts = "1"
+aws-sdk-ssmsap = "1"
+hex = "0.4"
+dirs = "5"
 
-[build-dependencies]
-reqwest = { version = "0.12", features = ["blocking"] }
-zip = "2"
+aws-smithy-types = "1"
+aws-types = "1"
 
-[target.'cfg(windows)'.dependencies]
-winres = "0.1"
-winreg = { version = "0.52", features = ["transactions"] }
+jsonwebtoken = { version = "9", default-features = false } 
+base64 = "0.22"
+
+# GCP OAuth2 (hyper-rustls, pas d’OpenSSL)
+yup-oauth2 = "12"
+
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [dependencies.windows-sys]
 version = "0.59"
@@ -66,3 +125,22 @@ features = [
     "Win32_System_SystemInformation",
     "Win32_Storage_FileSystem"
 ]
+
+[target.'cfg(not(windows))'.dependencies]
+users = "0.11"
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+winres = "0.1"
+winreg = { version = "0.52", features = ["transactions"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ext4-view = { version = "0.9.1", features = ["std"] }
+
+[build-dependencies]
+# Build-time reqwest (pour build.rs) — Rustls only (no OpenSSL)
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+zip = "2"
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"

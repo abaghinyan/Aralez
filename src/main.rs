@@ -87,7 +87,7 @@ pub mod linux_imports {
     pub use std::io::Read;
     pub use super::config::{CONFIG_MARKER_START, CONFIG_MARKER_END};
     pub use std::fs::OpenOptions;
-    pub use users::get_effective_uid;
+    pub use nix::unistd::Uid;
     pub use crate::execute::{run_internal};
 }
 
@@ -208,7 +208,7 @@ fn update_embedded_config(config_path: &str, output_path: &str) -> std::io::Resu
 
 fn main() -> Result<(), anyhow::Error> {
     #[cfg(target_os = "linux")]
-    if get_effective_uid() != 0 {
+    if !Uid::effective().is_root() {
         eprintln!("[WARN] Aralez must be run as root/administrator.");
         eprintln!("Try: sudo ./aralez");
         std::process::exit(1);

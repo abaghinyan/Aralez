@@ -125,13 +125,19 @@ fn main() -> io::Result<()> {
 }
 
 fn populate_tools_and_files(target_arch: &Arch) -> (Vec<(&'static str, &'static str)>, Vec<(&'static str, &'static str)>) {
+    // Use Cargo feature to decide whether to include extended tools (e.g., WinPmem)
+    let include_extended_tools =
+        std::env::var("CARGO_FEATURE_EXTENDED_TOOLS").is_ok()
+        || std::env::var("CARGO_FEATURE_MEMDUMP").is_ok();
     match target_arch {
-        Arch::X86_64 => (
-            vec![
+        Arch::X86_64 => {
+            let mut tools_vec: Vec<(&'static str, &'static str)> = vec![
                 ("https://download.sysinternals.com/files/SysinternalsSuite.zip", "SysinternalsSuite.zip"),
-                ("https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x64_rc2.exe", "winpmem_mini_rc2.exe"),
-            ],
-            vec![
+            ];
+            if include_extended_tools {
+                tools_vec.push(("https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x64_rc2.exe", "winpmem_mini_rc2.exe"));
+            }
+            let exe_files = vec![
                 ("autorunsc64.exe", "autorunsc.exe"),
                 ("handle64.exe", "handle.exe"),
                 ("Listdlls64.exe", "Listdlls.exe"),
@@ -139,14 +145,17 @@ fn populate_tools_and_files(target_arch: &Arch) -> (Vec<(&'static str, &'static 
                 ("pslist64.exe", "pslist.exe"),
                 ("PsService64.exe", "PsService.exe"),
                 ("tcpvcon64.exe", "tcpvcon.exe"),
-            ],
-        ),
-        Arch::X86 => (
-            vec![
+            ];
+            (tools_vec, exe_files)
+        },
+        Arch::X86 => {
+            let mut tools_vec: Vec<(&'static str, &'static str)> = vec![
                 ("https://download.sysinternals.com/files/SysinternalsSuite.zip", "SysinternalsSuite.zip"),
-                ("https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x86.exe", "winpmem_mini_rc2.exe"),
-            ],
-            vec![
+            ];
+            if include_extended_tools {
+                tools_vec.push(("https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x86.exe", "winpmem_mini_rc2.exe"));
+            }
+            let exe_files = vec![
                 ("autorunsc.exe", "autorunsc.exe"),
                 ("handle.exe", "handle.exe"),
                 ("Listdlls.exe", "Listdlls.exe"),
@@ -154,8 +163,9 @@ fn populate_tools_and_files(target_arch: &Arch) -> (Vec<(&'static str, &'static 
                 ("pslist.exe", "pslist.exe"),
                 ("PsService.exe", "PsService.exe"),
                 ("tcpvcon.exe", "tcpvcon.exe"),
-            ],
-        )
+            ];
+            (tools_vec, exe_files)
+        }
     }
 }
 

@@ -57,6 +57,33 @@ Comprehensive documentation - including configuration guides, usage examples, an
 
 ---
 
+## 🧱 Building from Source
+
+Aralez uses Cargo features to control optional bundled tools.
+
+- By default, extended tools are disabled (smaller binary).
+- The `extended-tools` feature enables extra bundled executables (e.g., WinPmem mini for memory dump). The legacy alias `memdump` maps to `extended-tools`.
+
+Build examples:
+
+```bash
+# Default (without extended tools)
+cargo build
+cargo build --release
+
+# With extended tools
+cargo build --features extended-tools
+cargo build --release --features extended-tools
+
+# Back-compat alias (same as extended-tools)
+cargo build --features memdump
+```
+
+Note:
+- If your config references a tool that is only available with `extended-tools`, and you build without it, that tool won’t be embedded/listed and an error will be logged when invoked.
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions to **Aralez**!

@@ -8,6 +8,11 @@ license = "Apache-2.0"
 repository = "https://github.com/abaghinyan/aralez"
 build = "build.rs"
 
+[features]
+default = []
+extended-tools = []
+memdump = ["extended-tools"]
+
 [dependencies]
 ntfs = "0.4"
 winapi = { version = "0.3", features = ["fileapi", "handleapi", "winnt"] }

@@ -461,6 +461,7 @@ pub fn get_list_tools() -> Vec<&'static str> {
         "Listdlls.exe",
         "PsService.exe",
         "pipelist.exe",
+        #[cfg(any(feature = "extended-tools", feature = "memdump"))]
         "winpmem_mini_rc2.exe",
     ]
 }
@@ -475,6 +476,7 @@ pub fn get_bin(name: String) -> Result<Vec<u8>, anyhow::Error> {
         "Listdlls.exe" => include_bytes!("../tools/Listdlls.exe").to_vec(),
         "PsService.exe" => include_bytes!("../tools/PsService.exe").to_vec(),
         "pipelist.exe" => include_bytes!("../tools/pipelist.exe").to_vec(),
+        #[cfg(any(feature = "extended-tools", feature = "memdump"))]
         "winpmem_mini_rc2.exe" => include_bytes!("../tools/winpmem_mini_rc2.exe").to_vec(),
         _ => match extract_resource(&name) {
             Ok(bytes) => bytes,

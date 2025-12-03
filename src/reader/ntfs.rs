@@ -172,12 +172,14 @@ fn process_all_directory(
                     }
                     None => (obj_name.to_string(), ""), // Ensure consistency with String type
                 };
-                let mut path_check = new_path.clone();
-                if !(ads.is_empty() || ads == "") {
-                    path_check = format!("{}:{}", path_check, ads);
-                }
+                // Match against the NTFS path without ADS, but track visited using full ADS path
+                let full_path_with_ads = if ads.is_empty() {
+                    new_path.clone()
+                } else {
+                    format!("{}:{}", new_path, ads)
+                };
                 let pattern = Pattern::new(&obj_name_san.to_lowercase()).unwrap();
-                if pattern.matches(&path_check.to_lowercase()) {
+                if pattern.matches(&new_path.to_lowercase()) {
                     // check size
                     let mut size_ok = true;
                     let file_size = get_file_size(&sub_file, fs);
@@ -191,7 +193,7 @@ fn process_all_directory(
                     if size_ok {
                         match get(&sub_file, &new_path, destination_folder, fs, encrypt.as_ref(), ads, drive, max_size) {
                             Ok(saved) => {
-                                local_visited_files.insert(path_check);
+                                local_visited_files.insert(full_path_with_ads);
                                 if saved {
                                     *success_files_count += 1;
                                 }
@@ -277,13 +279,15 @@ pub fn process_directory(
                         None => (obj_name.to_string(), ""), 
                     };
                     let new_path = format!("{}/{}", current_path, entry.name);
-                    let mut path_check = new_path.clone();
-                    if !(ads.is_empty() || ads == "") {
-                        path_check = format!("{}:{}", path_check, ads);
-                    }
+                    // Match the pattern against the NTFS path without ADS, but track visited using full ADS path
+                    let full_path_with_ads = if ads.is_empty() {
+                        new_path.clone()
+                    } else {
+                        format!("{}:{}", new_path, ads)
+                    };
                     let pattern = Pattern::new(&obj_name_san.to_lowercase()).unwrap();
-                    if !visited_files.contains(&path_check)
-                        && pattern.matches(&path_check.to_lowercase())
+                    if !visited_files.contains(&full_path_with_ads)
+                        && pattern.matches(&new_path.to_lowercase())
                     {
                         if !&obj_name.contains("*") && !obj_node.all {
                             obj_node.checked = true;
@@ -318,7 +322,7 @@ pub fn process_directory(
                         if size_ok && obj_node.children.is_empty() && !sub_file.is_directory() {
                             match get(
                                 &sub_file,
-                                &path_check,
+                                &new_path,
                                 destination_folder,
                                 fs,
                                 obj_node.encrypt.as_ref(),
@@ -327,7 +331,7 @@ pub fn process_directory(
                                 obj_node.max_size
                             ) {
                                 Ok(saved) => {
-                                    visited_files.insert(path_check);
+                                    visited_files.insert(full_path_with_ads);
                                     if saved {
                                         *success_files_count += 1;
                                     }
@@ -400,8 +404,14 @@ where
     }
     let is_ads = !(ads.is_empty() || ads == "");
 
-    // Append the Alternate Data Stream (ADS) name if it's not empty
-    output_file_name = output_file_name.replace(":", "%3A");
+    // If saving an ADS, append an underscore + ADS name to make a unique safe filename
+    if is_ads {
+        let ads_sanitized = ads.replace(":", "_");
+        output_file_name = format!("{}_{}", output_file_name, ads_sanitized);
+    } else {
+        // Sanitize any stray colons just in case (e.g., from unexpected inputs)
+        output_file_name = output_file_name.replace(":", "_");
+    }
 
     // Try to open the file for writing, log error if it fails
     let mut output_file = match OpenOptions::new()
@@ -740,7 +750,7 @@ where
         &attr_name
     );
 
-    let attr_path = format!("{}%3A{}.idx", output_file_name, &attr_name);
+    let attr_path = format!("{}_{}.idx", output_file_name, &attr_name);
     let mut attr_value = attr.value(fs)?;
     if let Some(m_size) = max_size {
         let msize_bytes =  m_size * 1024 * 1024;

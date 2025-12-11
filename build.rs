@@ -135,7 +135,7 @@ fn populate_tools_and_files(target_arch: &Arch) -> (Vec<(&'static str, &'static 
                 ("https://download.sysinternals.com/files/SysinternalsSuite.zip", "SysinternalsSuite.zip"),
             ];
             if include_extended_tools {
-                tools_vec.push(("https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x64_rc2.exe", "winpmem_mini_rc2.exe"));
+                tools_vec.push(("https://github.com/Velocidex/WinPmem/releases/download/v4.1.dev1/winpmem64.exe", "winpmem.exe"));
             }
             let exe_files = vec![
                 ("autorunsc64.exe", "autorunsc.exe"),
@@ -153,7 +153,7 @@ fn populate_tools_and_files(target_arch: &Arch) -> (Vec<(&'static str, &'static 
                 ("https://download.sysinternals.com/files/SysinternalsSuite.zip", "SysinternalsSuite.zip"),
             ];
             if include_extended_tools {
-                tools_vec.push(("https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x86.exe", "winpmem_mini_rc2.exe"));
+                tools_vec.push(("https://github.com/Velocidex/WinPmem/releases/download/v4.1.dev1/winpmem32.exe", "winpmem.exe"));
             }
             let exe_files = vec![
                 ("autorunsc.exe", "autorunsc.exe"),

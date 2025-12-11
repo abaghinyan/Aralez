@@ -19,7 +19,7 @@ tasks:
     timeout: 60
     entries:
       dump:
-        - name: "winpmem_mini_rc2.exe"
+        - name: "winpmem.exe"
           args: ["{{root_output_path}}\\tools\\memdump.raw"]
           output_file: "memdump_log.txt"
           exec_type: "external"

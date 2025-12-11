@@ -462,7 +462,7 @@ pub fn get_list_tools() -> Vec<&'static str> {
         "PsService.exe",
         "pipelist.exe",
         #[cfg(any(feature = "extended-tools", feature = "memdump"))]
-        "winpmem_mini_rc2.exe",
+        "winpmem.exe",
     ]
 }
 
@@ -477,7 +477,7 @@ pub fn get_bin(name: String) -> Result<Vec<u8>, anyhow::Error> {
         "PsService.exe" => include_bytes!("../tools/PsService.exe").to_vec(),
         "pipelist.exe" => include_bytes!("../tools/pipelist.exe").to_vec(),
         #[cfg(any(feature = "extended-tools", feature = "memdump"))]
-        "winpmem_mini_rc2.exe" => include_bytes!("../tools/winpmem_mini_rc2.exe").to_vec(),
+        "winpmem.exe" => include_bytes!("../tools/winpmem.exe").to_vec(),
         _ => match extract_resource(&name) {
             Ok(bytes) => bytes,
             Err(_) => return Err(anyhow::anyhow!(format!("[ERROR] {} not found", name))),

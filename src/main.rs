@@ -9,6 +9,7 @@
 mod macros;
 mod config;
 mod execute;
+mod upload;
 mod utils;
 mod path;
 mod resource_check;
@@ -256,7 +257,39 @@ fn main() -> Result<(), anyhow::Error> {
                 .help("Encrypt the archive with a password by using AES256")
                 .value_name("PASSWORD")
         )
-        .help_template(HELP_TEMPLATE);
+        .help_template(HELP_TEMPLATE)
+        .arg(
+            Arg::new("output")
+                .short('o')
+                .long("output")
+                .help("Upload/copy the result zip to a destination (s3://bucket/prefix, smb://server/share, sftp://user@host/path, or /local/path)")
+                .value_name("DESTINATION")
+        )
+        .arg(
+            Arg::new("workdir")
+                .short('w')
+                .long("workdir")
+                .help("Working directory for temporary artifact collection (default: current directory)")
+                .value_name("PATH")
+        )
+        .arg(
+            Arg::new("s3-endpoint")
+                .long("s3-endpoint")
+                .help("Custom S3-compatible endpoint URL (e.g. http://minio.local:9000)")
+                .value_name("URL")
+        )
+        .arg(
+            Arg::new("s3-access-key")
+                .long("s3-access-key")
+                .help("S3 access key ID")
+                .value_name("KEY")
+        )
+        .arg(
+            Arg::new("s3-secret-key")
+                .long("s3-secret-key")
+                .help("S3 secret access key")
+                .value_name("SECRET")
+        );
     #[cfg(target_os = "windows")]
     {
         cmd = cmd.arg(
@@ -440,13 +473,25 @@ fn main() -> Result<(), anyhow::Error> {
         disk_limit: config.disk_limit,
         disk_path: config.disk_path.clone(),
         max_disk_usage_pct: config.max_disk_usage_pct,
-        min_disk_space: config.min_disk_space
+        min_disk_space: config.min_disk_space,
+        output: config.output.clone(),
     });
 
     // Check if the --debug flag was provided
     if matches.get_flag("debug") {
         env::set_var("DEBUG_MODE", "true");
         println!("Debug mode activated!");
+    }
+
+    // Change to custom working directory if specified
+    if let Some(workdir) = matches.get_one::<String>("workdir") {
+        let work_path = Path::new(workdir);
+        if !work_path.exists() {
+            fs::create_dir_all(work_path)?;
+            dprintln!("[INFO] Created working directory: {}", workdir);
+        }
+        env::set_current_dir(work_path)?;
+        dprintln!("[INFO] Working directory set to: {}", workdir);
     }
 
     let root_output = &config.get_output_filename();
@@ -755,7 +800,53 @@ fn main() -> Result<(), anyhow::Error> {
 
     zip_dir(root_output, archive_encrypt)?;
 
+    // Remove the uncompressed collection folder immediately after zipping
+    // to free disk space before upload
     remove_dir_all(root_output)?;
+
+    // Build S3 overrides from CLI args
+    let s3_overrides = upload::S3Overrides {
+        endpoint: matches.get_one::<String>("s3-endpoint").cloned(),
+        access_key: matches.get_one::<String>("s3-access-key").cloned(),
+        secret_key: matches.get_one::<String>("s3-secret-key").cloned(),
+    };
+
+    // Upload to configured destinations
+    let zip_path = format!("{}.zip", root_output);
+    let cli_output = matches.get_one::<String>("output");
+    upload::dispatch(
+        &zip_path,
+        &config.output,
+        cli_output.map(|s| s.as_str()),
+        &s3_overrides,
+    )?;
+
+    // If --output was used, remove the local zip after successful upload
+    // (unless the destination is the same local folder the zip already lives in)
+    if cli_output.is_some() {
+        let zip_file = Path::new(&zip_path);
+        if zip_file.exists() {
+            let should_remove = if let Some(out) = cli_output {
+                // For local folder destinations, check if the zip was copied to
+                // the same directory — in that case, keep it
+                if !out.contains("://") {
+                    let dest = Path::new(out);
+                    let zip_parent = zip_file.parent().unwrap_or(Path::new("."));
+                    let dest_canon = fs::canonicalize(dest).unwrap_or(dest.to_path_buf());
+                    let parent_canon = fs::canonicalize(zip_parent).unwrap_or(zip_parent.to_path_buf());
+                    dest_canon != parent_canon
+                } else {
+                    true // remote destination → always remove local zip
+                }
+            } else {
+                false
+            };
+            if should_remove {
+                dprintln!("[INFO] Removing local zip after upload: {}", zip_path);
+                let _ = fs::remove_file(&zip_path);
+            }
+        }
+    }
 
     spinner.finish_with_message("Tasks completed");
 

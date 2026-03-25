@@ -50,6 +50,7 @@ static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| {
         disk_path: None,
         max_disk_usage_pct: None,
         min_disk_space: None,
+        output: None,
     })
 });
 
@@ -60,6 +61,41 @@ pub fn set_config(new_config: Config) {
 
 pub fn get_config() -> Config {
     CONFIG.lock().unwrap().clone()
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Default)]
+pub struct OutputConfig {
+    pub destinations: Option<Vec<OutputDestination>>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum OutputDestination {
+    S3 {
+        bucket: String,
+        prefix: Option<String>,
+        region: Option<String>,
+        endpoint: Option<String>,
+        access_key: Option<String>,
+        secret_key: Option<String>,
+    },
+    Smb {
+        share: String,
+        username: Option<String>,
+        password: Option<String>,
+        domain: Option<String>,
+    },
+    Sftp {
+        host: String,
+        port: Option<u16>,
+        username: String,
+        password: Option<String>,
+        key_path: Option<String>,
+        remote_path: String,
+    },
+    Folder {
+        path: String,
+    },
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -74,6 +110,7 @@ pub struct Config {
     pub disk_path: Option<String>,
     pub min_disk_space: Option<u64>, // in MB
     pub max_disk_usage_pct: Option<u8>, // e.g. 50 means 50%
+    pub output: Option<OutputConfig>,
 }
 
 #[derive(Debug, Clone, Serialize)]

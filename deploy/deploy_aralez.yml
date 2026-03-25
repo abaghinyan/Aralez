@@ -1,0 +1,144 @@
+---
+# =============================================================================
+# Aralez Mass Deployment — Ansible Playbook
+# Deploy and execute Aralez on Linux/Windows hosts at scale
+# =============================================================================
+#
+# Usage:
+#   ansible-playbook -i inventory.ini deploy_aralez.yml
+#   ansible-playbook -i inventory.ini deploy_aralez.yml -e "aralez_output=sftp://user@server/path"
+#   ansible-playbook -i inventory.ini deploy_aralez.yml --limit linux_targets
+#
+# Inventory example (inventory.ini):
+#   [linux_targets]
+#   host1 ansible_host=10.0.1.1
+#   host2 ansible_host=10.0.1.2
+#
+#   [windows_targets]
+#   win1 ansible_host=10.0.2.1
+#   win2 ansible_host=10.0.2.2
+#
+#   [windows_targets:vars]
+#   ansible_connection=winrm
+#   ansible_winrm_transport=ntlm
+#   ansible_port=5986
+#   ansible_winrm_server_cert_validation=ignore
+
+- name: Deploy Aralez — Linux Hosts
+  hosts: linux_targets
+  become: true
+  gather_facts: false
+  serial: "{{ parallel | default(50) }}"
+  vars:
+    aralez_binary: "{{ binary | default('./aralez_x64_linux') }}"
+    aralez_output: "{{ output | default('') }}"
+    aralez_extra_args: "{{ extra_args | default('') }}"
+    remote_dir: /tmp/aralez_deploy
+    collect_results: "{{ collect | default(false) }}"
+    local_collect_dir: "{{ collect_dir | default('./results') }}"
+
+  tasks:
+    - name: Create remote working directory
+      file:
+        path: "{{ remote_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Upload aralez binary
+      copy:
+        src: "{{ aralez_binary }}"
+        dest: "{{ remote_dir }}/aralez"
+        mode: '0755'
+
+    - name: Execute aralez
+      shell: |
+        cd {{ remote_dir }}
+        ./aralez \
+          {% if aralez_output %}--output "{{ aralez_output }}"{% endif %} \
+          {{ aralez_extra_args }}
+      register: aralez_result
+      ignore_errors: true
+      timeout: 3600
+
+    - name: Log execution result
+      debug:
+        msg: "Aralez exit code: {{ aralez_result.rc }}"
+
+    - name: Find result zip files
+      find:
+        paths: "{{ remote_dir }}"
+        patterns: "*.zip"
+      register: zip_files
+      when: collect_results | bool
+
+    - name: Collect results
+      fetch:
+        src: "{{ item.path }}"
+        dest: "{{ local_collect_dir }}/{{ inventory_hostname }}/"
+        flat: true
+      loop: "{{ zip_files.files }}"
+      when: collect_results | bool and zip_files.files | length > 0
+
+    - name: Cleanup remote directory
+      file:
+        path: "{{ remote_dir }}"
+        state: absent
+      when: aralez_result.rc == 0
+
+- name: Deploy Aralez — Windows Hosts
+  hosts: windows_targets
+  gather_facts: false
+  serial: "{{ parallel | default(50) }}"
+  vars:
+    aralez_binary: "{{ binary_win | default('./aralez_x64_windows.exe') }}"
+    aralez_output: "{{ output | default('') }}"
+    aralez_extra_args: "{{ extra_args | default('') }}"
+    remote_dir: 'C:\Windows\Temp\aralez_deploy'
+    collect_results: "{{ collect | default(false) }}"
+    local_collect_dir: "{{ collect_dir | default('./results') }}"
+
+  tasks:
+    - name: Create remote working directory
+      win_file:
+        path: "{{ remote_dir }}"
+        state: directory
+
+    - name: Upload aralez binary
+      win_copy:
+        src: "{{ aralez_binary }}"
+        dest: "{{ remote_dir }}\\aralez.exe"
+
+    - name: Execute aralez
+      win_shell: |
+        cd {{ remote_dir }}
+        .\aralez.exe `
+          {% if aralez_output %}--output "{{ aralez_output }}"{% endif %} `
+          {{ aralez_extra_args }}
+      register: aralez_result
+      ignore_errors: true
+      timeout: 3600
+
+    - name: Log execution result
+      debug:
+        msg: "Aralez exit code: {{ aralez_result.rc }}"
+
+    - name: Find result zip files
+      win_find:
+        paths: "{{ remote_dir }}"
+        patterns: "*.zip"
+      register: zip_files
+      when: collect_results | bool
+
+    - name: Collect results
+      fetch:
+        src: "{{ item.path }}"
+        dest: "{{ local_collect_dir }}\\{{ inventory_hostname }}\\"
+        flat: true
+      loop: "{{ zip_files.files }}"
+      when: collect_results | bool and zip_files.files | length > 0
+
+    - name: Cleanup remote directory
+      win_file:
+        path: "{{ remote_dir }}"
+        state: absent
+      when: aralez_result.rc == 0

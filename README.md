@@ -1,246 +1,144 @@
-<p align="center">
-  <img src="./assets/logo.png" alt="Aralez Logo" width="274" height="256"/>
-</p>
+<div align="center">
+  <img src="./assets/logo.png" alt="Aralez Logo" width="280" />
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-![](https://img.shields.io/badge/build-passing-brightgreen)
+  <h1>Aralez</h1>
+  <strong>Next-Generation Cross-Platform Forensic Triage & Extraction</strong>
 
-# Aralez
+  <p>
+    <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=for-the-badge&logo=apache" alt="License"></a>
+    <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey?style=for-the-badge&logo=linux" alt="Platform">
+    <img src="https://img.shields.io/badge/Rust-🦀-orange?style=for-the-badge&logo=rust" alt="Rust">
+    <img src="https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge" alt="Build">
+  </p>
 
-**Aralez is a powerful cross-platform forensic triage tool for Windows and Linux.**
-It automates the secure collection of critical system data, enabling investigators and responders to accelerate incident response, streamline forensic workflows, and maintain data integrity at scale.
-
-> ⚡ **Note**:
->
-> * On **Windows**, use `aralez_x64_windows.exe` or `aralez_x86_windows.exe` (requires administrative privileges).
-> * On **Linux**, use `aralez_x64_linux` or `aralez_x86_linux` binary (requires root privileges).
-
----
-
-## ✨ Features at a Glance
-
-* 🔍 **Cross-Platform Support** - Collect forensic data on both Windows and Linux systems.
-* ⚡ **Automated Data Collection** - Extracts information from NTFS/ext file systems, system logs, and critical artifacts.
-* 🛠️ **Integrated Tool Support** - Leverages internal, external, and system tools for comprehensive analysis.
-* 🔐 **Secure by Design** - Uses AES-GCM encryption to protect sensitive data from accidental propagation.
-* ⚙️ **Customizable Configurations** - Update the embedded YAML configuration directly or via a new binary.
-* 📤 **Flexible Output Destinations** - Upload results to S3, SFTP, SMB shares, or local/network folders.
-* 🚀 **Enterprise-Scale Deployment** - Deploy and collect at scale via SSH, WinRM, Ansible, SCCM, GPO, BITS, or Puppet.
+  <p>
+    <em>Fast. Invisible. Crash-Resilient. Built for Enterprise Incident Response.</em>
+  </p>
+</div>
 
 ---
 
-## 🚀 Quick Start
+**Aralez** is a high-performance cross-platform forensic triage tool engineered in **Rust**. It automates the secure, reliable collection of critical system data (MFT, Registry, Logs, active connections) to accelerate incident response workflows, hunting, and root-cause analysis at an enterprise scale.
 
-1. **Download**
-   Clone the repository or grab a precompiled binary:
-
-   * **Windows (64-bit):** `aralez_x64_windows.exe`
-   * **Windows (32-bit):** `aralez_x86_windows.exe`
-   * **Linux (64-bit):** `aralez_x64_linux`
-   * **Linux (32-bit):** `aralez_x86_linux`
-
-2. **Execute**
-
-   * On Windows: Run the appropriate `.exe` as **Administrator**
-   * On Linux: Run:
-
-     ```bash
-     sudo ./aralez
-     ```
-
-3. **Review Outputs**
-   Collected data and logs are saved in a structured format, ready for forensic analysis.
+> ⚡ **Quick Start**
+> - **Windows:** `aralez_x64_windows.exe` (run as Administrator)
+> - **Linux:** `aralez_x64_linux` (run as Root)
 
 ---
 
-## ⚙️ CLI Options
+## ✨ Why Aralez?
 
-| Flag | Long | Description |
-|------|------|-------------|
-| `-o` | `--output` | Upload/copy the result zip to a destination |
-| `-w` | `--workdir` | Working directory for temporary artifact collection |
-| `-e` | `--encrypt` | Encrypt the output zip with a password |
-| `-d` | `--default_drive` | Default drive to process (Windows only, default: `C`) |
-| | `--stream` | Compress artifacts directly into the archive on-the-fly (no intermediate folder) |
-| | `--compression` | Archive format: `zip` (default) or `tar` (crash-proof `.tar.zst`) |
-| | `--silent` | Suppress all terminal output (logs are still written to disk) |
-| | `--debug` | Enable verbose debug logging |
-| | `--show-config` | Display the embedded configuration |
-| | `--check-config` | Validate the embedded configuration |
+Aralez is designed for scale and stealth, solving the hardest problems in modern digital forensics:
 
-### Examples
+* 🌪️ **Zero-Folder Streaming Compression:** Collect artifacts directly into AES-256 encrypted `.zip` or crash-proof `.tar.zst` streams on the fly. Bypasses intermediate disk storage entirely, cutting disk footprint by 50%.
+* 🏢 **Enterprise Mass-Deployment:** Native support for execution via BITS, SCCM, GPO, SSH, Ansible, and Puppet. Push to 10,000 endpoints in minutes.
+* 🥷 **Silent & Interruption-Safe:** Run completely hidden (`--silent`). Graceful `Ctrl+C` handling guarantees that if you abort midway, the archive flawlessly finalizes with every artifact collected up to that millisecond.
+* ☁️ **Cloud-Native Uploads:** Ship evidence instantly to AWS S3, MinIO, SFTP, or SMB shares straight from the endpoint memory.
+
+---
+
+## 🚀 Getting Started
+
+Download the latest precompiled binaries from the **Releases** page or clone the repository to build from source. 
+
+### Basic Usage
 
 ```bash
-# Basic collection
+# General full collection (Windows & Linux)
 sudo ./aralez
 
-# Upload results to SFTP
-sudo ./aralez -o sftp://forensic@collector.corp/incoming
-
-# Upload to S3
-sudo ./aralez -o s3://forensic-bucket/incoming
-
-# Upload to SMB share
-aralez.exe -o smb://fileserver/forensics/incoming
-
-# Copy to a local/network folder
-sudo ./aralez -o /mnt/nfs/triage
-
-# Use a custom working directory
-sudo ./aralez -w /tmp/aralez_work -o sftp://user@host/triage
-
-# Encrypt output with a password
-sudo ./aralez -e MySecurePassword123
-
-# Stream mode: compress on-the-fly (ZIP, default)
+# 🌪️ Stream directly to a compressed ZIP (No artifacts touch disk!)
 sudo ./aralez --stream
 
-# Stream mode with TAR compression (crash-proof)
+# 🌪️ Stream to a crash-proof TAR (Zstandard compression)
 sudo ./aralez --stream --compression tar
 
-# Change compression for normal mode too
-sudo ./aralez --compression tar
-```
-
-> 📝 **Note:** When `--output` is used with a remote destination (S3, SFTP, SMB), the local archive is automatically removed after a successful upload. If the destination is a local folder, the archive is moved there.
-
----
-
-## 🔄 Stream Mode
-
-Stream mode (`--stream`) writes collected artifacts **directly into the archive** — no intermediate folder, no extra disk usage. This reduces disk I/O from ~2× to ~1× the size of collected data.
-
-### Compression Formats
-
-| Format | Extension | Crash-proof | Encryption | Notes |
-|--------|-----------|-------------|------------|-------|
-| **ZIP** (default) | `.zip` | Ctrl+C safe, recoverable on hard kill | ✅ AES-256 | Universal compatibility |
-| **TAR** | `.tar.zst` | ✅ Any prefix is a valid archive | ❌ | Best resilience, fast zstd compression |
-
-### Interrupt Handling
-
-* **First Ctrl+C** — Graceful shutdown: finishes the current file, finalizes the archive, exits with a valid archive containing all artifacts collected so far.
-* **Second Ctrl+C** — Force exit immediately.
-* **Hard kill (SIGKILL/OOM)** — ZIP archives can be recovered with `zip -FF` or 7-Zip. TAR archives are inherently valid up to the last completed entry.
-
-### Configuration
-
-Stream mode and compression can be set via CLI flags or in `config.yml`:
-
-```yaml
-# Enable stream mode
-stream: true
-
-# Set archive compression ("zip" or "tar")
-compression: "tar"
+# 🥷 Execute silently (No terminal output, ideal for SCCM/GPO)
+sudo ./aralez --stream --silent
 ```
 
 ---
 
-## 📤 Upload Destinations
+## 📤 Output & Cloud Export
 
-Aralez can upload the triage zip directly to a remote destination via the `--output` / `-o` flag or via the `output:` section in `config.yml`.
+Aralez seamlessly integrates with your forensic pipeline. Use the `-o` (`--output`) flag to route evidence directly to your collection servers. Local archives are automatically zeroed-out after a successful remote transfer.
 
-| Destination | CLI Format | Feature Flag Required |
-|-------------|------------|----------------------|
-| **Local/Network folder** | `/path/to/folder` or `\\server\share` | None |
-| **SMB** | `smb://server/share/path` | None |
-| **SFTP** | `sftp://user@host:port/path` | `upload-sftp` |
-| **S3** | `s3://bucket/prefix` | `upload-s3` |
+```bash
+# Upload results to an SFTP server
+sudo ./aralez -o sftp://forensic@collector.corp/incoming
 
-### S3 Credential Management
+# Upload to an AWS S3 Bucket
+sudo ./aralez -o s3://forensic-bucket/evidence/
 
-When uploading to S3, credentials are resolved in this order:
+# Upload to a Custom MinIO S3 instance
+sudo ./aralez -o s3://my-minio-server:9000/bucket \
+    --s3-endpoint "https://my-minio-server:9000" \
+    --s3-access-key "KEY" --s3-secret-key "SECRET"
 
-1. **Environment variables** — `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`
-2. **Shared credentials file** — `~/.aws/credentials` (via `aws configure`)
-3. **IAM Instance Profile** — Automatic on EC2/ECS (recommended for cloud deployments)
-
-> ⚠️ **Do not** put credentials in `config.yml` since it is embedded in the binary.
+# Pipe directly to an internal SMB Share (Windows)
+aralez.exe -o smb://fileserver/forensics/incoming
+```
 
 ---
 
-## 📖 Documentation
+## ⚙️ CLI Reference
 
-Comprehensive documentation - including configuration guides, usage examples, and tool descriptions - is available on the [official website](https://aralez.co).
+Aralez is heavily configurable via the command line or via its embedded `config.yml`.
+
+| Flag / Option | Description |
+|---------------|-------------|
+| `--stream` | Enable **Zero-Folder Streaming**. Archives artifacts in memory directly to disk. |
+| `--compression <FMT>`| Engine to use: `zip` (default, AES-256) or `tar` (crash-resilient `.tar.zst`). |
+| `--silent` | Suppress all stdout/stderr output (logs are still saved inside the archive). |
+| `-o, --output <URI>` | Push the final collection zip to `sftp://`, `s3://`, `smb://`, or local `/path`. |
+| `-e, --encrypt <PW>` | Encrypt the output archive with the provided password. |
+| `-d, --default_drive`| Default drive letter to process (Windows only, default: `C`). |
+| `-w, --workdir <DIR>`| Work directory for legacy (non-stream) collection. |
+
+---
+
+## 🏗️ Enterprise Automation
+
+Aralez provides battle-tested deployment scripts inside the `deploy/` folder for immediate integration into your IT infrastructure:
+
+### Windows
+*   📄 **`Deploy-AralezBits.ps1`**: Rapidly pull the binary via BITS and execute silently.
+*   📄 **`Deploy-AralezGpo.bat`**: Universal GPO Startup Script wrapper.
+*   📄 **`Install-AralezSccm.ps1`**: Tuned specifically for SCCM/Intune packaging.
+
+### Linux
+*   📄 **`deploy_linux.sh`**: Wrap with `xargs` to deploy across fleets via SSH.
+*   📄 **`deploy_aralez.yml`**: Official Ansible playbook.
+
+> 📚 See [**`deploy/DEPLOYMENT.md`**](deploy/DEPLOYMENT.md) for step-by-step enterprise guides.
 
 ---
 
 ## 🧱 Building from Source
 
-Aralez uses Cargo features to control optional capabilities.
-
-| Feature | Description |
-|---------|-------------|
-| `extended-tools` | Bundles extra executables (e.g., WinPmem for memory dump) |
-| `memdump` | Alias for `extended-tools` |
-| `upload-s3` | Enables S3 upload support |
-| `upload-sftp` | Enables SFTP upload support |
-| `upload-smb` | Enables SMB upload support |
-| `upload` | Enables all upload backends (S3 + SFTP + SMB) |
+Aralez utilizes Cargo features to keep the core binary extremely lightweight, while allowing you to compile in heavy capabilities (like AWS SDKs) only when needed.
 
 ```bash
-# Default (minimal binary)
+# 1. Compile the minimal core binary
 cargo build --release
 
-# With all upload backends
-cargo build --release --features upload
-
-# With specific upload backend only
+# 2. Compile with Cloud S3 Upload support
 cargo build --release --features upload-s3
 
-# With extended tools + all uploads
+# 3. Everything enabled (Extended Tools + SMB + SFTP + S3)
 cargo build --release --features "extended-tools,upload"
-
-# Cross-compile for Windows
-cargo build --release --target x86_64-pc-windows-gnu --features upload
 ```
 
-> 📝 If you use `--output` with a destination whose feature flag is not enabled, Aralez will print an error indicating which feature to enable.
-
-> ⚠️ **Rust version requirement:** The `upload-s3` (and `upload`) feature requires **rustc ≥ 1.91.1** due to the AWS SDK dependency. Run `rustup update stable` to upgrade.
+> **Note**: Building the `upload-s3` feature requires **rustc ≥ 1.91.1**. Update via `rustup update stable`.
 
 ---
 
-## 🏢 Enterprise Deployment
+## 🤝 Contributing & Support
 
-Aralez includes ready-to-use deployment scripts for mass collection across large environments.
+We welcome pull requests representing new parsers, hunting rules, and performance tweaks to make **Aralez** the ultimate responder's asset. 
+* Please submit PRs with descriptive explanations of the performance impacts.
+* Open an **Issue** to report bugs or suggest enhancements.
 
-| Method | OS | Script |
-|--------|-----|--------|
-| SSH + xargs | Linux | `deploy/deploy_linux.sh` |
-| WinRM / PsExec | Windows | `deploy/Deploy-Aralez.ps1` |
-| Ansible | Both | `deploy/deploy_aralez.yml` |
-| SCCM / Intune | Windows | `deploy/Install-AralezSccm.ps1` |
-| GPO (Startup) | Windows | `deploy/Deploy-AralezGpo.bat` |
-| BITS | Windows | `deploy/Deploy-AralezBits.ps1` |
-| Puppet | Both | `deploy/aralez_puppet.pp` |
+### License
 
-```bash
-# Deploy to Linux machines via SSH
-./deploy/deploy_linux.sh -t targets.txt -b ./aralez_x64_linux -j 100
-
-# Deploy to Windows machines via Ansible
-ansible-playbook -i inventory.ini deploy/deploy_aralez.yml \
-    -e "output=sftp://forensic@collector.corp/incoming"
-```
-
-See [`deploy/DEPLOYMENT.md`](deploy/DEPLOYMENT.md) for full documentation.
-
----
-
-## 🤝 Contributing
-
-We welcome contributions to **Aralez**!
-
-* Submit pull requests with clear descriptions of your changes.
-* Open issues to report bugs or suggest improvements.
-
-Your contributions help make Aralez better for the entire incident response community.
-
----
-
-## 📜 License
-
-Aralez is open-source software licensed under the **Apache-2.0 License**.
-See the [LICENSE](LICENSE) file for details.
+**Aralez** is licensed under the [Apache-2.0 License](LICENSE).

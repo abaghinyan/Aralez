@@ -19,9 +19,17 @@ use zip::{write::FileOptions, ZipWriter};
 /// Global interrupt flag — set by the Ctrl+C handler.
 pub static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
+/// Global silent flag — suppresses all terminal output when set.
+pub static SILENT: AtomicBool = AtomicBool::new(false);
+
 /// Quick check for Ctrl+C.  Call this in tight loops to bail early.
 pub fn is_interrupted() -> bool {
     INTERRUPTED.load(Ordering::Relaxed)
+}
+
+/// Check if silent mode is active.
+pub fn is_silent() -> bool {
+    SILENT.load(Ordering::Relaxed)
 }
 
 // ── ZIP state ──────────────────────────────────────────────────────────────
@@ -30,6 +38,7 @@ pub fn is_interrupted() -> bool {
 pub struct ZipState {
     pub writer: ZipWriter<BufWriter<File>>,
     pub options: FileOptions<'static, ()>,
+    pub base_path: String,
 }
 
 // ── TAR state ──────────────────────────────────────────────────────────────
@@ -37,6 +46,7 @@ pub struct ZipState {
 /// Internal state held behind the Mutex in stream mode (TAR).
 pub struct TarState {
     pub builder: tar::Builder<zstd::Encoder<'static, BufWriter<File>>>,
+    pub base_path: String,
 }
 
 // ── OutputTarget ───────────────────────────────────────────────────────────
@@ -141,6 +151,22 @@ impl OutputTarget {
         !matches!(self, OutputTarget::Folder)
     }
 
+    /// Helper to strip the root_output absolute path prefix so that
+    /// archives contain relative paths (Windows Explorer rejects absolute paths).
+    fn make_archive_path(base_path: &str, full_path: &str) -> String {
+        let base_backslash = format!("{}\\", base_path);
+        let base_slash = format!("{}/", base_path);
+        
+        let relative = full_path
+            .strip_prefix(&base_backslash)
+            .or_else(|| full_path.strip_prefix(&base_slash))
+            .or_else(|| full_path.strip_prefix(base_path))
+            .unwrap_or(full_path);
+            
+        // Strip any lingering leading separators and convert to standard slashes
+        relative.trim_start_matches(|c| c == '\\' || c == '/').replace('\\', "/")
+    }
+
     /// Create or overwrite a file entry.
     ///
     /// * **Folder mode** – creates parent directories + file on disk.
@@ -161,7 +187,7 @@ impl OutputTarget {
                 let mut guard = mutex
                     .lock()
                     .map_err(|e| io::Error::other(e.to_string()))?;
-                let zip_path = full_path.replace('\\', "/");
+                let zip_path = Self::make_archive_path(&guard.base_path, full_path);
                 let opts = guard.options;
                 guard.writer.start_file(&zip_path, opts)?;
                 Ok(OutputWriter::Zip(guard))
@@ -170,7 +196,7 @@ impl OutputTarget {
                 let guard = mutex
                     .lock()
                     .map_err(|e| io::Error::other(e.to_string()))?;
-                let tar_path = full_path.replace('\\', "/");
+                let tar_path = Self::make_archive_path(&guard.base_path, full_path);
                 Ok(OutputWriter::TarBuffer {
                     state: Some(TarFlushState {
                         guard,
@@ -200,7 +226,7 @@ impl OutputTarget {
                 let mut guard = mutex
                     .lock()
                     .map_err(|e| io::Error::other(e.to_string()))?;
-                let zip_path = full_path.replace('\\', "/");
+                let zip_path = Self::make_archive_path(&guard.base_path, full_path);
                 let opts = guard.options;
                 guard.writer.start_file(&zip_path, opts)?;
                 Ok(OutputWriter::Zip(guard))
@@ -209,7 +235,7 @@ impl OutputTarget {
                 let guard = mutex
                     .lock()
                     .map_err(|e| io::Error::other(e.to_string()))?;
-                let tar_path = full_path.replace('\\', "/");
+                let tar_path = Self::make_archive_path(&guard.base_path, full_path);
                 Ok(OutputWriter::TarBuffer {
                     state: Some(TarFlushState {
                         guard,
@@ -240,7 +266,7 @@ impl OutputTarget {
                 let mut guard = mutex
                     .lock()
                     .map_err(|e| io::Error::other(e.to_string()))?;
-                let zip_path = dest_path.replace('\\', "/");
+                let zip_path = Self::make_archive_path(&guard.base_path, dest_path);
                 let opts = guard.options;
                 guard.writer.start_file(&zip_path, opts)?;
                 let mut src_file = File::open(src)?;
@@ -258,7 +284,7 @@ impl OutputTarget {
                 let mut guard = mutex
                     .lock()
                     .map_err(|e| io::Error::other(e.to_string()))?;
-                let tar_path = dest_path.replace('\\', "/");
+                let tar_path = Self::make_archive_path(&guard.base_path, dest_path);
                 let meta = fs::metadata(src)?;
                 let mut header = tar::Header::new_gnu();
                 header.set_size(meta.len());
@@ -282,7 +308,7 @@ impl OutputTarget {
                 let mut guard = mutex
                     .lock()
                     .map_err(|e| io::Error::other(e.to_string()))?;
-                let tar_path = full_path.replace('\\', "/");
+                let tar_path = Self::make_archive_path(&guard.base_path, full_path);
                 let mut header = tar::Header::new_gnu();
                 header.set_size(data.len() as u64);
                 header.set_mode(0o644);

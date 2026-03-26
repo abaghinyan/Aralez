@@ -63,6 +63,7 @@ It automates the secure collection of critical system data, enabling investigato
 | `-d` | `--default_drive` | Default drive to process (Windows only, default: `C`) |
 | | `--stream` | Compress artifacts directly into the archive on-the-fly (no intermediate folder) |
 | | `--compression` | Archive format: `zip` (default) or `tar` (crash-proof `.tar.zst`) |
+| | `--silent` | Suppress all terminal output (logs are still written to disk) |
 | | `--debug` | Enable verbose debug logging |
 | | `--show-config` | Display the embedded configuration |
 | | `--check-config` | Validate the embedded configuration |

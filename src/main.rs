@@ -305,6 +305,12 @@ fn main() -> Result<(), anyhow::Error> {
                 .help("Archive compression: 'zip' (default) or 'tar' (crash-proof .tar.zst)")
                 .value_name("TYPE")
                 .value_parser(["zip", "tar"]),
+        )
+        .arg(
+            Arg::new("silent")
+                .long("silent")
+                .help("Suppress all terminal output (logs are still written to the log file)")
+                .action(clap::ArgAction::SetTrue),
         );
     #[cfg(target_os = "windows")]
     {
@@ -498,7 +504,12 @@ fn main() -> Result<(), anyhow::Error> {
     // Check if the --debug flag was provided
     if matches.get_flag("debug") {
         env::set_var("DEBUG_MODE", "true");
-        println!("Debug mode activated!");
+        qprintln!("Debug mode activated!");
+    }
+
+    // Check if the --silent flag was provided
+    if matches.get_flag("silent") {
+        stream::SILENT.store(true, Ordering::SeqCst);
     }
 
     // Change to custom working directory if specified
@@ -515,15 +526,15 @@ fn main() -> Result<(), anyhow::Error> {
     let root_output = &config.get_output_filename();
 
     // Print the welcome message
-    println!(
+    qprintln!(
         "Welcome to {} version {} ({})",
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
         TARGET_ARCH
     );
-    println!("{}", env!("CARGO_PKG_DESCRIPTION"));
-    println!("Developed by: {}", env!("CARGO_PKG_AUTHORS"));
-    println!();
+    qprintln!("{}", env!("CARGO_PKG_DESCRIPTION"));
+    qprintln!("Developed by: {}", env!("CARGO_PKG_AUTHORS"));
+    qprintln!();
 
     dprintln!("Aralez version: {} ({})", env!("CARGO_PKG_VERSION"), TARGET_ARCH);
     dprintln!("Configuration version: {} ", &config.version.clone().unwrap_or("unknown".to_string()));
@@ -532,7 +543,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Machine resources check
     let global_memory_limit = config.get_global_memory_limit();
     if !check_memory(global_memory_limit as u64) {
-        eprintln!("[WARN] Not enough available memory (RAM).");
+        qeprintln!("[WARN] Not enough available memory (RAM).");
         dprintln!(
             "[WARN] Not enough available memory (RAM). Required at least: {} MB",
             global_memory_limit
@@ -541,7 +552,7 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     if !should_continue_collection(&config, &root_output) {
-        eprintln!("[WARN] Disk space too low");
+        qeprintln!("[WARN] Disk space too low");
 
         std::process::exit(1);
     }
@@ -553,16 +564,21 @@ fn main() -> Result<(), anyhow::Error> {
         .unwrap_or_else(|| config.get_compression());
     if stream_mode {
         dprintln!("[INFO] Stream mode enabled: compressing on-the-fly (format: {})", archive_format);
-        println!("[INFO] Stream mode: artifacts will be compressed on-the-fly (format: {})", archive_format);
+        qprintln!("[INFO] Stream mode: artifacts will be compressed on-the-fly (format: {})", archive_format);
     }
     // Create spinner early so the Ctrl+C handler can update its message
-    let spinner = std::sync::Arc::new(ProgressBar::new_spinner());
-    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .tick_strings(&["-", "\\", "|", "/"])
-            .template("{spinner:.green} {msg}")?,
-    );
+    let spinner = if stream::is_silent() {
+        std::sync::Arc::new(ProgressBar::hidden())
+    } else {
+        let s = ProgressBar::new_spinner();
+        s.enable_steady_tick(std::time::Duration::from_millis(100));
+        s.set_style(
+            ProgressStyle::default_spinner()
+                .tick_strings(&["-", "\\", "|", "/"])
+                .template("{spinner:.green} {msg}")?,
+        );
+        std::sync::Arc::new(s)
+    };
 
     // Ctrl+C handler: first press → graceful shutdown, second press → force exit
     {
@@ -589,7 +605,10 @@ fn main() -> Result<(), anyhow::Error> {
             let encoder = zstd::Encoder::new(tar_buf, 3)?;
             let builder = tar::Builder::new(encoder);
 
-            output_target = OutputTarget::Tar(std::sync::Mutex::new(TarState { builder }));
+            output_target = OutputTarget::Tar(std::sync::Mutex::new(TarState {
+                builder,
+                base_path: root_output.to_string(),
+            }));
 
             // Write config.yml directly into the tar
             let config_data = Config::get_raw_data()?;
@@ -609,7 +628,11 @@ fn main() -> Result<(), anyhow::Error> {
                 options = options.with_aes_encryption(zip::AesMode::Aes256, leaked);
             }
 
-            output_target = OutputTarget::Zip(std::sync::Mutex::new(ZipState { writer: zip, options }));
+            output_target = OutputTarget::Zip(std::sync::Mutex::new(ZipState {
+                writer: zip,
+                options,
+                base_path: root_output.to_string(),
+            }));
 
             // Write config.yml directly into the zip
             let config_data = Config::get_raw_data()?;
@@ -648,7 +671,7 @@ fn main() -> Result<(), anyhow::Error> {
 
         // Check the disk space before starting the task
         if !should_continue_collection(&config, &root_output) {
-            eprintln!("[WARN] Remaining disk space too low. Stopping collection to prevent exceeding disk limits. Collection process terminated before completion.");
+            qeprintln!("[WARN] Remaining disk space too low. Stopping collection to prevent exceeding disk limits. Collection process terminated before completion.");
             dprintln!("[WARN] Remaining disk space too low. Stopping collection to prevent exceeding disk limits. Collection process terminated before completion.");
             break;
         }
@@ -656,7 +679,7 @@ fn main() -> Result<(), anyhow::Error> {
         // Check for Ctrl+C interrupt between tasks
         if stream::is_interrupted() {
             dprintln!("[WARN] Interrupted by user. Finalizing archive with artifacts collected so far.");
-            println!("[WARN] Interrupted. Finalizing archive...");
+            qprintln!("[WARN] Interrupted. Finalizing archive...");
             break;
         }
 
@@ -862,6 +885,15 @@ fn main() -> Result<(), anyhow::Error> {
                                             }
                                         }
                                     }
+                                    
+                                    if output_target.is_stream() {
+                                        let file_path = Path::new(&output_fullpath);
+                                        if file_path.exists() {
+                                            if let Err(e) = output_target.copy_file(file_path, &output_fullpath) {
+                                                dprintln!("[ERROR] Failed to stream execute output `{}`: {}", output_fullpath, e);
+                                            }
+                                        }
+                                    }
                                 }
                                 None => dprintln!("{}", MSG_ERROR_CONFIG),
                             }
@@ -899,13 +931,16 @@ fn main() -> Result<(), anyhow::Error> {
 
         // Remove the log file AFTER finalization (dprintln! above would re-create it)
         let _ = fs::remove_file(&src_log_file);
+        
+        // Remove left-over stream tool output directories (e.g., execute tool outputs)
+        let _ = remove_dir_all(root_output);
     } else {
         // Normal mode: move logfile into the folder, then zip everything
         if Path::new(&src_log_file).exists() {
             let dest_log_file = format!("{}/{}", root_output, src_log_file);
             fs::rename(src_log_file, dest_log_file)?;
         } else {
-            println!("[WARN] Log file not found");
+            qprintln!("[WARN] Log file not found");
         }
 
         spinner.set_message("Running: compression");

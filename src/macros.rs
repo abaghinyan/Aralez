@@ -37,3 +37,28 @@ macro_rules! dprintln {
         }
     };
 }
+
+/// Like `println!`, but suppressed when `--silent` is active.
+#[macro_export]
+macro_rules! qprintln {
+    () => {
+        if !crate::stream::is_silent() {
+            println!();
+        }
+    };
+    ($($arg:tt)*) => {
+        if !crate::stream::is_silent() {
+            println!($($arg)*);
+        }
+    };
+}
+
+/// Like `eprintln!`, but suppressed when `--silent` is active.
+#[macro_export]
+macro_rules! qeprintln {
+    ($($arg:tt)*) => {
+        if !crate::stream::is_silent() {
+            eprintln!($($arg)*);
+        }
+    };
+}

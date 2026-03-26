@@ -428,20 +428,9 @@ where
         output_file_name = output_file_name.replace(":", "_");
     }
 
-    // Create the output entry via OutputTarget
-    let mut output_file = match output.create_new_entry(&output_file_name) {
-        Ok(f) => f,
-        Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-            return Ok(false);
-        }
-        Err(e) => {
-            return Err(anyhow::anyhow!(
-                "[ERROR] Failed to open file `{}` for writing: {}",
-                output_file_name,
-                e
-            ));
-        }
-    };
+    // In stream mode, the output mutex must NOT be held when calling get_attr(),
+    // because get_attr() also acquires the mutex (→ deadlock on non-reentrant Mutex).
+    // So we process $INDEX_ALLOCATION attributes FIRST, then open the main entry.
     if !is_ads {
         // Iterate over attributes to find $INDEX_ALLOCATION
         let attributes: Vec<_> = file
@@ -459,6 +448,21 @@ where
             }
         }
     }
+
+    // NOW open the main file entry (acquires the mutex in stream mode)
+    let mut output_file = match output.create_new_entry(&output_file_name) {
+        Ok(f) => f,
+        Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+            return Ok(false);
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "[ERROR] Failed to open file `{}` for writing: {}",
+                output_file_name,
+                e
+            ));
+        }
+    };
 
     // Try to get the data item, log warning if it does not exist
     let data_item = match file.data(fs, ads) {

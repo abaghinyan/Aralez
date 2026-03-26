@@ -114,6 +114,12 @@ Aralez provides battle-tested deployment scripts inside the `deploy/` folder for
 
 ---
 
+## 📖 Documentation
+
+Comprehensive documentation - including deployment guides, configuration references, and parser details - is available on the [official website](https://aralez.co).
+
+---
+
 ## 🧱 Building from Source
 
 Aralez utilizes Cargo features to keep the core binary extremely lightweight, while allowing you to compile in heavy capabilities (like AWS SDKs) only when needed.

@@ -7,6 +7,7 @@
 //
 
 use crate::reader::fs::Node;
+use crate::stream::OutputTarget;
 use anyhow::Result;
 use super::ntfs::NtfsExplorer;
 
@@ -23,7 +24,8 @@ pub trait FileSystemExplorer {
     fn collect(
         &mut self,
         config_tree: &mut Node,
-        destination_folder: &str,
+        output: &OutputTarget,
+        dest_prefix: &str,
         drive: &str) -> Result<()>;
 }
 

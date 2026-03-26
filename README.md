@@ -61,6 +61,8 @@ It automates the secure collection of critical system data, enabling investigato
 | `-w` | `--workdir` | Working directory for temporary artifact collection |
 | `-e` | `--encrypt` | Encrypt the output zip with a password |
 | `-d` | `--default_drive` | Default drive to process (Windows only, default: `C`) |
+| | `--stream` | Compress artifacts directly into the archive on-the-fly (no intermediate folder) |
+| | `--compression` | Archive format: `zip` (default) or `tar` (crash-proof `.tar.zst`) |
 | | `--debug` | Enable verbose debug logging |
 | | `--show-config` | Display the embedded configuration |
 | | `--check-config` | Validate the embedded configuration |
@@ -88,9 +90,49 @@ sudo ./aralez -w /tmp/aralez_work -o sftp://user@host/triage
 
 # Encrypt output with a password
 sudo ./aralez -e MySecurePassword123
+
+# Stream mode: compress on-the-fly (ZIP, default)
+sudo ./aralez --stream
+
+# Stream mode with TAR compression (crash-proof)
+sudo ./aralez --stream --compression tar
+
+# Change compression for normal mode too
+sudo ./aralez --compression tar
 ```
 
-> 📝 **Note:** When `--output` is used with a remote destination (S3, SFTP, SMB), the local zip file is automatically removed after a successful upload. If the destination is a local folder, the zip is moved there.
+> 📝 **Note:** When `--output` is used with a remote destination (S3, SFTP, SMB), the local archive is automatically removed after a successful upload. If the destination is a local folder, the archive is moved there.
+
+---
+
+## 🔄 Stream Mode
+
+Stream mode (`--stream`) writes collected artifacts **directly into the archive** — no intermediate folder, no extra disk usage. This reduces disk I/O from ~2× to ~1× the size of collected data.
+
+### Compression Formats
+
+| Format | Extension | Crash-proof | Encryption | Notes |
+|--------|-----------|-------------|------------|-------|
+| **ZIP** (default) | `.zip` | Ctrl+C safe, recoverable on hard kill | ✅ AES-256 | Universal compatibility |
+| **TAR** | `.tar.zst` | ✅ Any prefix is a valid archive | ❌ | Best resilience, fast zstd compression |
+
+### Interrupt Handling
+
+* **First Ctrl+C** — Graceful shutdown: finishes the current file, finalizes the archive, exits with a valid archive containing all artifacts collected so far.
+* **Second Ctrl+C** — Force exit immediately.
+* **Hard kill (SIGKILL/OOM)** — ZIP archives can be recovered with `zip -FF` or 7-Zip. TAR archives are inherently valid up to the last completed entry.
+
+### Configuration
+
+Stream mode and compression can be set via CLI flags or in `config.yml`:
+
+```yaml
+# Enable stream mode
+stream: true
+
+# Set archive compression ("zip" or "tar")
+compression: "tar"
+```
 
 ---
 

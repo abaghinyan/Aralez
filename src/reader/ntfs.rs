@@ -7,6 +7,7 @@
 //
 
 use crate::reader::sector::SectorReader;
+use crate::stream::{OutputTarget, is_interrupted};
 use std::path::Path;
 use glob::Pattern;
 use std::collections::HashSet;
@@ -19,10 +20,10 @@ use std::io::ErrorKind;
 use std::io::SeekFrom;
 use std::io::{Read, Seek, Write, BufReader};
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
-use aes_gcm::{Aes256Gcm, Key, Nonce}; // AES-GCM cipher
+use aes_gcm::{Aes256Gcm, Key, Nonce};
 use anyhow::{Error, Result};
 use chrono::{DateTime, Local};
-use std::fs::{create_dir_all, OpenOptions};
+use std::fs::create_dir_all;
 use sha2::{Digest, Sha256};
 use filetime::{set_file_handle_times, FileTime};
 use ntfs::{Ntfs, NtfsAttribute, NtfsAttributeType, NtfsFile, NtfsReadSeek};
@@ -51,7 +52,7 @@ pub fn initialize_ntfs<T: Read + Seek>(fs: &mut T) -> Result<Ntfs> {
 
 /// Process all NTFS drives except the C drive
 #[cfg(target_os = "windows")]
-pub fn process_all_drives(section_config: &mut SectionConfig, root_output: &str) -> Result<()> {
+pub fn process_all_drives(section_config: &mut SectionConfig, output: &OutputTarget, root_output: &str) -> Result<()> {
     use super::fs::process_drive_artifacts;
 
     let ntfs_drives = list_ntfs_drives()?;
@@ -70,8 +71,10 @@ pub fn process_all_drives(section_config: &mut SectionConfig, root_output: &str)
         } else {
             format!("{}\\{}", root_output, drive_letter)
         };
-        ensure_directory_exists(&output_folder)?;
-        process_drive_artifacts(&drive, section_config, &output_folder)?;
+        if !output.is_stream() {
+            ensure_directory_exists(&output_folder)?;
+        }
+        process_drive_artifacts(&drive, section_config, output, &output_folder)?;
     }
 
     Ok(())
@@ -113,7 +116,8 @@ fn process_all_directory(
     file: &NtfsFile<'_>,
     obj_name: String,
     current_path: &str,
-    destination_folder: &str,
+    output: &OutputTarget,
+    dest_prefix: &str,
     drive: &str,
     encrypt: Option<String>,
     max_size: Option<u64>,
@@ -155,7 +159,8 @@ fn process_all_directory(
                     &sub_file,
                     obj_name.clone(),
                     &new_path,
-                    destination_folder,
+                    output,
+                    dest_prefix,
                     drive,
                     encrypt.clone(),
                     max_size,
@@ -191,7 +196,7 @@ fn process_all_directory(
                         }
                     }
                     if size_ok {
-                        match get(&sub_file, &new_path, destination_folder, fs, encrypt.as_ref(), ads, drive, max_size) {
+                        match get(&sub_file, &new_path, output, dest_prefix, fs, encrypt.as_ref(), ads, drive, max_size) {
                             Ok(saved) => {
                                 local_visited_files.insert(full_path_with_ads);
                                 if saved {
@@ -216,7 +221,8 @@ pub fn process_directory(
     file: &NtfsFile<'_>,
     config_tree: &mut Node,
     current_path: &str,
-    destination_folder: &str,
+    output: &OutputTarget,
+    dest_prefix: &str,
     visited_files: &mut HashSet<String>,
     drive: &str,
     success_files_count: &mut u32
@@ -248,6 +254,9 @@ pub fn process_directory(
         }
     }
     for entry in &entries {
+        if is_interrupted() {
+            break;
+        }
         if let Ok(sub_file) = ntfs.file(fs, entry.file_record_number) {
             for (obj_name, obj_node) in &mut first_elements {
                 if obj_node.all && sub_file.is_directory() {
@@ -258,7 +267,8 @@ pub fn process_directory(
                             &sub_file,
                             obj_name.to_string(),
                             &format!("{}/{}", current_path, entry.name),
-                            destination_folder,
+                            output,
+                            dest_prefix,
                             drive,
                             obj_node.encrypt.clone(),
                             obj_node.max_size,
@@ -300,7 +310,8 @@ pub fn process_directory(
                                 &sub_file,
                                 obj_node,
                                 &new_path,
-                                destination_folder,
+                                output,
+                                dest_prefix,
                                 visited_files,
                                 drive,
                                 success_files_count
@@ -323,7 +334,8 @@ pub fn process_directory(
                             match get(
                                 &sub_file,
                                 &new_path,
-                                destination_folder,
+                                output,
+                                dest_prefix,
                                 fs,
                                 obj_node.encrypt.as_ref(),
                                 ads,
@@ -362,7 +374,8 @@ fn get_file_size(file: &NtfsFile, mut fs:  &mut BufReader<SectorReader<File>>) -
 pub fn get<T>(
     file: &NtfsFile,
     file_name: &str,
-    out_dir: &str,
+    output: &OutputTarget,
+    dest_prefix: &str,
     fs: &mut T,
     encrypt: Option<&String>,
     ads: &str,
@@ -381,26 +394,28 @@ where
             } else {
                 format!("{}.enc", path.to_string_lossy())
             };
-            format!("{}{}", out_dir, new_file_name)
+            format!("{}{}", dest_prefix, new_file_name)
         } else {
-            format!("{}{}", out_dir, file_name)
+            format!("{}{}", dest_prefix, file_name)
         }
     } else {
-        format!("{}{}", out_dir, file_name)
+        format!("{}{}", dest_prefix, file_name)
     };
 
-    // Try to create the directory, log error if it fails
-    if let Err(e) = create_dir_all(
-        output_file_name
-            .rfind('/')
-            .map(|pos| &output_file_name[..pos])
-            .unwrap_or(""),
-    ) {
-        return Err(anyhow::anyhow!(
-            "[ERROR] Failed to create directory `{}`: {}",
-            out_dir,
-            e
-        ));
+    // Create parent directory in folder mode only
+    if !output.is_stream() {
+        if let Err(e) = create_dir_all(
+            output_file_name
+                .rfind('/')
+                .map(|pos| &output_file_name[..pos])
+                .unwrap_or(""),
+        ) {
+            return Err(anyhow::anyhow!(
+                "[ERROR] Failed to create directory `{}`: {}",
+                dest_prefix,
+                e
+            ));
+        }
     }
     let is_ads = !(ads.is_empty() || ads == "");
 
@@ -413,12 +428,8 @@ where
         output_file_name = output_file_name.replace(":", "_");
     }
 
-    // Try to open the file for writing, log error if it fails
-    let mut output_file = match OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&output_file_name)
-    {
+    // Create the output entry via OutputTarget
+    let mut output_file = match output.create_new_entry(&output_file_name) {
         Ok(f) => f,
         Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
             return Ok(false);
@@ -441,7 +452,7 @@ where
             match attribute.to_attribute() {
                 Ok(attr) => {
                     if attr.ty()? == NtfsAttributeType::IndexAllocation {
-                        get_attr(&attr, fs, &output_file_name, max_size)?;
+                        get_attr(&attr, fs, output, &output_file_name, max_size)?;
                     }
                 }
                 Err(_) => dprintln!("[ERROR] Can't getting attributes"),
@@ -533,45 +544,39 @@ where
                         if !data_attribute.is_resident() && !is_ads {
                             current_file_size += bytes_read as u64;
                             if current_file_size > valid_data_length {
-                                // Write remaining data (including current read buffer) to a "slack" file
-                                let mut slack_file = match OpenOptions::new()
-                                    .write(true)
-                                    .create_new(true)
-                                    .open(&format!("{}.FileSlack", output_file_name))
-                                {
-                                    Ok(f) => f,
-                                    Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                                        return Ok(false);
-                                    }
-                                    Err(e) => {
-                                        return Err(anyhow::anyhow!(
-                                            "[ERROR] Failed to open file `{}` for writing: {}",
-                                            format!("{}.FileSlack", output_file_name),
-                                            e
-                                        ));
-                                    }
-                                };
-
-                                // Write the remaining part of the current buffer to the slack file
                                 let start_slack =
                                     (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
-                                slack_file.write_all(&read_buf[start_slack..bytes_read])?;
+                                // Buffer slack data
+                                let mut slack_data: Vec<u8> = Vec::new();
+                                slack_data.extend_from_slice(&read_buf[start_slack..bytes_read]);
 
-                                // padding with 0
+                                // padding with 0 in main file
                                 let mut padding = vec![0; bytes_read - start_slack];
                                 output_file.write_all(&padding)?;
 
-                                // Continue reading and writing all remaining data to the slack file
+                                // Continue reading remaining slack data
                                 while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
                                     if slack_bytes_read == 0 {
                                         break;
                                     }
-                                    slack_file.write_all(&read_buf[..slack_bytes_read])?;
-
+                                    slack_data.extend_from_slice(&read_buf[..slack_bytes_read]);
                                     padding = vec![0; slack_bytes_read];
                                     output_file.write_all(&padding)?;
                                 }
-                                break;
+                                // Flush and drop main file before writing slack entry
+                                output_file.flush()?;
+                                drop(output_file);
+
+                                // Write buffered slack data as a separate entry
+                                if !slack_data.is_empty() {
+                                    let slack_path = format!("{}.FileSlack", output_file_name);
+                                    if let Ok(mut slack_writer) = output.create_new_entry(&slack_path) {
+                                        let _ = slack_writer.write_all(&slack_data);
+                                    }
+                                }
+                                // Skip timestamp handling since output_file was dropped
+                                dprintln!("[INFO] Data successfully saved to `{}`", output_file_name);
+                                return Ok(true);
                             }
                         }
 
@@ -619,45 +624,38 @@ where
                             current_file_size += bytes_read as u64;
                             // Check if the Valid data is reached
                             if current_file_size > valid_data_length {
-                                // Write remaining data (including current read buffer) to a "slack" file
-                                let mut slack_file = match OpenOptions::new()
-                                    .write(true)
-                                    .create_new(true)
-                                    .open(&format!("{}.FileSlack", output_file_name))
-                                {
-                                    Ok(f) => f,
-                                    Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                                        return Ok(false);
-                                    }
-                                    Err(e) => {
-                                        return Err(anyhow::anyhow!(
-                                            "[ERROR] Failed to open file `{}` for writing: {}",
-                                            format!("{}.FileSlack", output_file_name),
-                                            e
-                                        ));
-                                    }
-                                };
-
-                                // Write the remaining part of the current buffer to the slack file
                                 let start_slack =
                                     (valid_data_length - (current_file_size - bytes_read as u64)) as usize;
-                                slack_file.write_all(&read_buf[start_slack..bytes_read])?;
+                                // Buffer slack data
+                                let mut slack_data: Vec<u8> = Vec::new();
+                                slack_data.extend_from_slice(&read_buf[start_slack..bytes_read]);
 
-                                // padding with 0
+                                // padding with 0 in main file
                                 let mut padding = vec![0; bytes_read - start_slack];
                                 output_file.write_all(&padding)?;
 
-                                // Continue reading and writing all remaining data to the slack file
+                                // Continue reading remaining slack data
                                 while let Ok(slack_bytes_read) = data_value.read(fs, &mut read_buf) {
                                     if slack_bytes_read == 0 {
                                         break;
                                     }
-                                    slack_file.write_all(&read_buf[..slack_bytes_read])?;
-
+                                    slack_data.extend_from_slice(&read_buf[..slack_bytes_read]);
                                     padding = vec![0; slack_bytes_read];
                                     output_file.write_all(&padding)?;
                                 }
-                                break;
+                                // Flush and drop main file before writing slack entry
+                                output_file.flush()?;
+                                drop(output_file);
+
+                                // Write buffered slack data as a separate entry
+                                if !slack_data.is_empty() {
+                                    let slack_path = format!("{}.FileSlack", output_file_name);
+                                    if let Ok(mut slack_writer) = output.create_new_entry(&slack_path) {
+                                        let _ = slack_writer.write_all(&slack_data);
+                                    }
+                                }
+                                dprintln!("[INFO] Data successfully saved to `{}`", output_file_name);
+                                return Ok(true);
                             }
                         }
                         let chunk = if is_ads && read_buf.iter().all(|&b| b == 0) {
@@ -690,8 +688,10 @@ where
             modified_time.offset().local_minus_utc().into(),
         ));
 
-        set_file_handle_times(&output_file, None, Some(modified_file_time))
-            .map_err(|e| anyhow::anyhow!("[ERROR] Failed to set file timestamps: {}", e))?;
+        // Set timestamps only in folder mode (zip entries don't support it)
+        if let Some(f) = output_file.as_file() {
+            let _ = set_file_handle_times(f, None, Some(modified_file_time));
+        }
     }
     match output_file.flush() {
         Ok(_) => {
@@ -740,7 +740,7 @@ where
     }
 }
 
-fn get_attr<T>(attr: &NtfsAttribute, fs: &mut T, output_file_name: &str, max_size: Option<u64>) -> Result<(), Error>
+fn get_attr<T>(attr: &NtfsAttribute, fs: &mut T, output: &OutputTarget, output_file_name: &str, max_size: Option<u64>) -> Result<(), Error>
 where
     T: Read + Seek,
 {
@@ -761,11 +761,7 @@ where
         }
     }
 
-    let mut output_file = match OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&attr_path)
-    {
+    let mut output_file = match output.create_new_entry(&attr_path) {
         Ok(f) => f,
         Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
             return Ok(());

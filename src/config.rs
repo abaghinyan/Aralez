@@ -51,6 +51,8 @@ static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| {
         max_disk_usage_pct: None,
         min_disk_space: None,
         output: None,
+        stream: None,
+        compression: None,
     })
 });
 
@@ -111,6 +113,12 @@ pub struct Config {
     pub min_disk_space: Option<u64>, // in MB
     pub max_disk_usage_pct: Option<u8>, // e.g. 50 means 50%
     pub output: Option<OutputConfig>,
+    /// Stream mode: compress artifacts directly into the zip on-the-fly (no intermediate folder).
+    /// Reduces disk usage from ~2× to ~1× during collection.
+    pub stream: Option<bool>,
+    /// Archive compression format: "zip" (default) or "tar".
+    /// TAR produces .tar.zst files that remain valid even if the process is killed.
+    pub compression: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -644,6 +652,14 @@ impl Config {
                 "/".to_string()
             }
         }
+    }
+
+    pub fn get_stream_mode(&self) -> bool {
+        self.stream.unwrap_or(false)
+    }
+
+    pub fn get_compression(&self) -> String {
+        self.compression.clone().unwrap_or_else(|| "zip".to_string())
     }
 }
 

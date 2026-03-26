@@ -8,6 +8,7 @@
 
 use crate::explorer::fs::{create_explorer, FileSystemType};
 use crate::config::SectionConfig;
+use crate::stream::OutputTarget;
 use crate::utils::split_path;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -138,12 +139,12 @@ fn get_fs_type(drive_path: &str) -> Result<FileSystemType> {
 }
 
 /// Entry point for parsing the FS partition and applying glob matching
-fn explorer(drive_path: &str, config_tree: &mut Node, destination_folder: &str, drive: &str) -> Result<()> {
+fn explorer(drive_path: &str, config_tree: &mut Node, output: &OutputTarget, destination_folder: &str, drive: &str) -> Result<()> {
     let fs_type = get_fs_type(drive_path)?;
     let mut fs_explorer = create_explorer(fs_type)?;
     if let Err(e) = (|| -> Result<()> {
         fs_explorer.initialize(&drive_path)?;
-        fs_explorer.collect(config_tree, destination_folder, drive)?;
+        fs_explorer.collect(config_tree, output, destination_folder, drive)?;
         Ok(())
     })() {
         // If we hit a journal-feature incompatibility, fall back on Linux.
@@ -152,7 +153,7 @@ fn explorer(drive_path: &str, config_tree: &mut Node, destination_folder: &str, 
             if e.to_string().contains("incompatible filesystem: missing required journal features") {
                 let mut fallback = create_explorer(FileSystemType::PosixFallback)?;
                 fallback.initialize(&drive_path)?;
-                fallback.collect(config_tree, destination_folder, drive)?;
+                fallback.collect(config_tree, output, destination_folder, drive)?;
                 return Ok(())
             }
         }
@@ -267,6 +268,7 @@ impl Node {
 pub fn process_drive_artifacts(
     drive: &str,
     section_config: &mut SectionConfig,
+    output: &OutputTarget,
     output_path: &str,
 ) -> Result<()> {
     let drive_path: String = if cfg!(target_os = "windows") {
@@ -323,7 +325,7 @@ pub fn process_drive_artifacts(
         tree.insert(&path, files, encrypt, max_size);
     }
 
-    explorer(&drive_path, &mut tree, &output_path.replace("\\", "/"), drive)?;
+    explorer(&drive_path, &mut tree, output, &output_path.replace("\\", "/"), drive)?;
 
     Ok(())
 }

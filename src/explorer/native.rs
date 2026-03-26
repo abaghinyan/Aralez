@@ -8,10 +8,11 @@
 use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::reader::fs::Node;
+use crate::stream::OutputTarget;
 use super::fs::FileSystemExplorer;
 
 /// Explorer that walks a mounted POSIX filesystem using std::fs
@@ -74,29 +75,31 @@ impl NativeExplorer {
     }
 
     /// Mirror the directory tree relative to self.mount_point and copy a single path.
-    fn copy_file_preserve_tree(&self, abs_src: &Path, dst_root: &Path) -> Result<()> {
+    fn copy_file_preserve_tree(&self, abs_src: &Path, output: &OutputTarget, dest_prefix: &str) -> Result<()> {
         // Compute relative path under the mount point so we can mirror the tree
         let rel = abs_src.strip_prefix(&self.mount_point)
             .unwrap_or(abs_src);
         let rel_norm = rel.strip_prefix("/").unwrap_or(rel);
-        let dst_path = dst_root.join(rel_norm);
-
-        if let Some(parent) = dst_path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("create_dir_all({})", parent.display()))?;
-        }
+        let dst_path_str = format!("{}/{}", dest_prefix, rel_norm.to_string_lossy());
 
         let meta = fs::symlink_metadata(abs_src)
             .with_context(|| format!("symlink_metadata({})", abs_src.display()))?;
 
         if meta.is_file() {
-            fs::copy(abs_src, &dst_path)
-                .with_context(|| format!("copy {} -> {}", abs_src.display(), dst_path.display()))?;
+            // Stream file through OutputTarget in 8KB chunks
+            let mut src_file = File::open(abs_src)
+                .with_context(|| format!("open({})", abs_src.display()))?;
+            let mut writer = output.create_entry(&dst_path_str)
+                .with_context(|| format!("create_entry({})", dst_path_str))?;
+            let mut buf = [0u8; 8192];
+            loop {
+                let n = src_file.read(&mut buf)?;
+                if n == 0 { break; }
+                writer.write_all(&buf[..n])?;
+            }
         } else if meta.is_dir() {
-            fs::create_dir_all(&dst_path)
-                .with_context(|| format!("create_dir_all({})", dst_path.display()))?;
+            output.ensure_dir(&dst_path_str)?;
         } else if meta.file_type().is_symlink() {
-            // Best-effort: if symlink points to a regular file, copy target contents
             let target = fs::read_link(abs_src)
                 .with_context(|| format!("read_link({})", abs_src.display()))?;
             let real = if target.is_absolute() {
@@ -105,11 +108,16 @@ impl NativeExplorer {
                 abs_src.parent().unwrap_or_else(|| Path::new("/")).join(target)
             };
             if real.is_file() {
-                if let Some(parent) = dst_path.parent() {
-                    fs::create_dir_all(parent)?;
+                let mut src_file = File::open(&real)
+                    .with_context(|| format!("open({})", real.display()))?;
+                let mut writer = output.create_entry(&dst_path_str)
+                    .with_context(|| format!("create_entry({})", dst_path_str))?;
+                let mut buf = [0u8; 8192];
+                loop {
+                    let n = src_file.read(&mut buf)?;
+                    if n == 0 { break; }
+                    writer.write_all(&buf[..n])?;
                 }
-                fs::copy(&real, &dst_path)
-                    .with_context(|| format!("copy {} -> {}", real.display(), dst_path.display()))?;
             }
         }
         Ok(())
@@ -146,7 +154,8 @@ impl NativeExplorer {
         start_dir: &Path,
         obj_name: String,
         visited: &mut HashSet<String>,
-        dest_folder: &Path,
+        output: &OutputTarget,
+        dest_prefix: &str,
         _encrypt: Option<String>, // encryption not implemented in native fallback
         max_size: Option<u64>,
         success_files_count: &mut u32,
@@ -192,12 +201,12 @@ impl NativeExplorer {
                 if meta.is_dir() {
                     visited.insert(entry_str.clone());
                     // Ensure directory exists in destination (mirror)
-                    self.copy_file_preserve_tree(&path, dest_folder)?;
+                    self.copy_file_preserve_tree(&path, output, dest_prefix)?;
                     stack.push(path);
                 } else if meta.is_file() {
                     if obj_name == "*" || Self::is_pattern_match(&entry_str, &obj_name) {
                         if Self::is_file_size_ok(meta.len(), max_size) {
-                            match self.copy_file_preserve_tree(&path, dest_folder) {
+                            match self.copy_file_preserve_tree(&path, output, dest_prefix) {
                                 Ok(_) => {
                                     dprintln!("[INFO] Data successfully saved to mirror path for {}", entry_str);
                                     visited.insert(entry_str);
@@ -221,7 +230,8 @@ impl NativeExplorer {
         &self,
         current_path: &Path,
         config_tree: &mut Node,
-        dest_folder: &Path,
+        output: &OutputTarget,
+        dest_prefix: &str,
         visited: &mut HashSet<String>,
         success_files_count: &mut u32,
     ) -> Result<u32> {
@@ -234,7 +244,8 @@ impl NativeExplorer {
                     current_path,
                     "*".to_string(),
                     visited,
-                    dest_folder,
+                    output,
+                    dest_prefix,
                     node.encrypt.clone(),
                     node.max_size,
                     success_files_count,
@@ -291,12 +302,13 @@ impl NativeExplorer {
                         // Mark visited before recursion to avoid re-walking
                         visited.insert(entry_str.clone());
                         // Mirror the directory node to destination
-                        self.copy_file_preserve_tree(&path, dest_folder)?;
+                        self.copy_file_preserve_tree(&path, output, dest_prefix)?;
                         // Recurse with the matching node
                         self.process_directory(
                             &path,
                             obj_node,
-                            dest_folder,
+                            output,
+                            dest_prefix,
                             visited,
                             success_files_count,
                         )?;
@@ -304,7 +316,7 @@ impl NativeExplorer {
                         && meta.is_file()
                         && Self::is_file_size_ok(meta.len(), obj_node.max_size)
                     {
-                        match self.copy_file_preserve_tree(&path, dest_folder) {
+                        match self.copy_file_preserve_tree(&path, output, dest_prefix) {
                             Ok(_) => {
                                 visited.insert(entry_str.clone());
                                 dprintln!("[INFO] Data successfully saved to mirror path for {}", entry_str);
@@ -338,16 +350,14 @@ impl FileSystemExplorer for NativeExplorer {
         Ok(())
     }
 
-    fn collect(&mut self, config_tree: &mut Node, destination_folder: &str, drive: &str) -> Result<()> {
-        let dst_root = Path::new(destination_folder);
-        fs::create_dir_all(dst_root)
-            .with_context(|| format!("create_dir_all({})", dst_root.display()))?;
+    fn collect(&mut self, config_tree: &mut Node, output: &OutputTarget, dest_prefix: &str, drive: &str) -> Result<()> {
+        output.ensure_dir(dest_prefix)?;
 
         let start = Path::new(&self.mount_point);
         let mut visited = HashSet::new();
         let mut count = 0u32;
 
-        self.process_directory(start, config_tree, dst_root, &mut visited, &mut count)?;
+        self.process_directory(start, config_tree, output, dest_prefix, &mut visited, &mut count)?;
         dprintln!("Finished processing of drive {}", drive);
         Ok(())
     }

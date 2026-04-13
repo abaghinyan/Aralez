@@ -29,6 +29,29 @@ pub fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> Result<bool> {
     }
 }
 
+pub fn is_apfs_partition<T: Read + Seek>(reader: &mut T) -> Result<bool> {
+    const APFS_SIGNATURE: &[u8] = b"NXSB";
+    let mut magic = [0u8; 4];
+    if reader.seek(SeekFrom::Start(32)).is_err() {
+        return Ok(false);
+    }
+    match reader.read_exact(&mut magic) {
+        Ok(_) => Ok(&magic == APFS_SIGNATURE),
+        Err(_) => Ok(false),
+    }
+}
+
+pub fn is_hfsplus_partition<T: Read + Seek>(reader: &mut T) -> Result<bool> {
+    let mut magic = [0u8; 2];
+    if reader.seek(SeekFrom::Start(1024)).is_err() {
+        return Ok(false);
+    }
+    match reader.read_exact(&mut magic) {
+        Ok(_) => Ok(&magic == b"H+" || &magic == b"HX"),
+        Err(_) => Ok(false),
+    }
+}
+
 pub fn is_ext4_partition<T: Read + Seek>(reader: &mut T) -> Result<bool>
 {
     const SUPERBLOCK_OFFSET: u64 = 1024;
@@ -117,10 +140,21 @@ pub fn get_default_drive() -> String {
     "C".to_string()
 }
 
+#[cfg(target_os = "macos")]
+pub fn get_default_drive() -> String {
+    "/".to_string()
+}
+
 fn get_fs_type(drive_path: &str) -> Result<FileSystemType> {
     if let Ok(mut file) = File::open(&drive_path) {
         if is_ntfs_partition(&mut file)? {
             return Ok(FileSystemType::NTFS);
+        }
+        if is_apfs_partition(&mut file)? {
+            return Ok(FileSystemType::APFS);
+        }
+        if is_hfsplus_partition(&mut file)? {
+            return Ok(FileSystemType::HFSPlus);
         }
         if is_ext4_partition(&mut file)? {
             // Prefer PosixFallback when not a real block device path
@@ -132,7 +166,9 @@ fn get_fs_type(drive_path: &str) -> Result<FileSystemType> {
         }
         #[cfg(target_os = "linux")]
         return Ok(FileSystemType::PosixFallback);
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        return Ok(FileSystemType::PosixFallback);
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         return Err(anyhow::anyhow!("Given File System is not supported"));
     }
     Err(anyhow::anyhow!("File Open Error"))

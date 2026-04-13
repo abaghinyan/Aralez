@@ -136,6 +136,22 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
     output
 }
 
+#[cfg(target_os = "macos")]
+pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
+    let run_internal_start_time = Instant::now();
+    dprintln!("[INFO] > {} | Starting execution", tool_name);
+
+    let output_file_path = Path::new(output_filename);
+    let output: Option<String> = None;
+
+    match tool_name {
+        &_ => {
+            dprintln!("[ERROR] > {} | Internal tool not found (macOS)", tool_name);
+            return None;
+        }
+    }
+}
+
 #[cfg_attr(unix, allow(unused_variables))]
 pub fn run(
     mut name: String,

@@ -50,6 +50,7 @@ pub mod resource;
 mod explorer {
     pub mod ntfs;
     pub mod fs;
+    pub mod apfs;
 }
 
 #[cfg(target_os = "windows")]
@@ -57,6 +58,7 @@ mod reader {
     pub mod ntfs;
     pub mod fs;
     pub mod sector;
+    pub mod apfs;
 }
 
 #[cfg(target_os = "windows")]
@@ -76,6 +78,7 @@ mod explorer {
     pub mod ntfs;
     pub mod ext4;
     pub mod native;
+    pub mod apfs;
 }
 
 #[cfg(target_os = "linux")]
@@ -84,7 +87,36 @@ mod reader {
     pub mod fs;
     pub mod ntfs;
     pub mod sector;
+    pub mod apfs;
 }
+
+#[cfg(target_os = "macos")]
+mod explorer {
+    pub mod fs;
+    pub mod apfs;
+    pub mod hfsplus;
+    pub mod native;
+}
+
+#[cfg(target_os = "macos")]
+mod reader {
+    pub mod fs;
+    pub mod apfs;
+    pub mod hfsplus;
+    pub mod sector;
+}
+
+#[cfg(target_os = "macos")]
+pub mod macos_imports {
+    pub use std::io::Read;
+    pub use super::config::{CONFIG_MARKER_START, CONFIG_MARKER_END};
+    pub use std::fs::OpenOptions;
+    pub use crate::execute::run_internal;
+    pub use nix::unistd::Uid;
+}
+
+#[cfg(target_os = "macos")]
+use macos_imports::*;
 
 #[cfg(target_os = "linux")]
 pub mod linux_imports {
@@ -160,7 +192,7 @@ fn update_embedded_config(config_path: &str, output_path: &str) -> std::io::Resu
     let current_exe = env::current_exe()?;
     fs::copy(&current_exe, &output_path)?;
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         let new_config_data = fs::read(config_path)?;
         let mut file = OpenOptions::new().read(true).write(true).open(&output_path)?;
@@ -211,7 +243,7 @@ fn update_embedded_config(config_path: &str, output_path: &str) -> std::io::Resu
 }
 
 fn main() -> Result<(), anyhow::Error> {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     if !Uid::effective().is_root() {
         eprintln!("[WARN] Aralez must be run as root/administrator.");
         eprintln!("Try: sudo ./aralez");
@@ -351,13 +383,13 @@ fn main() -> Result<(), anyhow::Error> {
         );
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         cmd = cmd.arg(
             Arg::new("default_drive")
                 .short('d')
                 .long("default_drive")
-                .help("Specify the mounted NTFS device to process (ex: /dev/loopX)")
+                .help("Specify the mounted device to process (ex: /dev/diskX)")
                 .value_name("DRIVE")
                 .required(false),
         );
@@ -708,10 +740,10 @@ fn main() -> Result<(), anyhow::Error> {
                             let output_collect_folder = match section_config.get_output_folder() {
                                 Some(o) => o.replace("{{root_output_path}}", root_output)
                                     .replace("{{drive}}", &drive),
+                                #[cfg(not(target_os = "windows"))]
+                                None => format!("{}/{}", root_output, drive),
                                 #[cfg(target_os = "windows")]
                                 None => format!("{}\\{}", root_output, drive),
-                                #[cfg(target_os = "linux")]
-                                None => format!("{}/{}", root_output, drive),
                             };
                             if !output_target.is_stream() {
                                 ensure_directory_exists(&output_collect_folder)?;
@@ -842,7 +874,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                 }
                                             }
                                         }
-                                        #[cfg(target_os = "linux")] 
+                                        #[cfg(any(target_os = "linux", target_os = "macos"))] 
                                         config::TypeExec::Internal => {
                                             let result = run_internal(&executor_name, &output_fullpath);
                                             if let Some(link_element) = executor.link {
@@ -1040,7 +1072,7 @@ fn collect_exec_result(section_config: &SectionConfig, result: String, task: Sec
                             .replace("{{drive}}", &drive),
         #[cfg(target_os = "windows")]
         None => format!("{}\\{}", root_output, drive),
-        #[cfg(target_os = "linux")]
+        #[cfg(not(target_os = "windows"))]
         None => format!("{}/{}", root_output, drive),
     };
     if !output.is_stream() {

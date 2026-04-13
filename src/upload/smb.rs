@@ -27,9 +27,9 @@ pub fn upload(
         .ok_or_else(|| anyhow::anyhow!("Invalid zip file path"))?
         .to_string_lossy();
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
-        upload_linux(zip_path, &file_name, share, username, password, domain)
+        upload_unix(zip_path, &file_name, share, username, password, domain)
     }
 
     #[cfg(target_os = "windows")]
@@ -38,8 +38,8 @@ pub fn upload(
     }
 }
 
-#[cfg(target_os = "linux")]
-fn upload_linux(
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn upload_unix(
     zip_path: &str,
     file_name: &str,
     share: &str,

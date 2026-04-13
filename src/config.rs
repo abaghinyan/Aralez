@@ -29,14 +29,14 @@ pub mod windows_imports {
 #[cfg(target_os = "windows")]
 use windows_imports::*;
 
-#[cfg(target_os = "linux")]
-pub mod linux_imports {
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub mod unix_imports {
     pub const CONFIG_MARKER_START: &[u8] = b"===CONFIG_START===\n";
     pub const CONFIG_MARKER_END: &[u8] = b"===CONFIG_END===\n";
 }
 
-#[cfg(target_os = "linux")]
-pub use linux_imports::*;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub use unix_imports::*;
 
 static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| {
     Mutex::new(Config {
@@ -151,7 +151,7 @@ pub enum ExecType {
 
 impl SectionConfig {
     pub fn get_output_folder(&self) -> Option<String> {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             self.output_folder
                 .as_ref()
@@ -427,9 +427,9 @@ impl<'de> Deserialize<'de> for TypeExec {
                     "internal" => Ok(TypeExec::Internal),
                     "system" => Ok(TypeExec::System),
                     "external" => {
-                        #[cfg(target_os = "linux")]
+                        #[cfg(any(target_os = "linux", target_os = "macos"))]
                         return Err(de::Error::custom(
-                            "`exec_type: external` is not available on Linux. Use `internal` or `system`.",
+                            "`exec_type: external` is not available on this platform. Use `internal` or `system`.",
                         ));
                         #[cfg(target_os = "windows")]
                         {
@@ -509,7 +509,7 @@ impl Config {
         Ok(Self::normalize_newlines(s))
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub fn load_embedded_config() -> Result<String> {
         use std::{env, fs};
 
@@ -542,7 +542,7 @@ impl Config {
         Ok(cfg)
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     pub fn load_embedded_config() -> Result<String> {
         anyhow::bail!("Embedded config not supported on this platform")
     }
@@ -572,7 +572,7 @@ impl Config {
     }
 
     pub fn get_raw_data() -> Result<String> {
-        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
         if let Ok(embedded_config) = Self::load_embedded_config() {
             if !embedded_config.is_empty() {
                 return Ok(embedded_config);
@@ -647,7 +647,7 @@ impl Config {
             {
                 "C:\\".to_string()
             }
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             {
                 "/".to_string()
             }
@@ -751,6 +751,7 @@ impl SearchConfig {
 
 #[allow(dead_code)]
 impl ExecType {
+    #[cfg(target_os = "windows")]
     pub const EXTERNAL: ExecType = ExecType::External;
     pub const SYSTEM: ExecType = ExecType::System;
 }

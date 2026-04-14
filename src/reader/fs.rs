@@ -363,15 +363,14 @@ pub fn process_drive_artifacts(
     output: &OutputTarget,
     output_path: &str,
 ) -> Result<()> {
-    let drive_path: String = if cfg!(target_os = "windows") {
-        format!("\\\\.\\{}:", drive.chars().next().unwrap())
-    } else if cfg!(target_os = "macos") {
-        // drive is a device basename (e.g. "disk3s4s1") — resolve to mount point.
-        // SIP prevents File::open on /dev/diskXsY, so we walk the mounted FS.
-        resolve_macos_mount_point(drive)
-    } else {
-        drive.to_string()
-    };
+    #[cfg(target_os = "windows")]
+    let drive_path: String = format!("\\\\.\\{}:", drive.chars().next().unwrap());
+
+    #[cfg(target_os = "macos")]
+    let drive_path: String = resolve_macos_mount_point(drive);
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let drive_path: String = drive.to_string();
 
     let mut config_entries: HashMap<String, (Vec<String>, Option<String>, Option<u64>)> = HashMap::new();
     if let Some(ref mut entries) = section_config.entries {

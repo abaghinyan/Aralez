@@ -24,6 +24,13 @@ pub mod linux_internal {
     pub mod system;
 }
 
+#[cfg(target_os = "macos")]
+#[path = "execute/macos"]
+pub mod macos_internal {
+    pub mod process;
+    pub mod process_details;
+}
+
 use crate::config::ExecType;
 use std::fs::File;
 #[cfg(target_os = "windows")]
@@ -63,6 +70,15 @@ mod linux_imports {
 // Bring into scope at top-level
 #[cfg(target_os = "linux")]
 use linux_imports::*;
+
+#[cfg(target_os = "macos")]
+mod macos_imports {
+    pub use super::macos_internal::*;
+}
+
+// Bring into scope at top-level
+#[cfg(target_os = "macos")]
+use macos_imports::*;
 
 #[cfg(target_os = "windows")]
 pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
@@ -145,11 +161,28 @@ pub fn run_internal(tool_name: &str, output_filename: &str) -> Option<String> {
     let output: Option<String> = None;
 
     match tool_name {
+        "ProcInfo" => process::run(&output_file_path),
+        "ProcDetailsInfo" => process_details::run(&output_file_path),
         &_ => {
             dprintln!("[ERROR] > {} | Internal tool not found (macOS)", tool_name);
             return None;
         }
     }
+    
+    dprintln!(
+        "[INFO] > {} | The output has been saved to: {}",
+        tool_name,
+        output_filename
+    );
+    let run_internal_elapsed = run_internal_start_time.elapsed();
+    dprintln!(
+        "[INFO] > {} | Execution completed in {:?}.{:?} sec",
+        tool_name, 
+        run_internal_elapsed.as_secs(),
+        run_internal_elapsed.subsec_millis()
+    );
+
+    output
 }
 
 #[cfg_attr(unix, allow(unused_variables))]

@@ -3,6 +3,7 @@ tools/*
 config/*
 !config/config_linux.yml.template
 !config/config_windows.yml.template
+!config/config_macos.yml.template
 app.res 
 !tools/.gitkeep 
 # macOS SDK cache (downloaded for cross-compilation)

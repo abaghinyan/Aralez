@@ -182,6 +182,9 @@ fn check_config() -> Result<Config, anyhow::Error> {
 fn is_drive_accessible(drive: &str) -> bool {
     let drive_path = if cfg!(target_os = "windows") {
         format!("{}:\\", drive)
+    } else if cfg!(target_os = "macos") {
+        // drive is a device basename (e.g. "disk3s4s1") — check the block device exists
+        format!("/dev/{}", drive)
     } else {
         drive.to_string()
     };
@@ -587,6 +590,21 @@ fn main() -> Result<(), anyhow::Error> {
         qeprintln!("[WARN] Disk space too low");
 
         std::process::exit(1);
+    }
+
+    // macOS: Check for Full Disk Access (TCC) before collection starts
+    #[cfg(target_os = "macos")]
+    {
+        // Probe a TCC-protected path that requires FDA.
+        // /Library/Application Support/com.apple.TCC/TCC.db is the canonical test.
+        let tcc_probe = std::path::Path::new("/Library/Application Support/com.apple.TCC/TCC.db");
+        if tcc_probe.exists() && fs::File::open(tcc_probe).is_err() {
+            qeprintln!("[WARN] Full Disk Access is NOT granted. Many forensic artifacts will be inaccessible.");
+            qeprintln!("[WARN] Grant FDA: System Settings → Privacy & Security → Full Disk Access → add Terminal (or this binary).");
+            dprintln!("[WARN] TCC check failed: could not open {}. Full Disk Access is required for complete triage.", tcc_probe.display());
+        } else {
+            dprintln!("[INFO] Full Disk Access check passed.");
+        }
     }
 
     // Determine stream mode: CLI flag overrides config

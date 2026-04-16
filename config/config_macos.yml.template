@@ -11,6 +11,10 @@
 # Focus: Cyber attack investigation artifacts ONLY.
 # Does NOT collect user documents, mail, calendars, or personal data.
 #
+# References:
+#   - macOS Forensics: The Basics (TryHackMe)
+#     https://medium.com/@RosanaFS/macos-forensics-the-basics-tryhackme-walkthrough-35b6a567db9b
+#
 version: "Aralez_config_v1.0_macos"
 max_size: 5000000000
 memory_limit: 512
@@ -62,6 +66,17 @@ tasks:
           output_file: "ps.txt"
           exec_type: "system"
 
+        # --- Launch Services (running agents/daemons — persistence check) ---
+        - name: "/bin/launchctl"
+          args: ["list"]
+          output_file: "launchctl_list.txt"
+          exec_type: "system"
+        - name: "/bin/launchctl"
+          args: ["dumpstate"]
+          output_file: "launchctl_dumpstate.txt"
+          exec_type: "system"
+          timeout: 300
+
         # --- Network (volatile) ---
         - name: "/usr/sbin/netstat"
           args: ["-an"]
@@ -83,6 +98,10 @@ tasks:
           args: ["-rn"]
           output_file: "routes.txt"
           exec_type: "system"
+        - name: "/usr/bin/dscacheutil"
+          args: ["-cachedump", "-entries", "Host"]
+          output_file: "dns_cache.txt"
+          exec_type: "system"
 
         # --- Disk State ---
         - name: "/bin/df"
@@ -97,9 +116,17 @@ tasks:
           args: ["list"]
           output_file: "diskutil_list.txt"
           exec_type: "system"
+        # APFS container/volume layout — shows Preboot, Recovery, VM,
+        # Data, System roles
         - name: "/usr/sbin/diskutil"
           args: ["apfs", "list"]
           output_file: "diskutil_apfs.txt"
+          exec_type: "system"
+
+        # --- APFS Snapshots (Time Machine local snapshots) ---
+        - name: "/usr/bin/tmutil"
+          args: ["listlocalsnapshots", "/"]
+          output_file: "apfs_snapshots.txt"
           exec_type: "system"
 
         # --- Users & Auth ---
@@ -110,6 +137,10 @@ tasks:
         - name: "/usr/bin/dscl"
           args: [".", "-readall", "/Users", "UniqueID", "PrimaryGroupID", "UserShell", "NFSHomeDirectory", "RecordName"]
           output_file: "users_detail.txt"
+          exec_type: "system"
+        - name: "/usr/bin/dscl"
+          args: [".", "-list", "/Groups"]
+          output_file: "groups.txt"
           exec_type: "system"
         - name: "/usr/bin/last"
           args: []
@@ -156,6 +187,16 @@ tasks:
         - name: "/usr/sbin/spctl"
           args: ["--status"]
           output_file: "gatekeeper_status.txt"
+          exec_type: "system"
+
+        # --- FileVault Encryption Status ---
+        - name: "/usr/bin/fdesetup"
+          args: ["status"]
+          output_file: "filevault_status.txt"
+          exec_type: "system"
+        - name: "/usr/bin/fdesetup"
+          args: ["list"]
+          output_file: "filevault_users.txt"
           exec_type: "system"
 
         # --- Unified Log snapshot (security-focused) ---
@@ -265,13 +306,24 @@ tasks:
           max_size: 200000000
 
       #----------------------------------------------------------------------
-      # TCC — Privacy / Permissions database (attacker may modify this)
+      # TCC — Privacy / Permissions database (Full Disk Access grants,
+      # attacker may modify to bypass FDA)
       #----------------------------------------------------------------------
       tcc:
         - root_path: "/Library/Application Support/com.apple.TCC/"
           objects: ["TCC.db", "TCC.db-wal", "TCC.db-shm"]
         - root_path: "/Users/*/Library/Application Support/com.apple.TCC/"
           objects: ["TCC.db", "TCC.db-wal", "TCC.db-shm"]
+
+      #----------------------------------------------------------------------
+      # Authorization Database — Controls system-wide security policies
+      # including FDA, SIP-related permissions
+      #----------------------------------------------------------------------
+      authorization_db:
+        - root_path: "/private/var/db/auth.db/"
+          objects: ["**"]
+        - root_path: "/etc/authorization/"
+          objects: ["**"]
 
       #----------------------------------------------------------------------
       # Launch Agents & Daemons — Primary persistence mechanism
@@ -322,6 +374,18 @@ tasks:
           objects: ["**"]
 
       #----------------------------------------------------------------------
+      # Shell Profiles & RC Files (persistence via login hooks)
+      #----------------------------------------------------------------------
+      shell_profiles:
+        - root_path: "/etc/"
+          objects: ["profile", "bashrc", "zshrc", "zprofile", "zshenv", "zlogout"]
+        - root_path: "/Users/*/"
+          objects: [".profile", ".bashrc", ".bash_profile", ".bash_login", ".bash_logout",
+                    ".zshrc", ".zprofile", ".zshenv", ".zlogin", ".zlogout"]
+        - root_path: "/var/root/"
+          objects: [".profile", ".bashrc", ".bash_profile", ".zshrc", ".zprofile", ".zshenv"]
+
+      #----------------------------------------------------------------------
       # SSH Artifacts (lateral movement / persistence)
       #----------------------------------------------------------------------
       ssh_root:
@@ -348,7 +412,8 @@ tasks:
         - root_path: "/etc/"
           objects: ["hosts", "resolv.conf", "sudoers", "passwd", "group", "shells", "pf.conf", "sysctl.conf"]
         - root_path: "/Library/Preferences/"
-          objects: ["com.apple.alf.plist", "com.apple.loginwindow.plist"]
+          objects: ["com.apple.alf.plist", "com.apple.loginwindow.plist",
+                    "com.apple.security.plist"]
         - root_path: "/Library/Preferences/SystemConfiguration/"
           objects: ["preferences.plist", "com.apple.airport.preferences.plist", "NetworkInterfaces.plist"]
 
@@ -381,14 +446,28 @@ tasks:
           max_size: 50000000
 
       #----------------------------------------------------------------------
+      # Application Bundle Info — Installed app metadata
+      #----------------------------------------------------------------------
+      app_bundle_info:
+        - root_path: "/Applications/"
+          objects: ["*/Contents/Info.plist"]
+        - root_path: "/Applications/Utilities/"
+          objects: ["*/Contents/Info.plist"]
+        - root_path: "/Users/*/Applications/"
+          objects: ["*/Contents/Info.plist"]
+
+      #----------------------------------------------------------------------
       # Browser Artifacts (attack delivery, C2 callbacks, exfil)
       #----------------------------------------------------------------------
       safari:
         - root_path: "/Users/*/Library/Safari/"
-          objects: ["History.db", "History.db-wal", "Downloads.plist", "Extensions/Extensions.plist"]
+          objects: ["History.db", "History.db-wal", "Downloads.plist", "Extensions/Extensions.plist",
+                    "Bookmarks.plist", "TopSites.plist", "LastSession.plist",
+                    "RecentlyClosedTabs.plist"]
       chrome:
         - root_path: "/Users/*/Library/Application Support/Google/Chrome/Default/"
-          objects: ["History", "Cookies", "Login Data", "Preferences", "Web Data"]
+          objects: ["History", "Cookies", "Login Data", "Preferences", "Web Data",
+                    "Bookmarks", "Extensions/**"]
       firefox:
         - root_path: "/Users/*/Library/Application Support/Firefox/Profiles/*/"
           objects: ["places.sqlite", "cookies.sqlite", "logins.json", "formhistory.sqlite", "downloads.sqlite", "extensions.json", "addons.json"]
@@ -403,7 +482,8 @@ tasks:
         - root_path: "/Users/*/Library/Application Support/com.apple.sharedfilelist/"
           objects: ["**"]
         - root_path: "/Users/*/Library/Preferences/"
-          objects: ["com.apple.recentitems.plist", "com.apple.dock.plist"]
+          objects: ["com.apple.recentitems.plist", "com.apple.dock.plist",
+                    "com.apple.finder.plist"]
 
       #----------------------------------------------------------------------
       # Keychains (credential stores — may contain extracted secrets)
@@ -422,16 +502,34 @@ tasks:
           objects: [".aws/credentials", ".aws/config", ".kube/config", ".docker/config.json", ".azure/azureProfile.json"]
 
       #----------------------------------------------------------------------
+      # Core Dumps — Process crash memory images
+      #----------------------------------------------------------------------
+      core_dumps:
+        - root_path: "/cores/"
+          objects: ["core.*"]
+          max_size: 500000000
+
+      #----------------------------------------------------------------------
+      # Swap / Virtual Memory artifacts
+      #----------------------------------------------------------------------
+      swap_files:
+        - root_path: "/private/var/vm/"
+          objects: ["swapfile*", "sleepimage"]
+          max_size: 500000000
+
+      #----------------------------------------------------------------------
       # Suspicious Files — executables in user-writable locations
       #----------------------------------------------------------------------
       suspicious_downloads:
         - root_path: "/Users/*/Downloads/"
-          objects: ["*.sh", "*.py", "*.app", "*.dmg", "*.pkg", "*.command", "*.scpt", "*.dylib", "*.so", "*.jar", "*.pl", ".*"]
+          objects: ["*.sh", "*.py", "*.app", "*.dmg", "*.pkg", "*.command",
+                    "*.scpt", "*.dylib", "*.so", "*.jar", "*.pl", "*.xar", ".*"]
           max_size: 5242880
           encrypt: "infected"
       suspicious_desktop:
         - root_path: "/Users/*/Desktop/"
-          objects: ["*.sh", "*.py", "*.app", "*.dmg", "*.pkg", "*.command", "*.scpt", "*.dylib", "*.so", "*.jar", ".*"]
+          objects: ["*.sh", "*.py", "*.app", "*.dmg", "*.pkg", "*.command",
+                    "*.scpt", "*.dylib", "*.so", "*.jar", "*.xar", ".*"]
           max_size: 5242880
           encrypt: "infected"
       suspicious_tmp:
@@ -446,11 +544,33 @@ tasks:
           max_size: 50000000
 
       #----------------------------------------------------------------------
-      # Kernel Extension Artifacts (rootkit persistence)
+      # Dylib Hijacking — Suspicious dynamic libraries in common paths
+      #----------------------------------------------------------------------
+      suspicious_dylibs:
+        - root_path: "/usr/local/lib/"
+          objects: ["*.dylib"]
+          max_size: 20000000
+        - root_path: "/Users/*/Library/"
+          objects: ["**/*.dylib"]
+          max_size: 20000000
+
+      #----------------------------------------------------------------------
+      # Third-Party Tools — /opt persistence
+      #----------------------------------------------------------------------
+      opt_persistence:
+        - root_path: "/opt/"
+          objects: ["**/*.plist", "**/*.sh", "**/*.py", "**/*.dylib"]
+          max_size: 20000000
+        - root_path: "/usr/local/bin/"
+          objects: ["*"]
+          max_size: 20000000
+
+      #----------------------------------------------------------------------
+      # Kernel Extension Bundles (rootkit persistence)
       #----------------------------------------------------------------------
       kext:
         - root_path: "/Library/Extensions/"
-          objects: ["**/*.plist"]
+          objects: ["**/*.plist", "**/*.kext"]
         - root_path: "/Library/StagedExtensions/"
           objects: ["**/*.plist"]
 
@@ -482,5 +602,14 @@ tasks:
           max_size: 50000000
         - root_path: "/Library/Application Support/CrashReporter/"
           objects: ["**"]
+
+      #----------------------------------------------------------------------
+      # FileVault Configuration (encryption state artifacts)
+      #----------------------------------------------------------------------
+      filevault_config:
+        - root_path: "/private/var/db/"
+          objects: ["FileVaultRecoveryAgent.plist"]
+        - root_path: "/Library/Preferences/"
+          objects: ["com.apple.fdesetup.plist"]
 
 output_filename: "Aralez_{{hostname}}_{{datetime}}"

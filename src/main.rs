@@ -790,6 +790,11 @@ fn main() -> Result<(), anyhow::Error> {
                                         format!("{}/{}",output_exec_folder,output_file)
                                     };
 
+                                    let is_stream = output_target.is_stream();
+                                    // Track execution result and whether run() (vs run_internal) was used
+                                    let mut exec_result: Option<String> = None;
+                                    let mut used_run = false;
+
                                     match exec_type {
                                         #[cfg(target_os = "windows")] 
                                         config::TypeExec::External => {
@@ -807,19 +812,21 @@ fn main() -> Result<(), anyhow::Error> {
                                                         &output_fullpath,
                                                         section_config.memory_limit,
                                                         section_config.timeout,
-                                                        // convert MB -> bytes
                                                         section_config.get_max_size().map(|mb| (mb as u64).saturating_mul(1024 * 1024)),
+                                                        is_stream,
                                                     );
                                                     if let Some(link_element) = executor.link {
                                                         match config.get_task(link_element.clone()) {
                                                             Some(task) => {
-                                                                if let Some(res) = result {
-                                                                    collect_exec_result(&section_config, res, task.clone(), &output_target, root_output, &default_drive);
+                                                                if let Some(ref res) = result {
+                                                                    collect_exec_result(&section_config, res.clone(), task.clone(), &output_target, root_output, &default_drive);
                                                                 }
                                                             },
                                                             None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
                                                         }
                                                     }
+                                                    exec_result = result;
+                                                    used_run = true;
                                                 }
                                                 Err(e) => dprintln!("{}", e),
                                             }
@@ -870,27 +877,43 @@ fn main() -> Result<(), anyhow::Error> {
                                                 &output_fullpath,
                                                 section_config.memory_limit,
                                                 section_config.timeout,
-                                                // convert MB -> bytes
                                                 section_config.get_max_size().map(|mb| (mb as u64).saturating_mul(1024 * 1024)),
+                                                is_stream,
                                             );
                                             if let Some(link_element) = executor.link {
                                                 match config.get_task(link_element.clone()) {
                                                     Some(task) => {
-                                                        if let Some(res) = result {
-                                                            collect_exec_result(&section_config, res, task.clone(), &output_target, root_output, &default_drive);
+                                                        if let Some(ref res) = result {
+                                                            collect_exec_result(&section_config, res.clone(), task.clone(), &output_target, root_output, &default_drive);
                                                         }
                                                     },
                                                     None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
                                                 }
                                             }
+                                            exec_result = result;
+                                            used_run = true;
                                         }
                                     }
-                                    
-                                    if output_target.is_stream() {
-                                        let file_path = Path::new(&output_fullpath);
-                                        if file_path.exists() {
-                                            if let Err(e) = output_target.copy_file(file_path, &output_fullpath) {
-                                                dprintln!("[ERROR] Failed to stream execute output `{}`: {}", output_fullpath, e);
+
+                                    // Stream execute output into archive
+                                    if is_stream {
+                                        if used_run {
+                                            // run() captured output in-memory (no disk file in stream mode)
+                                            if let Some(ref data) = exec_result {
+                                                if !data.is_empty() {
+                                                    if let Err(e) = output_target.write_bytes(&output_fullpath, data.as_bytes()) {
+                                                        dprintln!("[ERROR] Failed to stream execute output `{}`: {}", output_fullpath, e);
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            // run_internal() wrote to disk — copy into archive then clean up
+                                            let file_path = Path::new(&output_fullpath);
+                                            if file_path.exists() {
+                                                if let Err(e) = output_target.copy_file(file_path, &output_fullpath) {
+                                                    dprintln!("[ERROR] Failed to stream execute output `{}`: {}", output_fullpath, e);
+                                                }
+                                                let _ = fs::remove_file(file_path);
                                             }
                                         }
                                     }

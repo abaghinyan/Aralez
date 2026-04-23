@@ -149,7 +149,11 @@ fn explorer(drive_path: &str, config_tree: &mut Node, destination_folder: &str, 
         // If we hit a journal-feature incompatibility, fall back on Linux.
         #[cfg(target_os = "linux")]
         {
-            if e.to_string().contains("incompatible filesystem: missing required journal features") {
+            let err_msg = e.to_string();
+            if err_msg.contains("incompatible filesystem: missing required journal features")
+                || err_msg.contains("corrupt filesystem")
+            {
+                eprintln!("[WARN] ext4 raw parse failed ({}), falling back to POSIX API", err_msg);
                 let mut fallback = create_explorer(FileSystemType::PosixFallback)?;
                 fallback.initialize(&drive_path)?;
                 fallback.collect(config_tree, destination_folder, drive)?;

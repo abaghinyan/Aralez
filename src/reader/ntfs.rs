@@ -105,6 +105,7 @@ pub fn list_ntfs_drives() -> Result<Vec<String>> {
 pub struct Entry {
     pub name: String,
     pub file_record_number: u64,
+    pub namespace: u8,
 }
 
 fn process_all_directory(
@@ -127,24 +128,26 @@ fn process_all_directory(
     while let Some(entry_result) = iter.next(fs) {
         match entry_result {
             Ok(entry) => {
-                let name = entry
-                    .key()
-                    .unwrap()
-                    .unwrap()
-                    .name()
-                    .to_string_lossy()
-                    .to_string();
+                let key = entry.key().unwrap().unwrap();
+                let name = key.name().to_string_lossy().to_string();
                 let file_record_number = entry.file_reference().file_record_number();
+                let namespace = key.namespace() as u8;
                 if name != "." {
                     entries.push(Entry {
                         name,
                         file_record_number,
+                        namespace,
                     });
                 }
             }
             Err(e) => return Err(e.into()),
         }
     }
+
+    // Deduplicate by file_record_number, preferring non-DOS names to avoid Windows short name collisions
+    entries.sort_by_key(|e| if e.namespace == 2 { 1 } else { 0 });
+    let mut seen_records = HashSet::new();
+    entries.retain(|e| seen_records.insert(e.file_record_number));
     for entry in entries {
         let new_path = format!("{}/{}", current_path, entry.name);
         if let Ok(sub_file) = ntfs.file(fs, entry.file_record_number) {
@@ -229,24 +232,26 @@ pub fn process_directory(
     while let Some(entry_result) = iter.next(fs) {
         match entry_result {
             Ok(entry) => {
-                let name = entry
-                    .key()
-                    .unwrap()
-                    .unwrap()
-                    .name()
-                    .to_string_lossy()
-                    .to_string();
+                let key = entry.key().unwrap().unwrap();
+                let name = key.name().to_string_lossy().to_string();
                 let file_record_number = entry.file_reference().file_record_number();
+                let namespace = key.namespace() as u8;
                 if name != "." {
                     entries.push(Entry {
                         name,
                         file_record_number,
+                        namespace,
                     });
                 }
             }
             Err(e) => return Err(e.into()),
         }
     }
+
+    // Deduplicate by file_record_number, preferring non-DOS names to avoid Windows short name collisions
+    entries.sort_by_key(|e| if e.namespace == 2 { 1 } else { 0 });
+    let mut seen_records = HashSet::new();
+    entries.retain(|e| seen_records.insert(e.file_record_number));
     for entry in &entries {
         if let Ok(sub_file) = ntfs.file(fs, entry.file_record_number) {
             for (obj_name, obj_node) in &mut first_elements {
@@ -389,16 +394,16 @@ where
         format!("{}{}", out_dir, file_name)
     };
 
+    let target_dir = output_file_name
+        .rfind('/')
+        .map(|pos| &output_file_name[..pos])
+        .unwrap_or("");
+
     // Try to create the directory, log error if it fails
-    if let Err(e) = create_dir_all(
-        output_file_name
-            .rfind('/')
-            .map(|pos| &output_file_name[..pos])
-            .unwrap_or(""),
-    ) {
+    if let Err(e) = create_dir_all(target_dir) {
         return Err(anyhow::anyhow!(
             "[ERROR] Failed to create directory `{}`: {}",
-            out_dir,
+            target_dir,
             e
         ));
     }

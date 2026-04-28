@@ -147,6 +147,7 @@ impl NativeExplorer {
         obj_name: String,
         visited: &mut HashSet<String>,
         dest_folder: &Path,
+        exclude_path: &Path,
         _encrypt: Option<String>, // encryption not implemented in native fallback
         max_size: Option<u64>,
         success_files_count: &mut u32,
@@ -164,6 +165,12 @@ impl NativeExplorer {
 
             for entry in entries.flatten() {
                 let path = entry.path();
+
+                // Skip the destination directory to prevent self-referential collection loops
+                // (e.g. output dir lives on the same partition being collected).
+                if path.starts_with(exclude_path) {
+                    continue;
+                }
 
                 // Convert to string (mirrors ext4 path erroring on non-UTF8)
                 let entry_str = path.to_str().ok_or_else(|| {
@@ -222,6 +229,7 @@ impl NativeExplorer {
         current_path: &Path,
         config_tree: &mut Node,
         dest_folder: &Path,
+        exclude_path: &Path,
         visited: &mut HashSet<String>,
         success_files_count: &mut u32,
     ) -> Result<u32> {
@@ -235,6 +243,7 @@ impl NativeExplorer {
                     "*".to_string(),
                     visited,
                     dest_folder,
+                    exclude_path,
                     node.encrypt.clone(),
                     node.max_size,
                     success_files_count,
@@ -255,6 +264,13 @@ impl NativeExplorer {
 
         for entry in entries {
             let path = entry.path();
+
+            // Skip the destination directory to prevent self-referential collection loops
+            // (e.g. output dir lives on the same partition being collected).
+            if path.starts_with(exclude_path) {
+                continue;
+            }
+
             let entry_str = path.to_str().ok_or_else(|| {
                 anyhow::anyhow!("Non-UTF8 path: {:?}", path)
             })?.to_string();
@@ -297,6 +313,7 @@ impl NativeExplorer {
                             &path,
                             obj_node,
                             dest_folder,
+                            exclude_path,
                             visited,
                             success_files_count,
                         )?;
@@ -343,11 +360,17 @@ impl FileSystemExplorer for NativeExplorer {
         fs::create_dir_all(dst_root)
             .with_context(|| format!("create_dir_all({})", dst_root.display()))?;
 
+        // Canonicalize the destination to an absolute real path so we can reliably
+        // detect (and skip) it during traversal, preventing infinite self-referential
+        // loops when the output directory lives on the same partition being collected.
+        let exclude_path = fs::canonicalize(dst_root)
+            .unwrap_or_else(|_| dst_root.to_path_buf());
+
         let start = Path::new(&self.mount_point);
         let mut visited = HashSet::new();
         let mut count = 0u32;
 
-        self.process_directory(start, config_tree, dst_root, &mut visited, &mut count)?;
+        self.process_directory(start, config_tree, dst_root, &exclude_path, &mut visited, &mut count)?;
         dprintln!("Finished processing of drive {}", drive);
         Ok(())
     }

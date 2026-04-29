@@ -50,6 +50,9 @@ static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| {
         disk_path: None,
         max_disk_usage_pct: None,
         min_disk_space: None,
+        output: None,
+        stream: None,
+        compression: None,
     })
 });
 
@@ -60,6 +63,41 @@ pub fn set_config(new_config: Config) {
 
 pub fn get_config() -> Config {
     CONFIG.lock().unwrap().clone()
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Default)]
+pub struct OutputConfig {
+    pub destinations: Option<Vec<OutputDestination>>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum OutputDestination {
+    S3 {
+        bucket: String,
+        prefix: Option<String>,
+        region: Option<String>,
+        endpoint: Option<String>,
+        access_key: Option<String>,
+        secret_key: Option<String>,
+    },
+    Smb {
+        share: String,
+        username: Option<String>,
+        password: Option<String>,
+        domain: Option<String>,
+    },
+    Sftp {
+        host: String,
+        port: Option<u16>,
+        username: String,
+        password: Option<String>,
+        key_path: Option<String>,
+        remote_path: String,
+    },
+    Folder {
+        path: String,
+    },
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -74,6 +112,13 @@ pub struct Config {
     pub disk_path: Option<String>,
     pub min_disk_space: Option<u64>, // in MB
     pub max_disk_usage_pct: Option<u8>, // e.g. 50 means 50%
+    pub output: Option<OutputConfig>,
+    /// Stream mode: compress artifacts directly into the zip on-the-fly (no intermediate folder).
+    /// Reduces disk usage from ~2× to ~1× during collection.
+    pub stream: Option<bool>,
+    /// Archive compression format: "zip" (default) or "tar".
+    /// TAR produces .tar.zst files that remain valid even if the process is killed.
+    pub compression: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -607,6 +652,14 @@ impl Config {
                 "/".to_string()
             }
         }
+    }
+
+    pub fn get_stream_mode(&self) -> bool {
+        self.stream.unwrap_or(false)
+    }
+
+    pub fn get_compression(&self) -> String {
+        self.compression.clone().unwrap_or_else(|| "zip".to_string())
     }
 }
 

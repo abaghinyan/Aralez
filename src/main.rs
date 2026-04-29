@@ -9,9 +9,11 @@
 mod macros;
 mod config;
 mod execute;
+mod upload;
 mod utils;
 mod path;
 mod resource_check;
+mod stream;
 
 use execute::run;
 use path::{insert_if_valid, remove_drive_letter};
@@ -30,7 +32,9 @@ use std::io::Seek;
 use std::path::Path;
 use utils::{ensure_directory_exists, remove_dir_all};
 use zip::{write::FileOptions, CompressionMethod, ZipWriter};
+use stream::{OutputTarget, ZipState, TarState};
 use std::time::UNIX_EPOCH;
+use std::sync::atomic::Ordering;
 use chrono::DateTime;
 use chrono::Utc;
 use zip::DateTime as ZipDateTime;
@@ -256,7 +260,58 @@ fn main() -> Result<(), anyhow::Error> {
                 .help("Encrypt the archive with a password by using AES256")
                 .value_name("PASSWORD")
         )
-        .help_template(HELP_TEMPLATE);
+        .help_template(HELP_TEMPLATE)
+        .arg(
+            Arg::new("output")
+                .short('o')
+                .long("output")
+                .help("Upload/copy the result zip to a destination (s3://bucket/prefix, smb://server/share, sftp://user@host/path, or /local/path)")
+                .value_name("DESTINATION")
+        )
+        .arg(
+            Arg::new("workdir")
+                .short('w')
+                .long("workdir")
+                .help("Working directory for temporary artifact collection (default: current directory)")
+                .value_name("PATH")
+        )
+        .arg(
+            Arg::new("s3-endpoint")
+                .long("s3-endpoint")
+                .help("Custom S3-compatible endpoint URL (e.g. http://minio.local:9000)")
+                .value_name("URL")
+        )
+        .arg(
+            Arg::new("s3-access-key")
+                .long("s3-access-key")
+                .help("S3 access key ID")
+                .value_name("KEY")
+        )
+        .arg(
+            Arg::new("s3-secret-key")
+                .long("s3-secret-key")
+                .help("S3 secret access key")
+                .value_name("SECRET")
+        )
+        .arg(
+            Arg::new("stream")
+                .long("stream")
+                .help("Compress artifacts directly into the archive on-the-fly (no intermediate folder)")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("compression")
+                .long("compression")
+                .help("Archive compression: 'zip' (default) or 'tar' (crash-proof .tar.zst)")
+                .value_name("TYPE")
+                .value_parser(["zip", "tar"]),
+        )
+        .arg(
+            Arg::new("silent")
+                .long("silent")
+                .help("Suppress all terminal output (logs are still written to the log file)")
+                .action(clap::ArgAction::SetTrue),
+        );
     #[cfg(target_os = "windows")]
     {
         cmd = cmd.arg(
@@ -440,27 +495,46 @@ fn main() -> Result<(), anyhow::Error> {
         disk_limit: config.disk_limit,
         disk_path: config.disk_path.clone(),
         max_disk_usage_pct: config.max_disk_usage_pct,
-        min_disk_space: config.min_disk_space
+        min_disk_space: config.min_disk_space,
+        output: config.output.clone(),
+        stream: config.stream,
+        compression: config.compression.clone(),
     });
 
     // Check if the --debug flag was provided
     if matches.get_flag("debug") {
         env::set_var("DEBUG_MODE", "true");
-        println!("Debug mode activated!");
+        qprintln!("Debug mode activated!");
+    }
+
+    // Check if the --silent flag was provided
+    if matches.get_flag("silent") {
+        stream::SILENT.store(true, Ordering::SeqCst);
+    }
+
+    // Change to custom working directory if specified
+    if let Some(workdir) = matches.get_one::<String>("workdir") {
+        let work_path = Path::new(workdir);
+        if !work_path.exists() {
+            fs::create_dir_all(work_path)?;
+            dprintln!("[INFO] Created working directory: {}", workdir);
+        }
+        env::set_current_dir(work_path)?;
+        dprintln!("[INFO] Working directory set to: {}", workdir);
     }
 
     let root_output = &config.get_output_filename();
 
     // Print the welcome message
-    println!(
+    qprintln!(
         "Welcome to {} version {} ({})",
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
         TARGET_ARCH
     );
-    println!("{}", env!("CARGO_PKG_DESCRIPTION"));
-    println!("Developed by: {}", env!("CARGO_PKG_AUTHORS"));
-    println!();
+    qprintln!("{}", env!("CARGO_PKG_DESCRIPTION"));
+    qprintln!("Developed by: {}", env!("CARGO_PKG_AUTHORS"));
+    qprintln!();
 
     dprintln!("Aralez version: {} ({})", env!("CARGO_PKG_VERSION"), TARGET_ARCH);
     dprintln!("Configuration version: {} ", &config.version.clone().unwrap_or("unknown".to_string()));
@@ -469,7 +543,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Machine resources check
     let global_memory_limit = config.get_global_memory_limit();
     if !check_memory(global_memory_limit as u64) {
-        eprintln!("[WARN] Not enough available memory (RAM).");
+        qeprintln!("[WARN] Not enough available memory (RAM).");
         dprintln!(
             "[WARN] Not enough available memory (RAM). Required at least: {} MB",
             global_memory_limit
@@ -478,20 +552,99 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     if !should_continue_collection(&config, &root_output) {
-        eprintln!("[WARN] Disk space too low");
+        qeprintln!("[WARN] Disk space too low");
 
         std::process::exit(1);
     }
 
-    config.save(root_output)?;
-    
-    let spinner = ProgressBar::new_spinner();
-    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .tick_strings(&["-", "\\", "|", "/"])
-            .template("{spinner:.green} {msg}")?,
-    );
+    // Determine stream mode: CLI flag overrides config
+    let stream_mode = matches.get_flag("stream") || config.get_stream_mode();
+    let archive_format = matches.get_one::<String>("compression")
+        .cloned()
+        .unwrap_or_else(|| config.get_compression());
+    if stream_mode {
+        dprintln!("[INFO] Stream mode enabled: compressing on-the-fly (format: {})", archive_format);
+        qprintln!("[INFO] Stream mode: artifacts will be compressed on-the-fly (format: {})", archive_format);
+    }
+    // Create spinner early so the Ctrl+C handler can update its message
+    let spinner = if stream::is_silent() {
+        std::sync::Arc::new(ProgressBar::hidden())
+    } else {
+        let s = ProgressBar::new_spinner();
+        s.enable_steady_tick(std::time::Duration::from_millis(100));
+        s.set_style(
+            ProgressStyle::default_spinner()
+                .tick_strings(&["-", "\\", "|", "/"])
+                .template("{spinner:.green} {msg}")?,
+        );
+        std::sync::Arc::new(s)
+    };
+
+    // Ctrl+C handler: first press → graceful shutdown, second press → force exit
+    {
+        let spinner_ref = spinner.clone();
+        ctrlc::set_handler(move || {
+            if stream::INTERRUPTED.swap(true, Ordering::SeqCst) {
+                // Already interrupted once → force exit
+                eprintln!("\n[WARN] Forced exit.");
+                std::process::exit(1);
+            }
+            spinner_ref.set_message("Finalizing archive... (press Ctrl+C again to force quit)");
+        }).expect("Error setting Ctrl-C handler");
+    }
+
+    // Create OutputTarget
+    let output_target: OutputTarget;
+
+    if stream_mode {
+        if archive_format == "tar" {
+            // TAR + zstd: crash-proof streaming
+            let tar_file_name = format!("{}.tar.zst", root_output);
+            let tar_file = File::create(&tar_file_name)?;
+            let tar_buf = std::io::BufWriter::new(tar_file);
+            let encoder = zstd::Encoder::new(tar_buf, 3)?;
+            let builder = tar::Builder::new(encoder);
+
+            output_target = OutputTarget::Tar(std::sync::Mutex::new(TarState {
+                builder,
+                base_path: root_output.to_string(),
+            }));
+
+            // Write config.yml directly into the tar
+            let config_data = Config::get_raw_data()?;
+            output_target.write_bytes(&format!("{}/config.yml", root_output), config_data.as_bytes())?;
+        } else {
+            // ZIP: default streaming
+            let zip_file_name = format!("{}.zip", root_output);
+            let zip_file = File::create(&zip_file_name)?;
+            let zip_buf = std::io::BufWriter::new(zip_file);
+            let zip = ZipWriter::new(zip_buf);
+            let mut options = FileOptions::default()
+                .compression_method(CompressionMethod::Deflated)
+                .large_file(true);
+
+            if let Some(ref password) = archive_encrypt {
+                let leaked: &'static str = Box::leak(password.clone().into_boxed_str());
+                options = options.with_aes_encryption(zip::AesMode::Aes256, leaked);
+            }
+
+            output_target = OutputTarget::Zip(std::sync::Mutex::new(ZipState {
+                writer: zip,
+                options,
+                base_path: root_output.to_string(),
+            }));
+
+            // Write config.yml directly into the zip
+            let config_data = Config::get_raw_data()?;
+            output_target.write_bytes(&format!("{}/config.yml", root_output), config_data.as_bytes())?;
+        }
+    } else {
+        output_target = OutputTarget::Folder;
+        config.save(root_output)?;
+    }
+
+    // Determine archive extension based on compression choice
+    let archive_ext = if archive_format == "tar" { "tar.zst" } else { "zip" };
 
     spinner.set_message("Starting tasks...");
 
@@ -518,8 +671,15 @@ fn main() -> Result<(), anyhow::Error> {
 
         // Check the disk space before starting the task
         if !should_continue_collection(&config, &root_output) {
-            eprintln!("[WARN] Remaining disk space too low. Stopping collection to prevent exceeding disk limits. Collection process terminated before completion.");
+            qeprintln!("[WARN] Remaining disk space too low. Stopping collection to prevent exceeding disk limits. Collection process terminated before completion.");
             dprintln!("[WARN] Remaining disk space too low. Stopping collection to prevent exceeding disk limits. Collection process terminated before completion.");
+            break;
+        }
+
+        // Check for Ctrl+C interrupt between tasks
+        if stream::is_interrupted() {
+            dprintln!("[WARN] Interrupted by user. Finalizing archive with artifacts collected so far.");
+            qprintln!("[WARN] Interrupted. Finalizing archive...");
             break;
         }
 
@@ -538,7 +698,7 @@ fn main() -> Result<(), anyhow::Error> {
                                 Some(o) => o.replace("{{root_output_path}}", root_output),
                                 None => root_output.to_string(),
                             };
-                            process_all_drives(&mut section_config, &output_collect_folder)?;
+                            process_all_drives(&mut section_config, &output_target, &output_collect_folder)?;
                         }
                     } else {
                         // Check if the drive exists
@@ -553,9 +713,11 @@ fn main() -> Result<(), anyhow::Error> {
                                 #[cfg(target_os = "linux")]
                                 None => format!("{}/{}", root_output, drive),
                             };
-                            ensure_directory_exists(&output_collect_folder)?;
+                            if !output_target.is_stream() {
+                                ensure_directory_exists(&output_collect_folder)?;
+                            }
                             process_drive_artifacts(&drive, &mut section_config,
-                                &output_collect_folder)?;
+                                &output_target, &output_collect_folder)?;
                         }
                     }
                 }
@@ -628,6 +790,11 @@ fn main() -> Result<(), anyhow::Error> {
                                         format!("{}/{}",output_exec_folder,output_file)
                                     };
 
+                                    let is_stream = output_target.is_stream();
+                                    // Track execution result and whether run() (vs run_internal) was used
+                                    let mut exec_result: Option<String> = None;
+                                    let mut used_run = false;
+
                                     match exec_type {
                                         #[cfg(target_os = "windows")] 
                                         config::TypeExec::External => {
@@ -645,19 +812,21 @@ fn main() -> Result<(), anyhow::Error> {
                                                         &output_fullpath,
                                                         section_config.memory_limit,
                                                         section_config.timeout,
-                                                        // convert MB -> bytes
                                                         section_config.get_max_size().map(|mb| (mb as u64).saturating_mul(1024 * 1024)),
+                                                        is_stream,
                                                     );
                                                     if let Some(link_element) = executor.link {
                                                         match config.get_task(link_element.clone()) {
                                                             Some(task) => {
-                                                                if let Some(res) = result {
-                                                                    collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
+                                                                if let Some(ref res) = result {
+                                                                    collect_exec_result(&section_config, res.clone(), task.clone(), &output_target, root_output, &default_drive);
                                                                 }
                                                             },
                                                             None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
                                                         }
                                                     }
+                                                    exec_result = result;
+                                                    used_run = true;
                                                 }
                                                 Err(e) => dprintln!("{}", e),
                                             }
@@ -669,7 +838,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                 match config.get_task(link_element.clone()) {
                                                     Some(task) => {
                                                         if let Some(res) = result {
-                                                            collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
+                                                            collect_exec_result(&section_config, res, task.clone(), &output_target, root_output, &default_drive);
                                                         }
                                                     },
                                                     None => dprintln!(
@@ -687,7 +856,7 @@ fn main() -> Result<(), anyhow::Error> {
                                                 match config.get_task(link_element.clone()) {
                                                     Some(task) => {
                                                         if let Some(res) = result {
-                                                            collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
+                                                            collect_exec_result(&section_config, res, task.clone(), &output_target, root_output, &default_drive);
                                                         }
                                                     },
                                                     None => dprintln!(
@@ -708,18 +877,43 @@ fn main() -> Result<(), anyhow::Error> {
                                                 &output_fullpath,
                                                 section_config.memory_limit,
                                                 section_config.timeout,
-                                                // convert MB -> bytes
                                                 section_config.get_max_size().map(|mb| (mb as u64).saturating_mul(1024 * 1024)),
+                                                is_stream,
                                             );
                                             if let Some(link_element) = executor.link {
                                                 match config.get_task(link_element.clone()) {
                                                     Some(task) => {
-                                                        if let Some(res) = result {
-                                                            collect_exec_result(&section_config, res, task.clone(), root_output, &default_drive);
+                                                        if let Some(ref res) = result {
+                                                            collect_exec_result(&section_config, res.clone(), task.clone(), &output_target, root_output, &default_drive);
                                                         }
                                                     },
                                                     None => dprintln!("[WARN] Specified link {} for {}, not found", &link_element, executor.name.clone().expect(MSG_ERROR_CONFIG)),
                                                 }
+                                            }
+                                            exec_result = result;
+                                            used_run = true;
+                                        }
+                                    }
+
+                                    // Stream execute output into archive
+                                    if is_stream {
+                                        if used_run {
+                                            // run() captured output in-memory (no disk file in stream mode)
+                                            if let Some(ref data) = exec_result {
+                                                if !data.is_empty() {
+                                                    if let Err(e) = output_target.write_bytes(&output_fullpath, data.as_bytes()) {
+                                                        dprintln!("[ERROR] Failed to stream execute output `{}`: {}", output_fullpath, e);
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            // run_internal() wrote to disk — copy into archive then clean up
+                                            let file_path = Path::new(&output_fullpath);
+                                            if file_path.exists() {
+                                                if let Err(e) = output_target.copy_file(file_path, &output_fullpath) {
+                                                    dprintln!("[ERROR] Failed to stream execute output `{}`: {}", output_fullpath, e);
+                                                }
+                                                let _ = fs::remove_file(file_path);
                                             }
                                         }
                                     }
@@ -736,33 +930,104 @@ fn main() -> Result<(), anyhow::Error> {
             section_name,
             task_elapsed.as_secs(),
             task_elapsed.subsec_millis()
-        );    
+        );
+
+
     }
 
     let global_elapsed = global_start_time.elapsed();
     dprintln!("[INFO] == All tasks completed in {:?} secs ==", global_elapsed.as_secs());
 
     let src_log_file = format!("{}.log", root_output);
-    // Move the logfile into the root folder
-    if Path::new(&src_log_file).exists() {
-        let dest_log_file = format!("{}/{}", root_output, src_log_file);
-        fs::rename(src_log_file, dest_log_file)?;
+
+    if stream_mode {
+        // Stream mode: add the log file directly into the archive and finalize
+        if Path::new(&src_log_file).exists() {
+            let log_zip_path = format!("{}/{}", root_output, &src_log_file);
+            output_target.copy_file(Path::new(&src_log_file), &log_zip_path)?;
+        }
+
+        // Finalize the archive
+        spinner.set_message("Finalizing archive");
+        dprintln!("[INFO] Finalizing {} archive", archive_ext);
+        output_target.finish()?;
+
+        // Remove the log file AFTER finalization (dprintln! above would re-create it)
+        let _ = fs::remove_file(&src_log_file);
+        
+        // Remove left-over stream tool output directories (e.g., execute tool outputs)
+        let _ = remove_dir_all(root_output);
     } else {
-        println!("[WARN] Log file not found");
+        // Normal mode: move logfile into the folder, then zip everything
+        if Path::new(&src_log_file).exists() {
+            let dest_log_file = format!("{}/{}", root_output, src_log_file);
+            fs::rename(src_log_file, dest_log_file)?;
+        } else {
+            qprintln!("[WARN] Log file not found");
+        }
+
+        spinner.set_message("Running: compression");
+        if archive_format == "tar" {
+            tar_dir(root_output)?;
+        } else {
+            zip_dir(root_output, archive_encrypt)?;
+        }
+
+        // Remove the uncompressed collection folder immediately after zipping
+        // to free disk space before upload
+        remove_dir_all(root_output)?;
     }
 
-    spinner.set_message("Running: compression");
+    // Build S3 overrides from CLI args
+    let s3_overrides = upload::S3Overrides {
+        endpoint: matches.get_one::<String>("s3-endpoint").cloned(),
+        access_key: matches.get_one::<String>("s3-access-key").cloned(),
+        secret_key: matches.get_one::<String>("s3-secret-key").cloned(),
+    };
 
-    zip_dir(root_output, archive_encrypt)?;
+    // Upload to configured destinations
+    let archive_path = format!("{}.{}", root_output, archive_ext);
+    let cli_output = matches.get_one::<String>("output");
+    upload::dispatch(
+        &archive_path,
+        &config.output,
+        cli_output.map(|s| s.as_str()),
+        &s3_overrides,
+    )?;
 
-    remove_dir_all(root_output)?;
+    // If --output was used, remove the local zip after successful upload
+    // (unless the destination is the same local folder the zip already lives in)
+    if cli_output.is_some() {
+        let archive_file = Path::new(&archive_path);
+        if archive_file.exists() {
+            let should_remove = if let Some(out) = cli_output {
+                // For local folder destinations, check if the zip was copied to
+                // the same directory — in that case, keep it
+                if !out.contains("://") {
+                    let dest = Path::new(out);
+                    let zip_parent = archive_file.parent().unwrap_or(Path::new("."));
+                    let dest_canon = fs::canonicalize(dest).unwrap_or(dest.to_path_buf());
+                    let parent_canon = fs::canonicalize(zip_parent).unwrap_or(zip_parent.to_path_buf());
+                    dest_canon != parent_canon
+                } else {
+                    true // remote destination → always remove local zip
+                }
+            } else {
+                false
+            };
+            if should_remove {
+                dprintln!("[INFO] Removing local archive after upload: {}", archive_path);
+                let _ = fs::remove_file(&archive_path);
+            }
+        }
+    }
 
     spinner.finish_with_message("Tasks completed");
 
     Ok(())
 }
 
-fn collect_exec_result(section_config: &SectionConfig, result: String, task: SectionConfig, root_output: &str, default_drive: &String) {
+fn collect_exec_result(section_config: &SectionConfig, result: String, task: SectionConfig, output: &OutputTarget, root_output: &str, default_drive: &String) {
     let files_path: Vec<String> = result.lines().map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty()) 
         .collect();
@@ -801,10 +1066,12 @@ fn collect_exec_result(section_config: &SectionConfig, result: String, task: Sec
         #[cfg(target_os = "linux")]
         None => format!("{}/{}", root_output, drive),
     };
-    ensure_directory_exists(&output_collect_folder)
-        .expect("Failed to create or access output directory");
+    if !output.is_stream() {
+        ensure_directory_exists(&output_collect_folder)
+            .expect("Failed to create or access output directory");
+    }
     let _ = process_drive_artifacts(&drive, &mut sc,
-        &output_collect_folder);
+        output, &output_collect_folder);
 }
 
 fn zip_dir(dir_name: &str, encrypt: Option<String>) -> io::Result<()> {
@@ -828,6 +1095,58 @@ fn zip_dir(dir_name: &str, encrypt: Option<String>) -> io::Result<()> {
     add_directory_to_zip(&mut zip, root_path, "", &options)?;
 
     zip.finish()?;
+    Ok(())
+}
+
+fn tar_dir(dir_name: &str) -> io::Result<()> {
+    let root_path = Path::new(dir_name);
+    fs::create_dir_all(&root_path)?;
+
+    let tar_file_name = format!("{}.tar.zst", dir_name);
+    let tar_file = File::create(&tar_file_name)?;
+    let tar_buf = std::io::BufWriter::new(tar_file);
+    let encoder = zstd::Encoder::new(tar_buf, 3)?;
+    let mut builder = tar::Builder::new(encoder);
+
+    add_directory_to_tar(&mut builder, root_path, "")?;
+
+    let encoder = builder.into_inner()
+        .map_err(|e| io::Error::other(e.to_string()))?;
+    encoder.finish()?;
+    Ok(())
+}
+
+fn add_directory_to_tar<W: Write>(
+    builder: &mut tar::Builder<W>,
+    root_path: &Path,
+    parent_dir: &str,
+) -> io::Result<()> {
+    for entry in fs::read_dir(root_path)? {
+        let entry = entry?;
+        let path = entry.path();
+        let name = format!("{}{}", parent_dir, entry.file_name().to_string_lossy());
+
+        if path.exists() {
+            if path.is_dir() {
+                add_directory_to_tar(builder, &path, &format!("{}/", name))?;
+            } else {
+                let mut file = File::open(&path)?;
+                let metadata = file.metadata()?;
+                let mut header = tar::Header::new_gnu();
+                header.set_size(metadata.len());
+                header.set_mode(0o644);
+                // Preserve modification time
+                if let Ok(modified) = metadata.modified() {
+                    if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
+                        header.set_mtime(duration.as_secs());
+                    }
+                }
+                header.set_cksum();
+                builder.append_data(&mut header, &name, &mut file)
+                    .map_err(|e| io::Error::other(e.to_string()))?;
+            }
+        }
+    }
     Ok(())
 }
 

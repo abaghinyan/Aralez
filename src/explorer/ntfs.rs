@@ -9,6 +9,7 @@
 use crate::reader::fs::*;
 use crate::reader::ntfs::{initialize_ntfs, process_directory};
 use crate::reader::sector::SectorReader;
+use crate::stream::OutputTarget;
 use std::io::BufReader;
 use ntfs::Ntfs;
 use std::collections::HashSet;
@@ -53,7 +54,8 @@ impl FileSystemExplorer for NtfsExplorer {
     fn collect(
         &mut self,
         config_tree: &mut Node,
-        dest_folder: &str,
+        output: &OutputTarget,
+        dest_prefix: &str,
         drive: &str)  -> Result<()>
     {
         let fs_reader = self.fs_reader.as_mut().ok_or_else(|| std::io::Error::new
@@ -72,7 +74,8 @@ impl FileSystemExplorer for NtfsExplorer {
             &root,
             config_tree,
             "",
-            dest_folder,
+            output,
+            dest_prefix,
             &mut visited_files,
             drive,
             &mut success_files_count

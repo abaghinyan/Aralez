@@ -7,6 +7,7 @@
 //
 
 use crate::reader::{ext4::process_directory, fs::*};
+use crate::stream::OutputTarget;
 use std::collections::HashSet;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -41,7 +42,8 @@ impl FileSystemExplorer for Ext4Explorer {
     fn collect(
         &mut self,
         config_tree: &mut Node,
-        dest_folder: &str,
+        output: &OutputTarget,
+        dest_prefix: &str,
         drive: &str) -> Result<()>
     {
         let ext4_parser = self.parser.as_ref().ok_or_else(|| std::io::Error::new
@@ -49,11 +51,11 @@ impl FileSystemExplorer for Ext4Explorer {
         let path = Path::new("/");
         let mut visited = HashSet::new();
         let mut count = 0;
-        let dest: &Path = Path::new(&dest_folder);
         process_directory(ext4_parser, path, config_tree,
-            &dest, &mut visited, &mut count)?;
+            output, dest_prefix, &mut visited, &mut count)?;
         dprintln!("Finished processing of drive {}", drive);
         Ok(())
     }
 }
+
 

@@ -148,6 +148,8 @@ pub fn run(
     timeout: Option<u64>,
     // STRICT cap in BYTES (not MB!)
     max_size_bytes: Option<u64>,
+    // When true, skip disk file — output is captured in-memory only
+    stream_mode: bool,
 ) -> Option<String> {
     let run_start_time = Instant::now();
     let mut display_name = name.clone();
@@ -292,17 +294,21 @@ pub fn run(
         });
     }
 
-    // Open destination file
-    let mut out_file = match File::create(Path::new(output_file)) {
-        Ok(f) => f,
-        Err(e) => {
-            dprintln!(
-                "[ERROR] > {} ({}) | Failed to create output file: {}",
-                display_name, pid, e
-            );
-            let _ = child.kill();
-            let _ = child.wait();
-            return None;
+    // Open destination file (skip in stream mode — output captured in mirrored buffer)
+    let mut out_file: Option<File> = if stream_mode {
+        None
+    } else {
+        match File::create(Path::new(output_file)) {
+            Ok(f) => Some(f),
+            Err(e) => {
+                dprintln!(
+                    "[ERROR] > {} ({}) | Failed to create output file: {}",
+                    display_name, pid, e
+                );
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
         }
     };
 
@@ -372,13 +378,15 @@ pub fn run(
 
                 // Write only the allowed slice
                 if n_to_write > 0 {
-                    if let Err(e) = out_file.write_all(&buf[..n_to_write]) {
-                        dprintln!(
-                            "[ERROR] > {} ({}) | Failed writing to output file: {}",
-                            display_name, pid, e
-                        );
-                        kill_child("Stopping due to write error");
-                        break;
+                    if let Some(ref mut f) = out_file {
+                        if let Err(e) = f.write_all(&buf[..n_to_write]) {
+                            dprintln!(
+                                "[ERROR] > {} ({}) | Failed writing to output file: {}",
+                                display_name, pid, e
+                            );
+                            kill_child("Stopping due to write error");
+                            break;
+                        }
                     }
                     total_written += n_to_write as u64;
                     mirrored.extend_from_slice(&buf[..n_to_write]);
@@ -411,11 +419,13 @@ pub fn run(
         }
     }
     // Flush file
-    if let Err(e) = out_file.flush() {
-        dprintln!(
-            "[ERROR] > {} ({}) | Failed to flush output file: {}",
-            display_name, pid, e
-        );
+    if let Some(ref mut f) = out_file {
+        if let Err(e) = f.flush() {
+            dprintln!(
+                "[ERROR] > {} ({}) | Failed to flush output file: {}",
+                display_name, pid, e
+            );
+        }
     }
 
     #[cfg(target_os = "windows")]

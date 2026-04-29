@@ -10,6 +10,17 @@ max_size: 5000
 memory_limit: 512
 disk_limit: 8000
 # encrypt: "secret"
+
+# Stream mode: compress artifacts directly into the zip on-the-fly.
+# Reduces disk usage from ~2x to ~1x during collection. Default: false
+# Can also be enabled via CLI: --stream
+# stream: true
+
+# Archive compression: "zip" (default) or "tar"
+# TAR produces .tar.zst files that remain valid even if the process is killed.
+# Can also be set via CLI: --compression tar
+# compression: "zip"
+
 tasks: 
   memory:
     priority: 0

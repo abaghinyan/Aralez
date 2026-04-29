@@ -1,6 +1,6 @@
 [package]
 name = "aralez"
-version = "0.10.2"
+version = "0.10.3"
 edition = "2021"
 description = "Aralez is a triage collector tool."
 authors = ["Areg Baghinyan <areg@baghinyan.com>"]
@@ -12,6 +12,10 @@ build = "build.rs"
 default = []
 extended-tools = []
 memdump = ["extended-tools"]
+upload-s3 = ["dep:aws-sdk-s3", "dep:aws-config", "dep:tokio"]
+upload-sftp = ["dep:ssh2"]
+upload-smb = []
+upload = ["upload-s3", "upload-sftp", "upload-smb"]
 
 [dependencies]
 ntfs = "0.4"
@@ -43,6 +47,13 @@ glob = "0.3.1"
 rayon = "1.10"
 filetime = "0.2"
 once_cell = "1.20"
+ctrlc = "3"
+tar = "0.4"
+zstd = { version = "0.13", features = ["zstdmt"] }
+ssh2 = { version = "0.9", optional = true }
+aws-sdk-s3 = { version = "1", optional = true }
+aws-config = { version = "1", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
 
 [target.'cfg(not(windows))'.dependencies]
 nix = { version = "0.30", features = ["user"] }

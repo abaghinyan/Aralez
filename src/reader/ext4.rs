@@ -7,44 +7,38 @@
 //
 
 use std::collections::HashSet;
-use std::fs::{create_dir_all, File};
-use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::path::Path;
 
 use anyhow::Result;
 use ext4_view::{Ext4, FileType};
 
+use crate::stream::{OutputTarget, is_interrupted};
 use super::fs::Node;
 
 // Function for getting file_data and writing its content into
 // destination folder, for forensic investigation.
-fn get(file_data: Vec<u8>, file_name: &str, dest_folder: &Path) -> Result<(bool, String)> {
+fn get(file_data: Vec<u8>, file_name: &str, output: &OutputTarget, dest_prefix: &str) -> Result<(bool, String)> {
     let relative = file_name.trim_start_matches('/');
-    let out_path: PathBuf = dest_folder.join(relative);
+    let out_path_str = format!("{}/{}", dest_prefix, relative);
 
-    if let Some(parent) = out_path.parent() {
-        create_dir_all(parent)?;
-    }
-
-    let file = File::create(&out_path)?;
-    let mut buf_writer = BufWriter::with_capacity(8 * 1024, file);
+    let mut writer = output.create_entry(&out_path_str)?;
 
     let mut offset = 0;
     let total = file_data.len();
     while offset < total {
         let end = std::cmp::min(offset + 8 * 1024, total);
-        buf_writer.write_all(&file_data[offset..end])?;
+        writer.write_all(&file_data[offset..end])?;
         offset = end;
     }
-    buf_writer.flush()?;
+    writer.flush()?;
 
-    let file_location: String = out_path.to_string_lossy().into_owned();
     dprintln!(
         "[INFO] Saving {} bytes of data in {}",
         file_data.len(),
-        file_location
+        out_path_str
     );
-    Ok((true, file_location))
+    Ok((true, out_path_str))
 }
 
 // Checks whether specified pattern in <objects> field of config.yml matches file_path
@@ -80,8 +74,9 @@ fn process_all_directory(
     path: &Path,
     obj_name: String,
     visited_files: &mut HashSet<String>,
-    dest_folder: &Path,
-    _encrypt: Option<String>, // encryption not implemented for ext4 branch
+    output: &OutputTarget,
+    dest_prefix: &str,
+    _encrypt: Option<String>,
     max_size: Option<u64>,
     success_files_count: &mut u32,
 ) -> Result<()> {
@@ -122,18 +117,18 @@ fn process_all_directory(
             visited_files.insert(entry_str.clone());
             process_all_directory(
                 ext4_parser,
-                // ext4_view::Path<'_> -> &std::path::Path
                 path_buf.as_path().into(),
                 obj_name.clone(),
                 visited_files,
-                dest_folder,
+                output,
+                dest_prefix,
                 _encrypt.clone(),
                 max_size,
                 success_files_count,
             )?;
         } else if is_pattern_match(&entry_str, &obj_name) && is_file_size_ok(metadata.len(), max_size) {
             match ext4_parser.read(path_buf.as_path()) {
-                Ok(file_data) => match get(file_data, &entry_str, dest_folder) {
+                Ok(file_data) => match get(file_data, &entry_str, output, dest_prefix) {
                     Ok((written, location)) => {
                         if written {
                             dprintln!("[INFO] Data successfully saved to {}", location);
@@ -163,7 +158,8 @@ pub fn process_directory(
     ext4_parser: &Ext4,
     current_path: &Path,
     config_tree: &mut Node,
-    dest_folder: &Path,
+    output: &OutputTarget,
+    dest_prefix: &str,
     visited_files: &mut HashSet<String>,
     success_files_count: &mut u32,
 ) -> Result<u32> {
@@ -175,10 +171,10 @@ pub fn process_directory(
             process_all_directory(
                 ext4_parser,
                 current_path,
-                // The obj_name still matters because matching may include ADS suffix
                 "*".to_string(),
                 visited_files,
-                dest_folder,
+                output,
+                dest_prefix,
                 node.encrypt.clone(),
                 node.max_size,
                 success_files_count,
@@ -195,6 +191,9 @@ pub fn process_directory(
     };
 
     for entry in entries {
+        if is_interrupted() {
+            break;
+        }
         let path_buf = entry.path();
 
         // ext4_view::PathBuf -> &str
@@ -238,10 +237,10 @@ pub fn process_directory(
                     visited_files.insert(entry_str.clone());
                     process_directory(
                         ext4_parser,
-                        // ext4_view::Path<'_> -> &std::path::Path
                         path_buf.as_path().into(),
                         obj_node,
-                        dest_folder,
+                        output,
+                        dest_prefix,
                         visited_files,
                         success_files_count,
                     )?;
@@ -249,7 +248,7 @@ pub fn process_directory(
                     && is_file_size_ok(metadata.len(), obj_node.max_size)
                 {
                     let file_data = ext4_parser.read(path_buf.as_path())?;
-                    match get(file_data, &entry_str, dest_folder) {
+                    match get(file_data, &entry_str, output, dest_prefix) {
                         Ok((written, location)) => {
                             if written {
                                 visited_files.insert(entry_str.clone());

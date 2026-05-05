@@ -29,6 +29,29 @@ pub fn is_ntfs_partition<T: Read + Seek>(reader: &mut T) -> Result<bool> {
     }
 }
 
+pub fn is_apfs_partition<T: Read + Seek>(reader: &mut T) -> Result<bool> {
+    const APFS_SIGNATURE: &[u8] = b"NXSB";
+    let mut magic = [0u8; 4];
+    if reader.seek(SeekFrom::Start(32)).is_err() {
+        return Ok(false);
+    }
+    match reader.read_exact(&mut magic) {
+        Ok(_) => Ok(&magic == APFS_SIGNATURE),
+        Err(_) => Ok(false),
+    }
+}
+
+pub fn is_hfsplus_partition<T: Read + Seek>(reader: &mut T) -> Result<bool> {
+    let mut magic = [0u8; 2];
+    if reader.seek(SeekFrom::Start(1024)).is_err() {
+        return Ok(false);
+    }
+    match reader.read_exact(&mut magic) {
+        Ok(_) => Ok(&magic == b"H+" || &magic == b"HX"),
+        Err(_) => Ok(false),
+    }
+}
+
 pub fn is_ext4_partition<T: Read + Seek>(reader: &mut T) -> Result<bool>
 {
     const SUPERBLOCK_OFFSET: u64 = 1024;
@@ -117,10 +140,77 @@ pub fn get_default_drive() -> String {
     "C".to_string()
 }
 
+#[cfg(target_os = "macos")]
+pub fn get_default_drive() -> String {
+    use std::process::Command;
+    // Parse `mount` to find the root device, then return its basename
+    // (e.g. "disk3s4s1") so the output folder is structured like Linux/Windows.
+    if let Ok(output) = Command::new("mount").output() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.contains(" on / ") {
+                if let Some(device) = line.split_whitespace().next() {
+                    // "/dev/disk3s4s1" → "disk3s4s1"
+                    let name = device.trim_start_matches("/dev/");
+                    if !name.is_empty() {
+                        return name.to_string();
+                    }
+                }
+            }
+        }
+    }
+    // Fallback
+    "disk0s1".to_string()
+}
+
+/// Resolve a macOS device basename (e.g. "disk3s4s1") to its mount point
+/// by parsing `/sbin/mount` output.  Falls back to "/" if not found.
+#[cfg(target_os = "macos")]
+fn resolve_macos_mount_point(device_name: &str) -> String {
+    use std::process::Command;
+    let full_dev = format!("/dev/{}", device_name);
+    if let Ok(output) = Command::new("mount").output() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            // Format: "/dev/disk3s4s1 on / (apfs, ...)"
+            if let Some(dev) = line.split_whitespace().next() {
+                if dev == full_dev {
+                    // Extract mount point: everything between " on " and " ("
+                    if let Some(on_pos) = line.find(" on ") {
+                        let rest = &line[on_pos + 4..];
+                        if let Some(paren_pos) = rest.find(" (") {
+                            let mount_point = &rest[..paren_pos];
+                            return mount_point.to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "/".to_string()
+}
+
 fn get_fs_type(drive_path: &str) -> Result<FileSystemType> {
+    // On macOS the drive_path is a mount point (directory), not a block device.
+    // SIP prevents opening /dev/diskXsY, so skip byte-level detection and
+    // use the POSIX fallback explorer that walks the mounted filesystem.
+    #[cfg(target_os = "macos")]
+    {
+        let p = std::path::Path::new(drive_path);
+        if p.is_dir() {
+            return Ok(FileSystemType::PosixFallback);
+        }
+    }
+
     if let Ok(mut file) = File::open(&drive_path) {
         if is_ntfs_partition(&mut file)? {
             return Ok(FileSystemType::NTFS);
+        }
+        if is_apfs_partition(&mut file)? {
+            return Ok(FileSystemType::APFS);
+        }
+        if is_hfsplus_partition(&mut file)? {
+            return Ok(FileSystemType::HFSPlus);
         }
         if is_ext4_partition(&mut file)? {
             // Prefer PosixFallback when not a real block device path
@@ -132,7 +222,9 @@ fn get_fs_type(drive_path: &str) -> Result<FileSystemType> {
         }
         #[cfg(target_os = "linux")]
         return Ok(FileSystemType::PosixFallback);
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        return Ok(FileSystemType::PosixFallback);
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         return Err(anyhow::anyhow!("Given File System is not supported"));
     }
     Err(anyhow::anyhow!("File Open Error"))
@@ -275,11 +367,14 @@ pub fn process_drive_artifacts(
     output: &OutputTarget,
     output_path: &str,
 ) -> Result<()> {
-    let drive_path: String = if cfg!(target_os = "windows") {
-        format!("\\\\.\\{}:", drive.chars().next().unwrap())
-    } else {
-        drive.to_string()
-    };
+    #[cfg(target_os = "windows")]
+    let drive_path: String = format!("\\\\.\\{}:", drive.chars().next().unwrap());
+
+    #[cfg(target_os = "macos")]
+    let drive_path: String = resolve_macos_mount_point(drive);
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let drive_path: String = drive.to_string();
 
     let mut config_entries: HashMap<String, (Vec<String>, Option<String>, Option<u64>)> = HashMap::new();
     if let Some(ref mut entries) = section_config.entries {

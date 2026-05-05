@@ -1,0 +1,615 @@
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# Copyright © 2025 Areg Baghinyan. All Rights Reserved.
+#
+# Author(s): Areg Baghinyan
+#
+# Aralez macOS Forensic Triage Configuration
+# Targets: macOS 12 (Monterey) through macOS 15 (Sequoia)
+#
+# Focus: Cyber attack investigation artifacts ONLY.
+# Does NOT collect user documents, mail, calendars, or personal data.
+#
+# References:
+#   - macOS Forensics: The Basics (TryHackMe)
+#     https://medium.com/@RosanaFS/macos-forensics-the-basics-tryhackme-walkthrough-35b6a567db9b
+#
+version: "Aralez_config_v1.0_macos"
+max_size: 5000000000
+memory_limit: 512
+disk_limit: 2000
+
+tasks:
+  #==========================================================================
+  # PRIORITY 0 — Volatile / Live State (must run first)
+  #==========================================================================
+  tools:
+    priority: 0
+    type: "execute"
+    memory_limit: 512
+    timeout: 120
+    output_folder: "{{root_output_path}}/tools/"
+    entries:
+      system:
+        # --- System Identity ---
+        - name: "/usr/bin/sw_vers"
+          args: []
+          output_file: "sw_vers.txt"
+          exec_type: "system"
+        - name: "/usr/sbin/system_profiler"
+          args: ["SPHardwareDataType", "SPSoftwareDataType"]
+          output_file: "system_profiler.txt"
+          exec_type: "system"
+        - name: "/bin/hostname"
+          args: []
+          output_file: "hostname.txt"
+          exec_type: "system"
+        - name: "/usr/bin/uname"
+          args: ["-a"]
+          output_file: "uname.txt"
+          exec_type: "system"
+
+        # --- Date / Time ---
+        - name: "/bin/date"
+          args: ["+%Y-%m-%dT%H:%M:%S%z"]
+          output_file: "date.txt"
+          exec_type: "system"
+        - name: "/usr/sbin/systemsetup"
+          args: ["-gettimezone"]
+          output_file: "timezone.txt"
+          exec_type: "system"
+
+        # --- Processes ---
+        - name: "/bin/ps"
+          args: ["-axo", "user,pid,ppid,%cpu,%mem,lstart,command"]
+          output_file: "ps.txt"
+          exec_type: "system"
+
+        # --- Launch Services (running agents/daemons — persistence check) ---
+        - name: "/bin/launchctl"
+          args: ["list"]
+          output_file: "launchctl_list.txt"
+          exec_type: "system"
+        - name: "/bin/launchctl"
+          args: ["dumpstate"]
+          output_file: "launchctl_dumpstate.txt"
+          exec_type: "system"
+          timeout: 300
+
+        # --- Network (volatile) ---
+        - name: "/usr/sbin/netstat"
+          args: ["-an"]
+          output_file: "netstat.txt"
+          exec_type: "system"
+        - name: "/usr/sbin/lsof"
+          args: ["-i", "-P"]
+          output_file: "lsof_network.txt"
+          exec_type: "system"
+        - name: "/sbin/ifconfig"
+          args: ["-a"]
+          output_file: "ifconfig.txt"
+          exec_type: "system"
+        - name: "/usr/sbin/arp"
+          args: ["-a"]
+          output_file: "arp.txt"
+          exec_type: "system"
+        - name: "/usr/sbin/netstat"
+          args: ["-rn"]
+          output_file: "routes.txt"
+          exec_type: "system"
+        - name: "/usr/bin/dscacheutil"
+          args: ["-cachedump", "-entries", "Host"]
+          output_file: "dns_cache.txt"
+          exec_type: "system"
+
+        # --- Disk State ---
+        - name: "/bin/df"
+          args: ["-h"]
+          output_file: "df.txt"
+          exec_type: "system"
+        - name: "/sbin/mount"
+          args: []
+          output_file: "mount.txt"
+          exec_type: "system"
+        - name: "/usr/sbin/diskutil"
+          args: ["list"]
+          output_file: "diskutil_list.txt"
+          exec_type: "system"
+        # APFS container/volume layout — shows Preboot, Recovery, VM,
+        # Data, System roles
+        - name: "/usr/sbin/diskutil"
+          args: ["apfs", "list"]
+          output_file: "diskutil_apfs.txt"
+          exec_type: "system"
+
+        # --- APFS Snapshots (Time Machine local snapshots) ---
+        - name: "/usr/bin/tmutil"
+          args: ["listlocalsnapshots", "/"]
+          output_file: "apfs_snapshots.txt"
+          exec_type: "system"
+
+        # --- Users & Auth ---
+        - name: "/usr/bin/dscl"
+          args: [".", "-list", "/Users"]
+          output_file: "users.txt"
+          exec_type: "system"
+        - name: "/usr/bin/dscl"
+          args: [".", "-readall", "/Users", "UniqueID", "PrimaryGroupID", "UserShell", "NFSHomeDirectory", "RecordName"]
+          output_file: "users_detail.txt"
+          exec_type: "system"
+        - name: "/usr/bin/dscl"
+          args: [".", "-list", "/Groups"]
+          output_file: "groups.txt"
+          exec_type: "system"
+        - name: "/usr/bin/last"
+          args: []
+          output_file: "last.txt"
+          exec_type: "system"
+        - name: "/usr/bin/who"
+          args: []
+          output_file: "who.txt"
+          exec_type: "system"
+
+        # --- Loaded Kernel Extensions ---
+        - name: "/usr/sbin/kextstat"
+          args: []
+          output_file: "kextstat.txt"
+          exec_type: "system"
+
+        # --- System Extensions (macOS 10.15+) ---
+        - name: "/usr/bin/systemextensionsctl"
+          args: ["list"]
+          output_file: "systemextensions.txt"
+          exec_type: "system"
+
+        # --- Profiles (MDM / Config Profiles) ---
+        - name: "/usr/bin/profiles"
+          args: ["list", "-verbose"]
+          output_file: "profiles.txt"
+          exec_type: "system"
+
+        # --- Firewall ---
+        - name: "/usr/libexec/ApplicationFirewall/socketfilterfw"
+          args: ["--getglobalstate"]
+          output_file: "firewall_state.txt"
+          exec_type: "system"
+        - name: "/usr/libexec/ApplicationFirewall/socketfilterfw"
+          args: ["--listapps"]
+          output_file: "firewall_apps.txt"
+          exec_type: "system"
+
+        # --- SIP / Security ---
+        - name: "/usr/bin/csrutil"
+          args: ["status"]
+          output_file: "sip_status.txt"
+          exec_type: "system"
+        - name: "/usr/sbin/spctl"
+          args: ["--status"]
+          output_file: "gatekeeper_status.txt"
+          exec_type: "system"
+
+        # --- FileVault Encryption Status ---
+        - name: "/usr/bin/fdesetup"
+          args: ["status"]
+          output_file: "filevault_status.txt"
+          exec_type: "system"
+        - name: "/usr/bin/fdesetup"
+          args: ["list"]
+          output_file: "filevault_users.txt"
+          exec_type: "system"
+
+        # --- Unified Log snapshot (security-focused) ---
+        - name: "/usr/bin/log"
+          args: ["show", "--last", "7d", "--style", "compact", "--predicate", "eventMessage CONTAINS[c] 'login' OR eventMessage CONTAINS[c] 'ssh' OR eventMessage CONTAINS[c] 'sudo' OR eventMessage CONTAINS[c] 'auth' OR eventMessage CONTAINS[c] 'kext' OR eventMessage CONTAINS[c] 'gatekeeper' OR process == 'kernel' OR process == 'sshd' OR process == 'sudo'"]
+          output_file: "unified_log_security.txt"
+          exec_type: "system"
+          timeout: 600
+          max_size: 100000000
+
+        # --- Environment ---
+        - name: "/usr/bin/env"
+          args: []
+          output_file: "env.txt"
+          exec_type: "system"
+
+        # --- Sharing & Remote Access ---
+        - name: "/usr/sbin/systemsetup"
+          args: ["-getremotelogin"]
+          output_file: "remote_login.txt"
+          exec_type: "system"
+
+        # --- Software Installs ---
+        - name: "/usr/sbin/pkgutil"
+          args: ["--pkgs"]
+          output_file: "installed_packages.txt"
+          exec_type: "system"
+        - name: "/usr/sbin/system_profiler"
+          args: ["SPApplicationsDataType"]
+          output_file: "installed_apps.txt"
+          exec_type: "system"
+
+        # --- Homebrew (if present) ---
+        - name: "/bin/bash"
+          args: ["-c", "command -v brew && brew list --versions 2>/dev/null || echo 'Homebrew not installed'"]
+          output_file: "brew_list.txt"
+          exec_type: "system"
+
+      internal:
+        - name: "ProcInfo"
+          output_file: "ProcInfo.csv"
+          exec_type: "internal"
+        - name: "ProcDetailsInfo"
+          output_file: "ProcDetailsInfo.csv"
+          exec_type: "internal"
+
+  #==========================================================================
+  # PRIORITY 1 — Critical Forensic Artifacts (files)
+  #==========================================================================
+  artifacts:
+    type: "collect"
+    priority: 1
+    entries:
+
+      #----------------------------------------------------------------------
+      # Unified Logs (binary — needs `log` tool to parse later)
+      #----------------------------------------------------------------------
+      unified_logs:
+        - root_path: "/private/var/db/diagnostics/"
+          objects: ["**"]
+          max_size: 500000000
+        - root_path: "/private/var/db/uuidtext/"
+          objects: ["**"]
+          max_size: 200000000
+
+      #----------------------------------------------------------------------
+      # FSEvents — File System change journal (like NTFS $UsnJrnl)
+      #----------------------------------------------------------------------
+      fseventsd:
+        - root_path: "/System/Volumes/Data/.fseventsd/"
+          objects: ["*"]
+          max_size: 500000000
+        - root_path: "/.fseventsd/"
+          objects: ["*"]
+          max_size: 200000000
+
+      #----------------------------------------------------------------------
+      # KnowledgeC — Application usage tracking (what ran, when)
+      #----------------------------------------------------------------------
+      knowledgec:
+        - root_path: "/private/var/db/CoreDuet/Knowledge/"
+          objects: ["knowledgeC.db", "knowledgeC.db-wal", "knowledgeC.db-shm"]
+        - root_path: "/Users/*/Library/Application Support/Knowledge/"
+          objects: ["knowledgeC.db", "knowledgeC.db-wal", "knowledgeC.db-shm"]
+
+      #----------------------------------------------------------------------
+      # Biome — Modern replacement for KnowledgeC (macOS 13+)
+      #----------------------------------------------------------------------
+      biome:
+        - root_path: "/private/var/db/biome/"
+          objects: ["**"]
+          max_size: 200000000
+
+      #----------------------------------------------------------------------
+      # Quarantine Events — Tracks internet-downloaded files (Gatekeeper)
+      #----------------------------------------------------------------------
+      quarantine:
+        - root_path: "/Users/*/Library/Preferences/"
+          objects: ["com.apple.LaunchServices.QuarantineEventsV2"]
+
+      #----------------------------------------------------------------------
+      # Spotlight index metadata
+      #----------------------------------------------------------------------
+      spotlight:
+        - root_path: "/.Spotlight-V100/"
+          objects: ["**"]
+          max_size: 200000000
+
+      #----------------------------------------------------------------------
+      # TCC — Privacy / Permissions database (Full Disk Access grants,
+      # attacker may modify to bypass FDA)
+      #----------------------------------------------------------------------
+      tcc:
+        - root_path: "/Library/Application Support/com.apple.TCC/"
+          objects: ["TCC.db", "TCC.db-wal", "TCC.db-shm"]
+        - root_path: "/Users/*/Library/Application Support/com.apple.TCC/"
+          objects: ["TCC.db", "TCC.db-wal", "TCC.db-shm"]
+
+      #----------------------------------------------------------------------
+      # Authorization Database — Controls system-wide security policies
+      # including FDA, SIP-related permissions
+      #----------------------------------------------------------------------
+      authorization_db:
+        - root_path: "/private/var/db/auth.db/"
+          objects: ["**"]
+        - root_path: "/etc/authorization/"
+          objects: ["**"]
+
+      #----------------------------------------------------------------------
+      # Launch Agents & Daemons — Primary persistence mechanism
+      #----------------------------------------------------------------------
+      launch_agents_system:
+        - root_path: "/Library/LaunchAgents/"
+          objects: ["*.plist"]
+        - root_path: "/Library/LaunchDaemons/"
+          objects: ["*.plist"]
+        - root_path: "/System/Library/LaunchAgents/"
+          objects: ["*.plist"]
+        - root_path: "/System/Library/LaunchDaemons/"
+          objects: ["*.plist"]
+      launch_agents_user:
+        - root_path: "/Users/*/Library/LaunchAgents/"
+          objects: ["*.plist"]
+
+      #----------------------------------------------------------------------
+      # Login Items & Startup Items (persistence)
+      #----------------------------------------------------------------------
+      login_items:
+        - root_path: "/Users/*/Library/Application Support/com.apple.backgroundtaskmanagementagent/"
+          objects: ["backgrounditems.btm"]
+        - root_path: "/private/var/db/com.apple.xpc.launchd/"
+          objects: ["**/*.plist"]
+      startup_items:
+        - root_path: "/Library/StartupItems/"
+          objects: ["**"]
+
+      #----------------------------------------------------------------------
+      # Cron Jobs (persistence)
+      #----------------------------------------------------------------------
+      crontabs:
+        - root_path: "/private/var/at/tabs/"
+          objects: ["*"]
+        - root_path: "/usr/lib/cron/tabs/"
+          objects: ["*"]
+        - root_path: "/etc/"
+          objects: ["crontab"]
+
+      #----------------------------------------------------------------------
+      # Periodic Scripts (persistence via daily/weekly/monthly)
+      #----------------------------------------------------------------------
+      periodic:
+        - root_path: "/etc/periodic/"
+          objects: ["**"]
+        - root_path: "/usr/local/etc/periodic/"
+          objects: ["**"]
+
+      #----------------------------------------------------------------------
+      # Shell Profiles & RC Files (persistence via login hooks)
+      #----------------------------------------------------------------------
+      shell_profiles:
+        - root_path: "/etc/"
+          objects: ["profile", "bashrc", "zshrc", "zprofile", "zshenv", "zlogout"]
+        - root_path: "/Users/*/"
+          objects: [".profile", ".bashrc", ".bash_profile", ".bash_login", ".bash_logout",
+                    ".zshrc", ".zprofile", ".zshenv", ".zlogin", ".zlogout"]
+        - root_path: "/var/root/"
+          objects: [".profile", ".bashrc", ".bash_profile", ".zshrc", ".zprofile", ".zshenv"]
+
+      #----------------------------------------------------------------------
+      # SSH Artifacts (lateral movement / persistence)
+      #----------------------------------------------------------------------
+      ssh_root:
+        - root_path: "/var/root/.ssh/"
+          objects: ["authorized_keys", "known_hosts", "config"]
+      ssh_users:
+        - root_path: "/Users/*/.ssh/"
+          objects: ["authorized_keys", "known_hosts", "config"]
+
+      #----------------------------------------------------------------------
+      # Shell History (attacker commands)
+      #----------------------------------------------------------------------
+      shell_root:
+        - root_path: "/var/root/"
+          objects: [".bash_history", ".zsh_history"]
+      shell_users:
+        - root_path: "/Users/*/"
+          objects: [".bash_history", ".zsh_history", ".bash_sessions/*"]
+
+      #----------------------------------------------------------------------
+      # System Configuration (security-relevant only)
+      #----------------------------------------------------------------------
+      system_config:
+        - root_path: "/etc/"
+          objects: ["hosts", "resolv.conf", "sudoers", "passwd", "group", "shells", "pf.conf", "sysctl.conf"]
+        - root_path: "/Library/Preferences/"
+          objects: ["com.apple.alf.plist", "com.apple.loginwindow.plist",
+                    "com.apple.security.plist"]
+        - root_path: "/Library/Preferences/SystemConfiguration/"
+          objects: ["preferences.plist", "com.apple.airport.preferences.plist", "NetworkInterfaces.plist"]
+
+      #----------------------------------------------------------------------
+      # System Logs (security-relevant)
+      #----------------------------------------------------------------------
+      system_logs:
+        - root_path: "/private/var/log/"
+          objects: ["system.log*", "install.log*", "wifi.log*", "asl/*", "DiagnosticMessages/*", "com.apple.xpc.launchd/*"]
+          max_size: 300000000
+
+      #----------------------------------------------------------------------
+      # Audit Logs (BSM / OpenBSM)
+      #----------------------------------------------------------------------
+      audit_logs:
+        - root_path: "/private/var/audit/"
+          objects: ["*"]
+          max_size: 300000000
+        - root_path: "/etc/security/"
+          objects: ["audit_control", "audit_event", "audit_class"]
+
+      #----------------------------------------------------------------------
+      # Install & Update History (what was installed, when)
+      #----------------------------------------------------------------------
+      install_history:
+        - root_path: "/Library/Receipts/"
+          objects: ["InstallHistory.plist"]
+        - root_path: "/private/var/db/receipts/"
+          objects: ["*.plist"]
+          max_size: 50000000
+
+      #----------------------------------------------------------------------
+      # Application Bundle Info — Installed app metadata
+      #----------------------------------------------------------------------
+      app_bundle_info:
+        - root_path: "/Applications/"
+          objects: ["*/Contents/Info.plist"]
+        - root_path: "/Applications/Utilities/"
+          objects: ["*/Contents/Info.plist"]
+        - root_path: "/Users/*/Applications/"
+          objects: ["*/Contents/Info.plist"]
+
+      #----------------------------------------------------------------------
+      # Browser Artifacts (attack delivery, C2 callbacks, exfil)
+      #----------------------------------------------------------------------
+      safari:
+        - root_path: "/Users/*/Library/Safari/"
+          objects: ["History.db", "History.db-wal", "Downloads.plist", "Extensions/Extensions.plist",
+                    "Bookmarks.plist", "TopSites.plist", "LastSession.plist",
+                    "RecentlyClosedTabs.plist"]
+      chrome:
+        - root_path: "/Users/*/Library/Application Support/Google/Chrome/Default/"
+          objects: ["History", "Cookies", "Login Data", "Preferences", "Web Data",
+                    "Bookmarks", "Extensions/**"]
+      firefox:
+        - root_path: "/Users/*/Library/Application Support/Firefox/Profiles/*/"
+          objects: ["places.sqlite", "cookies.sqlite", "logins.json", "formhistory.sqlite", "downloads.sqlite", "extensions.json", "addons.json"]
+      edge:
+        - root_path: "/Users/*/Library/Application Support/Microsoft Edge/Default/"
+          objects: ["History", "Cookies", "Login Data", "Preferences"]
+
+      #----------------------------------------------------------------------
+      # Recent Items & Dock (user activity timeline)
+      #----------------------------------------------------------------------
+      recent_items:
+        - root_path: "/Users/*/Library/Application Support/com.apple.sharedfilelist/"
+          objects: ["**"]
+        - root_path: "/Users/*/Library/Preferences/"
+          objects: ["com.apple.recentitems.plist", "com.apple.dock.plist",
+                    "com.apple.finder.plist"]
+
+      #----------------------------------------------------------------------
+      # Keychains (credential stores — may contain extracted secrets)
+      #----------------------------------------------------------------------
+      keychains:
+        - root_path: "/Users/*/Library/Keychains/"
+          objects: ["**"]
+        - root_path: "/Library/Keychains/"
+          objects: ["**"]
+
+      #----------------------------------------------------------------------
+      # Cloud Credentials (AWS, Kube, Docker, Azure)
+      #----------------------------------------------------------------------
+      cloud_configs:
+        - root_path: "/Users/*/"
+          objects: [".aws/credentials", ".aws/config", ".kube/config", ".docker/config.json", ".azure/azureProfile.json"]
+
+      #----------------------------------------------------------------------
+      # Core Dumps — Process crash memory images
+      #----------------------------------------------------------------------
+      core_dumps:
+        - root_path: "/cores/"
+          objects: ["core.*"]
+          max_size: 500000000
+
+      #----------------------------------------------------------------------
+      # Swap / Virtual Memory artifacts
+      #----------------------------------------------------------------------
+      swap_files:
+        - root_path: "/private/var/vm/"
+          objects: ["swapfile*", "sleepimage"]
+          max_size: 500000000
+
+      #----------------------------------------------------------------------
+      # Suspicious Files — executables in user-writable locations
+      #----------------------------------------------------------------------
+      suspicious_downloads:
+        - root_path: "/Users/*/Downloads/"
+          objects: ["*.sh", "*.py", "*.app", "*.dmg", "*.pkg", "*.command",
+                    "*.scpt", "*.dylib", "*.so", "*.jar", "*.pl", "*.xar", ".*"]
+          max_size: 5242880
+          encrypt: "infected"
+      suspicious_desktop:
+        - root_path: "/Users/*/Desktop/"
+          objects: ["*.sh", "*.py", "*.app", "*.dmg", "*.pkg", "*.command",
+                    "*.scpt", "*.dylib", "*.so", "*.jar", "*.xar", ".*"]
+          max_size: 5242880
+          encrypt: "infected"
+      suspicious_tmp:
+        - root_path: "/tmp/"
+          objects: ["**"]
+          max_size: 50000000
+        - root_path: "/private/tmp/"
+          objects: ["**"]
+          max_size: 50000000
+        - root_path: "/private/var/tmp/"
+          objects: ["**"]
+          max_size: 50000000
+
+      #----------------------------------------------------------------------
+      # Dylib Hijacking — Suspicious dynamic libraries in common paths
+      #----------------------------------------------------------------------
+      suspicious_dylibs:
+        - root_path: "/usr/local/lib/"
+          objects: ["*.dylib"]
+          max_size: 20000000
+        - root_path: "/Users/*/Library/"
+          objects: ["**/*.dylib"]
+          max_size: 20000000
+
+      #----------------------------------------------------------------------
+      # Third-Party Tools — /opt persistence
+      #----------------------------------------------------------------------
+      opt_persistence:
+        - root_path: "/opt/"
+          objects: ["**/*.plist", "**/*.sh", "**/*.py", "**/*.dylib"]
+          max_size: 20000000
+        - root_path: "/usr/local/bin/"
+          objects: ["*"]
+          max_size: 20000000
+
+      #----------------------------------------------------------------------
+      # Kernel Extension Bundles (rootkit persistence)
+      #----------------------------------------------------------------------
+      kext:
+        - root_path: "/Library/Extensions/"
+          objects: ["**/*.plist", "**/*.kext"]
+        - root_path: "/Library/StagedExtensions/"
+          objects: ["**/*.plist"]
+
+      #----------------------------------------------------------------------
+      # XProtect / MRT (Apple built-in malware protection)
+      #----------------------------------------------------------------------
+      xprotect:
+        - root_path: "/Library/Apple/System/Library/CoreServices/XProtect.bundle/Contents/"
+          objects: ["**/*.plist", "**/*.yara"]
+        - root_path: "/System/Library/CoreServices/XProtect.bundle/Contents/"
+          objects: ["**/*.plist", "**/*.yara"]
+
+      #----------------------------------------------------------------------
+      # System Configuration /etc (security-relevant subset)
+      #----------------------------------------------------------------------
+      private_etc:
+        - root_path: "/private/etc/"
+          objects: ["hosts", "hosts.allow", "hosts.deny", "pf.conf", "pf.anchors/*", "ssh/*", "sudoers", "sudoers.d/*"]
+
+      #----------------------------------------------------------------------
+      # CrashReporter logs (exploit evidence)
+      #----------------------------------------------------------------------
+      crash_reports:
+        - root_path: "/Library/Logs/DiagnosticReports/"
+          objects: ["*.crash", "*.ips"]
+          max_size: 50000000
+        - root_path: "/Users/*/Library/Logs/DiagnosticReports/"
+          objects: ["*.crash", "*.ips"]
+          max_size: 50000000
+        - root_path: "/Library/Application Support/CrashReporter/"
+          objects: ["**"]
+
+      #----------------------------------------------------------------------
+      # FileVault Configuration (encryption state artifacts)
+      #----------------------------------------------------------------------
+      filevault_config:
+        - root_path: "/private/var/db/"
+          objects: ["FileVaultRecoveryAgent.plist"]
+        - root_path: "/Library/Preferences/"
+          objects: ["com.apple.fdesetup.plist"]
+
+output_filename: "Aralez_{{hostname}}_{{datetime}}"

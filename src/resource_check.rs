@@ -76,6 +76,25 @@ pub fn check_memory(required_mb: u64) -> bool {
     false
 }
 
+#[cfg(target_os = "macos")]
+pub fn check_memory(required_mb: u64) -> bool {
+    use std::process::Command;
+
+    // Use sysctl to get total physical memory as a proxy
+    if let Ok(output) = Command::new("sysctl").arg("-n").arg("hw.memsize").output() {
+        if let Ok(s) = std::str::from_utf8(&output.stdout) {
+            if let Ok(bytes) = s.trim().parse::<u64>() {
+                let available_mb = bytes / (1024 * 1024);
+                dprintln!("[INFO] Total memory (RAM): {} MB", available_mb);
+                dprintln!("[INFO] Required memory (RAM): {} MB", required_mb);
+                return available_mb >= required_mb;
+            }
+        }
+    }
+    // If we can't determine memory, allow collection to proceed
+    true
+}
+
 pub fn get_total_collected_size<P: AsRef<Path>>(path: P) -> u64 {
     fn dir_size(dir: &Path) -> u64 {
         let mut size = 0;
@@ -138,6 +157,22 @@ pub fn get_total_disk_space(path: &str) -> Option<u64> {
 
         if success != 0 {
             Some(total / (1024 * 1024)) // Convert to MB
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn get_total_disk_space(path: &str) -> Option<u64> {
+    use libc::statvfs;
+    use std::ffi::CString;
+
+    let c_path = CString::new(path).ok()?;
+    unsafe {
+        let mut stat = std::mem::zeroed();
+        if statvfs(c_path.as_ptr(), &mut stat) == 0 {
+            Some((stat.f_blocks as u64 * stat.f_frsize as u64) / (1024 * 1024)) // Return MB
         } else {
             None
         }

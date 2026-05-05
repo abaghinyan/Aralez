@@ -67,6 +67,7 @@ ext4-view = { version = "0.9.1", features = ["std"] }
 
 [build-dependencies]
 reqwest = { version = "0.12", features = ["blocking"] }
+native-tls = "=0.2.13"
 zip = "2"
 
 [target.'cfg(windows)'.dependencies]
